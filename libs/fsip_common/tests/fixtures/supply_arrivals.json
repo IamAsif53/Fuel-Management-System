@@ -1,0 +1,11 @@
+[
+  {
+    "id": "supply-101",
+    "depot_id": "depot-gazipur",
+    "fuel_type": "DIESEL",
+    "quantity": 12000.0,
+    "planned_tick": 64,
+    "actual_tick": null,
+    "status": "SCHEDULED"
+  }
+]

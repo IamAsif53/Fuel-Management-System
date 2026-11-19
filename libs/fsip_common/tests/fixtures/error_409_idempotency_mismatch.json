@@ -1,0 +1,6 @@
+{
+  "detail": {
+    "code": "IDEMPOTENCY_KEY_MISMATCH",
+    "message": "Idempotency key mismatch with existing allocation"
+  }
+}

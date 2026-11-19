@@ -1,0 +1,6 @@
+{
+  "detail": {
+    "code": "ROUTE_MISMATCH",
+    "message": "Route does not connect specified depot and station"
+  }
+}

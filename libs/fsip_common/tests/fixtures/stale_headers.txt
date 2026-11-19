@@ -1,0 +1,5 @@
+HTTP/1.1 200 OK
+date: Thu, 01 Jan 2026 00:00:00 GMT
+content-type: application/json
+content-length: 120
+x-simulator-stale: true

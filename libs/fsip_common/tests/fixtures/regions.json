@@ -1,0 +1,4 @@
+[
+  {"id": "region-dhaka", "name": "Dhaka", "demand_factor": 1.00},
+  {"id": "region-chattogram", "name": "Chattogram", "demand_factor": 1.08}
+]

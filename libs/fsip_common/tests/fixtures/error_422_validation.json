@@ -1,0 +1,13 @@
+{
+  "detail": [
+    {
+      "type": "greater_than",
+      "loc": [
+        "body",
+        "quantity"
+      ],
+      "msg": "Input should be greater than 0",
+      "input": -1
+    }
+  ]
+}

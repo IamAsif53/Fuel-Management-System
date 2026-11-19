@@ -1,0 +1,12 @@
+[
+  {
+    "id": 1,
+    "station_id": "station-mirpur",
+    "fuel_type": "DIESEL",
+    "tick": 0,
+    "sim_time": "2026-01-01T00:00:00",
+    "demand_liters": 150.0,
+    "served_liters": 150.0,
+    "unmet_liters": 0.0
+  }
+]

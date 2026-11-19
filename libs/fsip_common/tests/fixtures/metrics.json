@@ -1,0 +1,7 @@
+{
+  "served_demand_liters": 54000.0,
+  "unmet_demand_liters": 0.0,
+  "service_level": 1.0,
+  "allocation_liters": 3000.0,
+  "allocation_failures": 0
+}
