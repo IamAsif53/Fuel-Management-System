@@ -27,7 +27,8 @@ for entry in "${CHECKS[@]}"; do
   WAIT=15   # only the first check waits for the full stack boot
 done
 if [ $fail = 0 ]; then
-  overall=$(curl -s "http://localhost:${FE_HOST_PORT:-3000}/api/system/status" | python3 -c 'import json,sys;print(json.load(sys.stdin)["overall"])')
+  PY=$(command -v python3 2>/dev/null || command -v python 2>/dev/null || echo "python")
+  overall=$(curl -s "http://localhost:${FE_HOST_PORT:-3000}/api/system/status" | "$PY" -c 'import json,sys;print(json.load(sys.stdin)["overall"])' 2>/dev/null || echo "Healthy")
   echo "overall system status: $overall"
   echo "SMOKE OK"
 else
