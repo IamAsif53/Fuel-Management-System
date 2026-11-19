@@ -5,7 +5,7 @@ Format for notes: `- [x] 1.3 SimClient done. Note: <deviation or measured result
 ## Status summary
 | Phase | Status (TODO / IN PROGRESS / DONE) | Acceptance passed | Notes |
 |---:|---|---|---|
-| 00 | DONE | 33 Python tests + 5 Vitest tests + Vite build + Ruff clean (Docker CLI unavailable on host) | Bootstrap complete |
+| 00 | PARTIALLY VERIFIED | 33 Python tests + 5 Vitest tests + Vite build + Ruff clean (Docker CLI uninstalled on host; container smoke test blocked) | Bootstrap code complete, pending host Docker |
 | 01 | TODO | | |
 | 02 | TODO | | |
 | 03 | TODO | | |
