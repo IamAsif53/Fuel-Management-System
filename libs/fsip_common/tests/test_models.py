@@ -6,13 +6,18 @@ from pathlib import Path
 
 import pytest
 from fsip_common.models import (
+    AdminAuditEntry,
+    AdminStepResult,
     Allocation,
+    AllocationRequest,
     DemandObservation,
     Depot,
+    FaultCreate,
     Health,
     Instance,
     Region,
     Route,
+    SimErrorEnvelope,
     SimEvent,
     SimMetrics,
     Station,
@@ -30,11 +35,23 @@ def load(name):
 
 
 @pytest.mark.parametrize("name,model,many", [
-    ("health", Health, False), ("instance", Instance, False), ("regions", Region, True),
-    ("depots", Depot, True), ("depot_single", Depot, False), ("stations", Station, True),
-    ("routes", Route, True), ("supply_arrivals", SupplyArrival, True), ("events", SimEvent, True),
-    ("allocations", Allocation, True), ("allocation_created_201", Allocation, False),
-    ("demand_history", DemandObservation, True), ("metrics", SimMetrics, False),
+    ("health", Health, False),
+    ("instance", Instance, False),
+    ("regions", Region, True),
+    ("depots", Depot, True),
+    ("depot_single", Depot, False),
+    ("stations", Station, True),
+    ("routes", Route, True),
+    ("supply_arrivals", SupplyArrival, True),
+    ("events", SimEvent, True),
+    ("allocations", Allocation, True),
+    ("allocation_created_201", Allocation, False),
+    ("demand_history", DemandObservation, True),
+    ("metrics", SimMetrics, False),
+    ("admin_step", AdminStepResult, False),
+    ("admin_audit", AdminAuditEntry, True),
+    ("admin_event_created", SimEvent, False),
+    ("admin_fault_created", FaultCreate, False),
 ])
 def test_real_fixtures_parse(name, model, many):
     data = load(name)
@@ -96,6 +113,180 @@ def test_error_envelopes_have_expected_shapes():
     assert isinstance(load("error_422_validation")["detail"], list)
     assert load("error_503_fault_injected")["error"]["code"] == "FAULT_INJECTED"
     assert "x-simulator-stale: true" in (FX / "stale_headers.txt").read_text().lower()
+
+
+# ---------------------------------------------------------------- SimErrorEnvelope tests
+def test_sim_error_envelope_real_fixtures():
+    # 409 idempotency mismatch
+    env1 = SimErrorEnvelope.model_validate(load("error_409_idempotency_mismatch"))
+    assert env1.code == "IDEMPOTENCY_KEY_MISMATCH"
+    assert "Idempotency key mismatch" in env1.message
+    assert not env1.is_fault_injected
+    assert not env1.is_validation_error
+
+    # 409 route mismatch
+    env2 = SimErrorEnvelope.model_validate(load("error_409_route_mismatch"))
+    assert env2.code == "ROUTE_MISMATCH"
+    assert "Route does not connect specified depot and station" in env2.message
+    assert not env2.is_fault_injected
+
+    # 404 not found
+    env3 = SimErrorEnvelope.model_validate(load("error_404_not_found"))
+    assert env3.code == "NOT_FOUND"
+    assert "Entity not found" in env3.message
+    assert not env3.is_fault_injected
+
+    # 503 fault injected
+    env4 = SimErrorEnvelope.model_validate(load("error_503_fault_injected"))
+    assert env4.code == "FAULT_INJECTED"
+    assert "Simulated fault injected" in env4.message
+    assert env4.is_fault_injected
+    assert not env4.is_validation_error
+
+    # 422 validation error
+    env5 = SimErrorEnvelope.model_validate(load("error_422_validation"))
+    assert env5.code == "VALIDATION_ERROR"
+    assert env5.is_validation_error
+    assert not env5.is_fault_injected
+    assert env5.validation_errors is not None
+    assert len(env5.validation_errors) == 1
+    assert env5.validation_errors[0].type == "greater_than"
+    assert env5.validation_errors[0].loc == ["body", "quantity"]
+    assert env5.validation_errors[0].field_name == "quantity"
+    assert "body.quantity: Input should be greater than 0" in env5.message
+
+
+def test_sim_error_envelope_stream_disconnect():
+    env = SimErrorEnvelope.model_validate({"detail": {"code": "FAULT_INJECTED"}})
+    assert env.code == "FAULT_INJECTED"
+    assert env.is_fault_injected
+    assert not env.is_validation_error
+
+
+def test_sim_error_envelope_multiple_422_items():
+    raw = {
+        "detail": [
+            {"type": "greater_than", "loc": ["body", "quantity"], "msg": "Input should be greater than 0"},
+            {"type": "missing", "loc": ["body", "fuel_type"], "msg": "Field required"},
+        ]
+    }
+    env = SimErrorEnvelope.model_validate(raw)
+    assert env.code == "VALIDATION_ERROR"
+    assert env.is_validation_error
+    assert len(env.validation_errors) == 2
+    assert env.validation_errors[0].field_name == "quantity"
+    assert env.validation_errors[1].field_name == "fuel_type"
+    assert "body.quantity: Input should be greater than 0" in env.message
+    assert "body.fuel_type: Field required" in env.message
+
+
+def test_sim_error_envelope_with_data_payload():
+    raw = {
+        "detail": {
+            "code": "CONSTRAINT_VIOLATION",
+            "message": "Resource constraint violated",
+            "data": {"violations": ["dispatch_capacity_exceeded"]},
+        }
+    }
+    env = SimErrorEnvelope.model_validate(raw)
+    assert env.code == "CONSTRAINT_VIOLATION"
+    assert env.message == "Resource constraint violated"
+    assert env.detail.data == {"violations": ["dispatch_capacity_exceeded"]}
+
+
+def test_sim_error_envelope_string_fallback():
+    env = SimErrorEnvelope.model_validate({"detail": "502 Bad Gateway"})
+    assert env.code == "UNKNOWN"
+    assert env.message == "502 Bad Gateway"
+    assert not env.is_fault_injected
+
+
+@pytest.mark.parametrize("bad_payload", [
+    {},                                       # empty dict
+    {"foo": "bar"},                           # unrelated keys
+    {"detail": {"message": "missing code"}},  # missing code in detail
+    {"error": {"message": "missing code"}},   # missing code in error
+    "not a dict",                             # non-dict
+    [{"type": "error"}],                      # list instead of envelope dict
+    None,                                     # None
+])
+def test_sim_error_envelope_malformed_rejected(bad_payload):
+    with pytest.raises((ValidationError, ValueError)):
+        SimErrorEnvelope.model_validate(bad_payload)
+
+
+# ---------------------------------------------------------------- AllocationRequest tests
+def test_allocation_request_valid():
+    req = AllocationRequest(
+        idempotency_key="key-001",
+        source_depot_id="depot-gazipur",
+        destination_station_id="station-mirpur",
+        route_id="route-gazipur-mirpur",
+        fuel_type="DIESEL",
+        quantity=3000,
+    )
+    assert req.idempotency_key == "key-001"
+    assert req.quantity == 3000.0  # coerced to float
+
+
+@pytest.mark.parametrize("mutate", [
+    lambda r: r.pop("idempotency_key"),
+    lambda r: r.pop("source_depot_id"),
+    lambda r: r.pop("destination_station_id"),
+    lambda r: r.pop("route_id"),
+    lambda r: r.pop("fuel_type"),
+    lambda r: r.pop("quantity"),
+    lambda r: r.__setitem__("idempotency_key", ""),
+    lambda r: r.__setitem__("source_depot_id", ""),
+    lambda r: r.__setitem__("destination_station_id", ""),
+    lambda r: r.__setitem__("route_id", ""),
+    lambda r: r.__setitem__("fuel_type", "KEROSENE"),
+    lambda r: r.__setitem__("quantity", 0),
+    lambda r: r.__setitem__("quantity", -100),
+    lambda r: r.__setitem__("quantity", float("nan")),
+    lambda r: r.__setitem__("quantity", float("inf")),
+])
+def test_allocation_request_malformed_rejected(mutate):
+    base = {
+        "idempotency_key": "key-001",
+        "source_depot_id": "depot-gazipur",
+        "destination_station_id": "station-mirpur",
+        "route_id": "route-gazipur-mirpur",
+        "fuel_type": "DIESEL",
+        "quantity": 3000.0,
+    }
+    mutate(base)
+    with pytest.raises(ValidationError):
+        AllocationRequest.model_validate(base)
+
+
+# ---------------------------------------------------------------- Entity strict validation tests
+@pytest.mark.parametrize("model,payload,error_field", [
+    (Depot, {"id": "d1", "name": "D", "region_id": "r1", "status": "OPEN", "dispatch_capacity_per_tick": -1,
+             "capacity": {"DIESEL": 1, "PETROL": 1, "OCTANE": 1},
+             "inventory": {"DIESEL": 1, "PETROL": 1, "OCTANE": 1}}, "dispatch_capacity_per_tick"),
+    (Route, {"id": "r1", "source_depot_id": "d1", "destination_station_id": "s1", "transit_ticks": 0,
+             "max_shipment": 1000, "status": "AVAILABLE"}, "transit_ticks"),
+    (Route, {"id": "r1", "source_depot_id": "d1", "destination_station_id": "s1", "transit_ticks": 1,
+             "max_shipment": 0, "status": "AVAILABLE"}, "max_shipment"),
+    (Instance, {"id": 1, "scenario_id": "s", "scenario_version": "1.0", "seed": 1,
+                "sim_time": "2026-01-01T00:00:00", "tick": -1, "tick_minutes": 15, "status": "PAUSED"}, "tick"),
+    (Instance, {"id": 1, "scenario_id": "s", "scenario_version": "1.0", "seed": 1,
+                "sim_time": "2026-01-01T00:00:00", "tick": 0, "tick_minutes": 0, "status": "PAUSED"}, "tick_minutes"),
+    (SupplyArrival, {"id": "s1", "depot_id": "d1", "fuel_type": "DIESEL", "quantity": -50,
+                     "planned_tick": 5, "status": "SCHEDULED"}, "quantity"),
+    (SupplyArrival, {"id": "s1", "depot_id": "d1", "fuel_type": "KEROSENE", "quantity": 100,
+                     "planned_tick": 5, "status": "SCHEDULED"}, "fuel_type"),
+    (Allocation, {"id": 1, "idempotency_key": "k", "source_depot_id": "d1", "destination_station_id": "s1",
+                  "route_id": "r1", "fuel_type": "DIESEL", "quantity": 0, "created_tick": 0,
+                  "status": "PENDING"}, "quantity"),
+    (SimMetrics, {"served_demand_liters": 0, "unmet_demand_liters": 0, "service_level": 1.5,
+                  "allocation_liters": 0, "allocation_failures": 0}, "service_level"),
+])
+def test_entities_reject_out_of_bounds(model, payload, error_field):
+    with pytest.raises(ValidationError) as exc_info:
+        model.model_validate(payload)
+    assert any(error_field in str(err["loc"]) for err in exc_info.value.errors())
 
 
 def test_event_helpers():

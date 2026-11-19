@@ -6,7 +6,7 @@ Format for notes: `- [x] 1.3 SimClient done. Note: <deviation or measured result
 | Phase | Status (TODO / IN PROGRESS / DONE) | Acceptance passed | Notes |
 |---:|---|---|---|
 | 00 | DONE | 33 Python tests (100%) + 5 Vitest tests + Vite build + Ruff clean + full Docker Compose stack running healthy (7/7 services) + live smoke test passed (SMOKE OK, overall Healthy) | Complete end-to-end verification verified on host Docker |
-| 01 | TODO | | |
+| 01 | IN PROGRESS | Task 1.1 complete (67 unit tests in libs/fsip_common passed, Ruff clean) | Task 1.1 domain models + error envelopes implemented; awaiting review for Task 1.2 |
 | 02 | TODO | | |
 | 03 | TODO | | |
 | 04 | TODO | | |
@@ -55,7 +55,7 @@ Deadline: **Thu 2026-11-26**. Feature freeze: Wed 2026-11-25 18:00.
 ### Phase 00
 - [x] 0.1  - [x] 0.2  - [x] 0.3  - [x] 0.4  - [x] 0.5  - [x] 0.6  - [x] 0.7  - [x] 0.8  - [x] 0.9  - [x] 0.10  - [x] 0.11  - [x] 0.12
 ### Phase 01
-- [ ] 1.1  - [ ] 1.2  - [ ] 1.3  - [ ] 1.4  - [ ] 1.5  - [ ] 1.6  - [ ] 1.7  - [ ] 1.8  - [ ] 1.9  - [ ] 1.10
+- [x] 1.1  - [ ] 1.2  - [ ] 1.3  - [ ] 1.4  - [ ] 1.5  - [ ] 1.6  - [ ] 1.7  - [ ] 1.8  - [ ] 1.9  - [ ] 1.10
 ### Phase 02
 - [ ] 2.1  - [ ] 2.2  - [ ] 2.3  - [ ] 2.4  - [ ] 2.5  - [ ] 2.6  - [ ] 2.7  - [ ] 2.8
 ### Phase 03
