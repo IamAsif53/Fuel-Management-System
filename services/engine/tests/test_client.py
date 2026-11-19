@@ -498,3 +498,92 @@ async def test_allocation_idempotency_preserved_during_retries(sleeper: MockSlee
         call2_body = json.loads(route.calls[1].request.content)
         assert call1_body["idempotency_key"] == "idemp-key-repeat"
         assert call2_body["idempotency_key"] == "idemp-key-repeat"
+
+
+# ---------------------------------------------------------------- Verification Audit Tests
+@respx.mock
+@pytest.mark.asyncio
+async def test_admin_operations_do_not_retry_on_failure(sleeper: MockSleeper, breaker: CircuitBreaker):
+    client = SimClient(base_url="http://testsim:8000", breaker=breaker, sleep_fn=sleeper.sleep, max_retries=3)
+    route_step = respx.post("http://testsim:8000/admin/step").respond(503, json=load_fx("error_503_fault_injected"))
+    route_audit = respx.get("http://testsim:8000/admin/audit").respond(503, json=load_fx("error_503_fault_injected"))
+
+    async with client:
+        with pytest.raises(SimFaultInjected):
+            await client.admin_step()
+        assert route_step.call_count == 1  # Never retried despite max_retries=3
+
+        with pytest.raises(SimFaultInjected):
+            await client.admin_audit()
+        assert route_audit.call_count == 1  # Never retried
+
+
+def test_http_client_configuration_defaults():
+    client = SimClient(base_url="http://testsim:8000")
+    assert client.timeout == 2.0
+    assert client.http.timeout.read == 2.0
+    # Check connection pool limits
+    pool = getattr(client.http._transport, "_pool", None)
+    if pool is not None:
+        assert pool._max_connections == 20
+        assert pool._max_keepalive_connections == 10
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_circuit_breaker_trips_during_retries_and_aborts_early(sleeper: MockSleeper):
+    # Breaker threshold = 2, max_retries = 3
+    cb = CircuitBreaker(name="sim_breaker_trips_early", failure_threshold=2, reset_timeout=10.0)
+    client = SimClient(base_url="http://testsim:8000", breaker=cb, sleep_fn=sleeper.sleep, max_retries=3)
+
+    route = respx.get("http://testsim:8000/v1/instance").respond(503, json=load_fx("error_503_fault_injected"))
+
+    async with client:
+        with pytest.raises(CircuitOpenError):
+            await client.instance()
+
+        # Attempt 0: 503 -> breaker failure 1
+        # Attempt 1: 503 -> breaker failure 2 -> breaker transitions to OPEN
+        # Attempt 2: breaker.allow() is False -> raises CircuitOpenError immediately!
+        # Total HTTP calls must be 2, NOT 4 (1 initial + 3 retries)
+        assert route.call_count == 2
+        assert cb.state == CircuitBreaker.OPEN
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_cancel_allocation_does_not_retry_on_failure(sleeper: MockSleeper, breaker: CircuitBreaker):
+    client = SimClient(base_url="http://testsim:8000", breaker=breaker, sleep_fn=sleeper.sleep, max_retries=3)
+    route_cancel = respx.post("http://testsim:8000/v1/allocations/42/cancel").respond(
+        503, json=load_fx("error_503_fault_injected")
+    )
+
+    async with client:
+        with pytest.raises(SimFaultInjected):
+            await client.cancel_allocation(42)
+        assert route_cancel.call_count == 1  # retry=False prevents repeat cancellation attempts
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_snapshot_partial_failure_returns_per_resource_exceptions(sleeper: MockSleeper, breaker: CircuitBreaker):
+    client = SimClient(base_url="http://testsim:8000", breaker=breaker, sleep_fn=sleeper.sleep, max_retries=0)
+
+    respx.get("http://testsim:8000/v1/instance").respond(200, json=load_fx("instance"))
+    respx.get("http://testsim:8000/v1/depots").respond(503, json=load_fx("error_503_fault_injected"))
+    respx.get("http://testsim:8000/v1/stations").respond(200, json=load_fx("stations"))
+    respx.get("http://testsim:8000/v1/routes").respond(200, json=load_fx("routes"))
+    respx.get("http://testsim:8000/v1/events").respond(200, json=load_fx("events"))
+    respx.get("http://testsim:8000/v1/supply-arrivals").respond(200, json=load_fx("supply_arrivals"))
+    respx.get("http://testsim:8000/v1/allocations").respond(200, json=load_fx("allocations"))
+    respx.get("http://testsim:8000/v1/metrics").respond(200, json=load_fx("metrics"))
+
+    async with client:
+        snap = await client.snapshot()
+        assert len(snap) == 8
+        assert isinstance(snap["instance"], SimResult)
+        assert isinstance(snap["stations"], SimResult)
+        # depots failed: returns SimFaultInjected without failing the whole snapshot
+        assert isinstance(snap["depots"], SimFaultInjected)
+        assert "Simulated fault injected" in str(snap["depots"])
+
