@@ -299,3 +299,9 @@ def test_timeutil():
     assert parse_sim_time("2026-01-01T00:15:00").tzinfo is not None
     assert parse_sim_time("2026-01-01T00:15:00+00:00") == parse_sim_time("2026-01-01T00:15:00")
     assert expected_arrival_tick(0, 2) == 2
+    assert expected_arrival_tick(10, 4) == 14
+    with pytest.raises(ValueError):
+        expected_arrival_tick(-1, 2)
+    with pytest.raises(ValueError):
+        expected_arrival_tick(0, -1)
+

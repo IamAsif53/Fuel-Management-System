@@ -6,7 +6,7 @@ Format for notes: `- [x] 1.3 SimClient done. Note: <deviation or measured result
 | Phase | Status (TODO / IN PROGRESS / DONE) | Acceptance passed | Notes |
 |---:|---|---|---|
 | 00 | DONE | 33 Python tests (100%) + 5 Vitest tests + Vite build + Ruff clean + full Docker Compose stack running healthy (7/7 services) + live smoke test passed (SMOKE OK, overall Healthy) | Complete end-to-end verification verified on host Docker |
-| 01 | IN PROGRESS | Tasks 1.1–1.8 complete (183 unit tests passed in engine/common; Ruff clean; 187 total tests) | SSEListener & Engine lifecycle supervision complete (watchdog, backoff, endpoints /health/live, /health/ready, /debug/state, /metrics); awaiting review for Task 1.9 |
+| 01 | IN PROGRESS | Tasks 1.1–1.9 complete (183 unit tests passed in engine/common; 6 integration tests in test_sim_semantics.py; Ruff clean) | Verified simulator semantics, documented in docs/assumptions.md, arrival helper in fsip_common; ready for Task 1.10 |
 | 02 | TODO | | |
 | 03 | TODO | | |
 | 04 | TODO | | |
@@ -35,10 +35,11 @@ Deadline: **Thu 2026-11-26**. Feature freeze: Wed 2026-11-25 18:00.
 | 1 | 2026-11-19 | D0 | | docs/progress/2026-11-19.md |
 
 ## Verified simulator semantics (fill in during phase 01, task 1.9)
-- Arrival timing (created T, transit k): departure_tick = T, expected_arrival_tick = T+k (verified in planning: T=0, k=2 → expected 2, inventory up at instance tick 3). Re-confirm in 1.9.
-- Mid-transit route disruption effect: __
-- Route disrupted at creation → __ ; at departure → FAILED, no refund (already verified)
-- Dispatch cap counts PENDING from the previous tick? __
+- Arrival timing (created T, transit k): departure_tick = T, expected_arrival_tick = T+k (T=0, k=2 → expected 2, inventory up at instance tick 3). Implemented `expected_arrival_tick(created_tick, transit_ticks)` in `fsip_common`.
+- Mid-transit route disruption effect: NO effect on shipments already IN_TRANSIT. Route check occurs strictly at departure; once in transit, shipments complete and deliver fuel normally.
+- Route disrupted at creation → rejected with HTTP 409 ROUTE_DISRUPTED (no depot inventory loss); at departure → transitions to FAILED (ROUTE_UNAVAILABLE) without refund (fuel lost).
+- Dispatch cap counts PENDING from the previous tick? NO. Once departed to IN_TRANSIT at tick boundary, previous allocations do not count against the next tick's dispatch cap. Full dispatch_capacity_per_tick resets every tick.
+
 
 ## Key measured numbers (fill in as you go)
 | Metric | Value | Where measured |
@@ -55,7 +56,7 @@ Deadline: **Thu 2026-11-26**. Feature freeze: Wed 2026-11-25 18:00.
 ### Phase 00
 - [x] 0.1  - [x] 0.2  - [x] 0.3  - [x] 0.4  - [x] 0.5  - [x] 0.6  - [x] 0.7  - [x] 0.8  - [x] 0.9  - [x] 0.10  - [x] 0.11  - [x] 0.12
 ### Phase 01
-- [x] 1.1  - [x] 1.2  - [x] 1.3  - [x] 1.4  - [x] 1.5  - [x] 1.6  - [x] 1.7  - [x] 1.8  - [ ] 1.9  - [ ] 1.10
+- [x] 1.1  - [x] 1.2  - [x] 1.3  - [x] 1.4  - [x] 1.5  - [x] 1.6  - [x] 1.7  - [x] 1.8  - [x] 1.9  - [ ] 1.10
 ### Phase 02
 - [ ] 2.1  - [ ] 2.2  - [ ] 2.3  - [ ] 2.4  - [ ] 2.5  - [ ] 2.6  - [ ] 2.7  - [ ] 2.8
 ### Phase 03

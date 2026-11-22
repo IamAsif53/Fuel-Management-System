@@ -29,7 +29,12 @@ def hours_to_ticks(hours: float, tick_minutes: int) -> int:
 def expected_arrival_tick(created_tick: int, transit_ticks: int) -> int:
     """VERIFIED (simulator 1.0.0): created at T -> departure_tick = T -> expected_arrival_tick = T + transit.
     Station inventory shows the fuel when the instance reports tick T + transit + 1."""
-    return created_tick + transit_ticks
+    if created_tick < 0:
+        raise ValueError(f"created_tick must be >= 0, got {created_tick}")
+    if transit_ticks < 0:
+        raise ValueError(f"transit_ticks must be >= 0, got {transit_ticks}")
+    return int(created_tick) + int(transit_ticks)
+
 
 
 def format_sim_clock(tick: int, tick_minutes: int) -> str:
