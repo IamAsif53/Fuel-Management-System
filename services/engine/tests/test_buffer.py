@@ -566,3 +566,213 @@ async def test_exponential_backoff_calculation():
 
     assert delays == [0.5, 1.0, 2.0, 4.0, 8.0, 10.0]  # Capped at max_backoff=10.0
 
+
+# =============================================================================
+# 12. Cancellation Data Preservation & In-Flight Rollback Guarantees
+# =============================================================================
+
+async def test_cancellation_during_in_flight_tx_rolls_back_and_requeues():
+    """Verify cancellation during in-flight batch execution rolls back and requeues all items."""
+    in_flight_event = asyncio.Event()
+    block_event = asyncio.Event()
+
+    async def blocking_op1(session):
+        in_flight_event.set()
+        await block_event.wait()
+
+    async def dummy_op2(session):
+        pass
+
+    sm = create_mock_sessionmaker()
+    buf = WriteBuffer(sessionmaker=sm, batch_size=10, flush_interval=0.01)
+
+    buf.submit(blocking_op1, kind="cancel_test")
+    buf.submit(dummy_op2, kind="cancel_test")
+    assert buf.qsize == 2
+
+    worker = asyncio.create_task(buf.run())
+
+    # Wait until op1 is actively executing inside the transaction
+    await asyncio.wait_for(in_flight_event.wait(), timeout=1.0)
+    assert buf.qsize == 0  # Popped as in-flight batch
+
+    # Cancel worker while in-flight
+    worker.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await worker
+
+    # Verify session transaction rolled back
+    assert len(sm.active_sessions) == 1
+    session = sm.active_sessions[0]
+    assert session.rolled_back is True
+    assert session.committed is False
+
+    # Verify complete batch was requeued
+    assert buf.qsize == 2
+    assert FSIP_DB_BUFFERED_WRITES._value.get() == 2
+    assert buf.dropped_count == 0
+
+    # Clean up event
+    block_event.set()
+
+
+async def test_requeued_items_retain_original_fifo_order_after_cancellation():
+    """Verify uncommitted items requeued on cancellation retain their original FIFO order."""
+    in_flight_event = asyncio.Event()
+    block_event = asyncio.Event()
+    executed_order: list[int] = []
+
+    def make_op(item_id: int):
+        async def _op(session):
+            if item_id == 1 and not in_flight_event.is_set():
+                in_flight_event.set()
+                await block_event.wait()
+            executed_order.append(item_id)
+        return _op
+
+    sm = create_mock_sessionmaker()
+    # batch_size=2: items 1 & 2 will be in the in-flight batch; items 3, 4, 5 stay in queue
+    buf = WriteBuffer(sessionmaker=sm, batch_size=2, flush_interval=0.01)
+
+    for i in range(1, 6):
+        buf.submit(make_op(i), kind="order_test")
+
+    worker = asyncio.create_task(buf.run())
+    await asyncio.wait_for(in_flight_event.wait(), timeout=1.0)
+
+    # At this point, batch [1, 2] is in-flight, items [3, 4, 5] are in queue
+    assert buf.qsize == 3
+
+    # Cancel worker during in-flight execution of batch [1, 2]
+    worker.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await worker
+
+    # All 5 items must now be in queue, with items 1 & 2 prepended back to head
+    assert buf.qsize == 5
+
+    # Unblock the event so subsequent execution can proceed
+    block_event.set()
+
+    # Flush all remaining items in a single batch
+    committed = await buf.flush_once(max_batch=10)
+    assert committed == 5
+    assert buf.qsize == 0
+    # Strict original FIFO order [1, 2, 3, 4, 5] preserved!
+    assert executed_order == [1, 2, 3, 4, 5]
+
+
+async def test_cancellation_during_retry_backoff_preserves_queued_items():
+    """Verify worker cancellation during exponential backoff preserves all queued items."""
+    attempt_count = 0
+
+    class FailingOnceSessionmaker:
+        def __call__(self):
+            nonlocal attempt_count
+            attempt_count += 1
+            return MockAsyncSession(
+                should_fail=True,
+                fail_exc=ConnectionResetError("Connection reset by peer"),
+            )
+
+    buf = WriteBuffer(
+        sessionmaker=FailingOnceSessionmaker(),
+        batch_size=5,
+        base_backoff=5.0,  # Long backoff so worker stays sleeping
+        flush_interval=0.01,
+    )
+
+    buf.submit(lambda s: None, kind="backoff_test")
+    buf.submit(lambda s: None, kind="backoff_test")
+    assert buf.qsize == 2
+
+    worker = asyncio.create_task(buf.run())
+
+    # Wait until batch fails, requeues, and enters backoff
+    for _ in range(50):
+        if attempt_count >= 1 and buf.qsize == 2:
+            break
+        await asyncio.sleep(0.02)
+
+    assert attempt_count >= 1
+    assert buf.qsize == 2  # Items requeued by _handle_batch_failure
+
+    # Cancel worker while sleeping in backoff
+    worker.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await worker
+
+    # Items must NOT be duplicated or lost
+    assert buf.qsize == 2
+    assert FSIP_DB_BUFFERED_WRITES._value.get() == 2
+    assert buf.dropped_count == 0
+
+
+async def test_committed_batch_is_never_requeued_on_cancellation():
+    """Verify that a batch that has committed successfully is never requeued when cancelled."""
+    committed_ops: list[str] = []
+
+    async def op1(s):
+        committed_ops.append("op1")
+
+    sm = create_mock_sessionmaker()
+    buf = WriteBuffer(sessionmaker=sm, batch_size=10, flush_interval=0.01)
+
+    buf.submit(op1, kind="commit_test")
+    assert buf.qsize == 1
+
+    # Commit successfully via flush_once
+    committed = await buf.flush_once()
+    assert committed == 1
+    assert buf.qsize == 0
+    assert sm.active_sessions[0].committed is True
+
+    # Start worker and immediately cancel it
+    worker = asyncio.create_task(buf.run())
+    await asyncio.sleep(0.01)
+    worker.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await worker
+
+    # Queue remains 0, op1 is never requeued
+    assert buf.qsize == 0
+    assert FSIP_DB_BUFFERED_WRITES._value.get() == 0
+
+
+async def test_queue_depth_and_dropped_metrics_accuracy_under_cancellation():
+    """Verify Prometheus gauge and drop counter stay accurate across cancellation cycles."""
+    in_flight_event = asyncio.Event()
+
+    async def blocking_op(s):
+        in_flight_event.set()
+        await asyncio.Event().wait()  # Block indefinitely
+
+    sm = create_mock_sessionmaker()
+    buf = WriteBuffer(sessionmaker=sm, batch_size=10, flush_interval=0.01)
+
+    initial_dropped = FSIP_DB_DROPPED_WRITES.labels(kind="metric_cancel")._value.get()
+
+    buf.submit(blocking_op, kind="metric_cancel")
+    buf.submit(lambda s: None, kind="metric_cancel")
+    buf.submit(lambda s: None, kind="metric_cancel")
+
+    assert buf.qsize == 3
+    assert FSIP_DB_BUFFERED_WRITES._value.get() == 3
+
+    worker = asyncio.create_task(buf.run())
+    await asyncio.wait_for(in_flight_event.wait(), timeout=1.0)
+
+    # In flight: queue popped
+    assert buf.qsize == 0
+
+    # Cancel
+    worker.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await worker
+
+    # Requeued: queue gauge returns to 3, dropped writes counter unchanged
+    assert buf.qsize == 3
+    assert FSIP_DB_BUFFERED_WRITES._value.get() == 3
+    assert FSIP_DB_DROPPED_WRITES.labels(kind="metric_cancel")._value.get() == initial_dropped
+
+

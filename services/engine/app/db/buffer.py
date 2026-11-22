@@ -3,6 +3,26 @@
 Provides a bounded in-memory buffer and background worker for asynchronous
 database writes, preventing engine stall during database latency or transient
 outages. Follows 23_MODULE_SPECS.md §B8 and PHASE_02_PERSISTENCE_AND_API.md Task 2.3.
+
+Reliability & Poison-Pill Policy:
+- Connection errors (e.g. database unreachable, network timeouts, broken pipes)
+  are retried indefinitely with bounded exponential backoff and jitter. No writes
+  are discarded due to retry limits during a database outage.
+- Non-connection errors (e.g. invalid data, schema constraint violations) are
+  isolated: when a batch fails, the worker scales down to batch size 1 and retries
+  items individually to isolate bad payloads.
+- If an individual write fails repeatedly with a non-connection error for
+  `max_item_retries` attempts (default 5), it is classified as a poison pill,
+  logged via `log.error`, and discarded in-memory so valid writes can proceed.
+- Discarded writes are counted in the Prometheus metric `fsip_db_dropped_writes_total`.
+- Poison pills are NOT persisted to the database `quarantine` table (WriteBuffer
+  is an asynchronous transport buffer; attempting to write poison pills to the
+  failing database table risks deadlock or cascading failure).
+- Cancellation semantics: If the worker is cancelled while an in-flight batch is
+  executing, the database transaction rolls back automatically, uncommitted items
+  are requeued at the head of the queue preserving their original FIFO order and
+  retry attempt counts, `fsip_db_buffered_writes` is updated, and `CancelledError`
+  is re-raised. Successfully committed batches are never requeued.
 """
 from __future__ import annotations
 
@@ -209,13 +229,18 @@ class WriteBuffer:
             return 0
 
         self._in_flight += len(batch)
+        committed_flag = [False]
         try:
-            success = await self._process_batch(batch)
+            success = await self._process_batch(batch, committed_flag=committed_flag)
             if success:
                 return len(batch)
             else:
                 self._requeue(batch)
                 return 0
+        except asyncio.CancelledError:
+            if not committed_flag[0]:
+                self._requeue(batch)
+            raise
         finally:
             self._in_flight -= len(batch)
 
@@ -258,7 +283,17 @@ class WriteBuffer:
     # -------------------------------------------------------------------------
 
     async def run(self) -> None:
-        """Long-running worker loop that batches pending writes and commits transactions."""
+        """Long-running worker loop that batches pending writes and commits transactions.
+
+        Reliability guarantees:
+        - Connection errors are retried indefinitely with bounded exponential backoff.
+        - Non-connection errors isolate to batch size 1 and retry individually.
+        - Poison pills exceeding max_item_retries are logged and discarded in-memory.
+        - If cancelled while processing an in-flight batch, the transaction rolls back,
+          uncommitted items are requeued preserving FIFO ordering and retry counts,
+          and asyncio.CancelledError is re-raised. Successfully committed batches are
+          never requeued.
+        """
         self._running = True
         self._worker_task = asyncio.current_task()
         consecutive_failures = 0
@@ -296,14 +331,25 @@ class WriteBuffer:
                     continue
 
                 self._in_flight += len(batch)
+                in_flight_batch: list[WriteItem] | None = batch
+                committed_flag = [False]
                 try:
                     # 3. Execute batch inside a single atomic transaction
-                    success = await self._process_batch(batch)
+                    success = await self._process_batch(batch, committed_flag=committed_flag)
                     if success:
+                        in_flight_batch = None
                         consecutive_failures = 0
                     else:
                         consecutive_failures += 1
-                        await self._handle_batch_failure(batch, consecutive_failures)
+                        # Synchronously handle failures: isolate poison pills and requeue valid items
+                        self._handle_batch_failure(batch, consecutive_failures=consecutive_failures)
+                        in_flight_batch = None
+                        # Asynchronously back off before next retry attempt
+                        await self._backoff(consecutive_failures)
+                except asyncio.CancelledError:
+                    if not committed_flag[0] and in_flight_batch is not None:
+                        self._requeue(in_flight_batch)
+                    raise
                 finally:
                     self._in_flight -= len(batch)
 
@@ -333,7 +379,7 @@ class WriteBuffer:
         return batch
 
     def _requeue(self, batch: list[WriteItem]) -> None:
-        """Prepend failed batch back to head of queue preserving FIFO order."""
+        """Prepend batch back to head of queue preserving FIFO order."""
         with self._lock:
             for item in reversed(batch):
                 if len(self._queue) >= self.max_items:
@@ -347,14 +393,26 @@ class WriteBuffer:
                 else:
                     self._queue.appendleft(item)
             FSIP_DB_BUFFERED_WRITES.set(len(self._queue))
+        self._wake_event.set()
 
-    async def _process_batch(self, batch: list[WriteItem]) -> bool:
+    async def _process_batch(
+        self,
+        batch: list[WriteItem],
+        committed_flag: list[bool] | None = None,
+    ) -> bool:
         """Execute all writes in the batch within a single atomic transaction.
 
         If any write fails, rolls back the entire batch.
+        If cancelled, the transaction block automatically triggers a database rollback,
+        uncommitted retry counts are restored, and asyncio.CancelledError is re-raised.
         """
         if not batch:
+            if committed_flag is not None:
+                committed_flag[0] = True
             return True
+
+        # Snapshot attempt counts so cancellation does not penalize retry state
+        initial_attempts = [item.attempts for item in batch]
 
         try:
             async with self.sessionmaker() as session:
@@ -364,10 +422,20 @@ class WriteBuffer:
                         res = item.fn(session)
                         if inspect.isawaitable(res):
                             await res
+                # Transaction committed successfully upon exiting session.begin()
+                if committed_flag is not None:
+                    committed_flag[0] = True
 
             FSIP_DB_BATCHES_TOTAL.labels(status="committed").inc()
             log.debug("db.write_buffer.batch_committed", count=len(batch))
             return True
+        except asyncio.CancelledError:
+            # If cancelled before commit succeeded, restore each item's attempt count
+            # so cancellation does not count toward poison-pill failure limit.
+            if committed_flag is None or not committed_flag[0]:
+                for item, orig in zip(batch, initial_attempts, strict=True):
+                    item.attempts = orig
+            raise
         except Exception as exc:
             FSIP_DB_BATCHES_TOTAL.labels(status="rolled_back").inc()
             first_kind = batch[0].kind if batch else "unknown"
@@ -382,12 +450,24 @@ class WriteBuffer:
                 it.last_error = exc  # type: ignore[attr-defined]
             return False
 
-    async def _handle_batch_failure(
+    def _handle_batch_failure(
         self,
         batch: list[WriteItem],
-        consecutive_failures: int,
+        consecutive_failures: int = 1,
     ) -> None:
-        """Handle failed batch: isolate poison pills, requeue valid items, and back off."""
+        """Handle failed batch: isolate poison pills and requeue valid items.
+
+        Reliability & Isolation Policy:
+        - Connection errors are retried indefinitely with bounded exponential backoff.
+        - Non-connection errors (e.g. data validation, schema constraint violations)
+          are isolated to batch size 1 and retried individually.
+        - Permanently failing individual writes are logged via log.error and
+          discarded in-memory after max_item_retries (default 5).
+        - Discarded writes increment the fsip_db_dropped_writes_total metric.
+        - Discarded writes are NOT persisted to the database quarantine table
+          (WriteBuffer operates as a transport buffer below the application layer;
+          attempting DB writes to a failing database is unsafe).
+        """
         first_kind = batch[0].kind if batch else "unknown"
         FSIP_DB_RETRIES_TOTAL.labels(kind=first_kind).inc()
 
@@ -407,6 +487,7 @@ class WriteBuffer:
                     kind=item.kind,
                     attempts=item.attempts,
                     error=str(last_err),
+                    note="Discarded from buffer. Not persisted to DB quarantine table.",
                 )
             else:
                 items_to_requeue.append(item)
@@ -414,7 +495,8 @@ class WriteBuffer:
         if items_to_requeue:
             self._requeue(items_to_requeue)
 
-        # Compute bounded exponential backoff with jitter
+    async def _backoff(self, consecutive_failures: int) -> None:
+        """Compute bounded exponential backoff with jitter and sleep until next attempt or stop."""
         backoff = min(
             self.max_backoff,
             self.base_backoff * (2 ** (consecutive_failures - 1)),
@@ -426,7 +508,6 @@ class WriteBuffer:
             "db.write_buffer.backing_off",
             attempt=consecutive_failures,
             delay_s=round(sleep_s, 3),
-            requeued=len(items_to_requeue),
         )
 
         try:
