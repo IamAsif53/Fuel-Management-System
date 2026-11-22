@@ -22,7 +22,10 @@ from fsip_common.models import Instance
 # =============================================================================
 @pytest.mark.asyncio
 async def test_lifespan_starts_both_background_tasks():
-    with patch("app.main.SimClient") as mock_client_cls:
+    with (
+        patch("app.main.SimClient") as mock_client_cls,
+        patch("app.main.run_migrations", new_callable=AsyncMock) as mock_run_migrations,
+    ):
         mock_client = AsyncMock()
         mock_client_cls.return_value = mock_client
 
@@ -35,6 +38,7 @@ async def test_lifespan_starts_both_background_tasks():
             mock_sse_cls.return_value = mock_sse
 
             with TestClient(app) as client:
+                mock_run_migrations.assert_awaited()
                 assert hasattr(app.state, "sync_loop")
                 assert hasattr(app.state, "sse_listener")
                 assert len(app.state.tasks) == 2
@@ -154,7 +158,10 @@ async def test_crash_in_one_task_does_not_affect_the_other():
 # =============================================================================
 @pytest.mark.asyncio
 async def test_shutdown_cancels_and_awaits_both_tasks():
-    with patch("app.main.SimClient") as mock_client_cls:
+    with (
+        patch("app.main.SimClient") as mock_client_cls,
+        patch("app.main.run_migrations", new_callable=AsyncMock) as mock_run_migrations,
+    ):
         mock_client = AsyncMock()
         mock_client_cls.return_value = mock_client
 
@@ -167,6 +174,7 @@ async def test_shutdown_cancels_and_awaits_both_tasks():
             mock_sse_cls.return_value = mock_sse
 
             with TestClient(app):
+                mock_run_migrations.assert_awaited()
                 tasks = list(app.state.tasks)
                 assert len(tasks) == 2
                 assert not any(t.done() for t in tasks)
