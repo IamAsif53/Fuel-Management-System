@@ -68,7 +68,10 @@ async def test_supervised_restart_sync_loop_on_crash():
         _supervised_runner("sync", flaky_sync_loop, stop_event, initial_backoff=0.01, max_backoff=0.05)
     )
 
-    await asyncio.sleep(0.08)
+    t_deadline = time.monotonic() + 1.5
+    while time.monotonic() < t_deadline and call_count < 3:
+        await asyncio.sleep(0.01)
+
     stop_event.set()
     await task
 
@@ -95,7 +98,10 @@ async def test_supervised_restart_sse_listener_on_crash():
         _supervised_runner("sse", flaky_sse_listener, stop_event, initial_backoff=0.01, max_backoff=0.05)
     )
 
-    await asyncio.sleep(0.08)
+    t_deadline = time.monotonic() + 1.5
+    while time.monotonic() < t_deadline and call_count < 3:
+        await asyncio.sleep(0.01)
+
     stop_event.set()
     await task
 
@@ -130,7 +136,10 @@ async def test_crash_in_one_task_does_not_affect_the_other():
         _supervised_runner("sse", steady_sse, stop_event, initial_backoff=0.01)
     )
 
-    await asyncio.sleep(0.05)
+    t_deadline = time.monotonic() + 1.5
+    while time.monotonic() < t_deadline and sync_crashes < 2:
+        await asyncio.sleep(0.01)
+
     # Sync crashed multiple times
     assert sync_crashes >= 2
     # SSE remained steadily running without being cancelled
@@ -191,7 +200,10 @@ async def test_restart_metrics_increment():
         _supervised_runner("test_loop", crashing_loop, stop_event, initial_backoff=0.01)
     )
 
-    await asyncio.sleep(0.06)
+    t_deadline = time.monotonic() + 1.5
+    while time.monotonic() < t_deadline and call_count < 3:
+        await asyncio.sleep(0.01)
+
     stop_event.set()
     await task
 

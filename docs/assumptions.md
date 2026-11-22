@@ -25,11 +25,11 @@ This document records verified simulator semantics, operational assumptions, and
   - Strict validation: requires non-negative integers (`isinstance(int)`, `not bool`, `created_tick >= 0`, `transit_ticks >= 0`).
 
 ### Verification Evidence Status
-- **Finding A (Arrival Timing):** Verified via manual live simulator observation during Phase 00 planning (`02_SIMULATOR_FACTS.md` §3). Automated live verification in `test_sim_semantics.py` is written and ready, currently skipped pending live Docker daemon.
-- **Finding B (Mid-Transit Route Disruption):** Inferred from simulator specification (failure checked at departure moment). Automated live test written; live execution pending Docker.
-- **Finding C (Disruption at Creation vs. Departure):** Departure failure without refund verified via manual live simulator observation in Phase 00 (`02_SIMULATOR_FACTS.md` §3 line 113). Creation rejection (409 ROUTE_DISRUPTED) verified via API contract and unit tests; automated live test pending Docker.
-- **Finding D (Dispatch Cap Reset):** Per-tick dispatch cap verified via manual live simulator observation in Phase 00 (3000 + 6500 OK, +3000 PETROL -> 409). Cap reset on subsequent ticks verified by domain logic; automated live test pending Docker.
-- **Finding E (Live SSE Keepalive & Disconnect/Reconnect):** Watchdog reset on raw `: keepalive` comments and reconnect backoff verified via unit tests (`test_sse.py`); automated live test against real stream pending Docker.
+- **Finding A (Arrival Timing):** Verified via manual live simulator observation during Phase 00 planning (`02_SIMULATOR_FACTS.md` §3), unit-tested, and automated live verification in `test_sim_semantics.py::test_exact_arrival_timing_and_inventory_increase` PASSED against the live simulator container (`asifmahmoud414/bup-fuel-supply-simulator:1.0.0`).
+- **Finding B (Mid-Transit Route Disruption):** Verified via automated live test in `test_sim_semantics.py::test_mid_transit_route_disruption_does_not_fail_shipment` PASSED against live simulator container. Disruption mid-transit has zero negative impact; shipment arrived safely with `failure_reason = None`.
+- **Finding C (Disruption at Creation vs. Departure):** Both branches verified against live simulator container. `test_route_disruption_at_creation_rejected_with_409` PASSED (HTTP 409 `ROUTE_DISRUPTED`, zero depot inventory loss). `test_route_disruption_at_departure_fails_without_refund` PASSED (transitions to `FAILED` with `failure_reason = "ROUTE_UNAVAILABLE"` and no fuel refund).
+- **Finding D (Dispatch Cap Reset):** Verified via automated live test in `test_sim_semantics.py::test_dispatch_cap_resets_per_tick_after_departure` PASSED against live simulator container. Allocations departing at tick boundary transition to `IN_TRANSIT` and free the full depot dispatch cap for subsequent ticks.
+- **Finding E (Live SSE Keepalive & Disconnect/Reconnect):** Verified via automated live test in `test_sim_semantics.py::test_live_sse_stream_receives_ticks_and_keepalive` PASSED against live simulator container. Raw keepalives reset watchdog; `stream_disconnect` fault causes watchdog to trigger reconnection backoff and successfully reconnect once the fault clears.
 
 
 ### Station Inventory Capacity & Spillage

@@ -214,14 +214,19 @@ async def test_mid_transit_route_disruption_does_not_fail_shipment(sim: SimClien
         )
     )
 
-    # Verify route is now DISRUPTED
+    # 4. Advance through transit ticks
+    # Step 2: tick t0 + 2 -> event becomes ACTIVE, route is DISRUPTED, shipment is still IN_TRANSIT
+    await sim.admin_step()
     routes_res = await sim.routes()
     route = next(r for r in routes_res.data if r["id"] == "route-gazipur-mirpur")
     assert route["status"] == "DISRUPTED"
 
-    # 4. Advance through remaining transit ticks
-    await sim.admin_step()  # tick t0 + 2
-    await sim.admin_step()  # tick t0 + 3
+    allocs2 = await sim.allocations()
+    a2 = next(a for a in allocs2.data if a["id"] == alloc_id)
+    assert a2["status"] == "IN_TRANSIT"
+
+    # Step 3: tick t0 + 3 -> shipment arrives despite route disruption
+    await sim.admin_step()
 
     # 5. Verify the shipment arrived safely despite route disruption
     allocs3 = await sim.allocations()
@@ -238,7 +243,7 @@ async def test_route_disruption_at_creation_rejected_with_409(sim: SimClient) ->
     inst_res = await sim.instance()
     t0 = inst_res.data["tick"]
 
-    # Inject disruption on route-gazipur-mirpur
+    # Inject disruption on route-gazipur-mirpur starting at t0
     await sim.admin_events_create(
         EventCreate(
             type="route_disruption",
@@ -248,14 +253,23 @@ async def test_route_disruption_at_creation_rejected_with_409(sim: SimClient) ->
         )
     )
 
+    # Step to activate the scheduled disruption
+    await sim.admin_step()
+    t_active = (await sim.instance()).data["tick"]
+
+    # Verify route is now actively DISRUPTED
+    routes_res = await sim.routes()
+    route = next(r for r in routes_res.data if r["id"] == "route-gazipur-mirpur")
+    assert route["status"] == "DISRUPTED"
+
     # Initial depot inventory
     depots_res = await sim.depots()
     gazipur_before = next(d for d in depots_res.data if d["id"] == "depot-gazipur")
     diesel_before = float(gazipur_before["inventory"]["DIESEL"])
 
-    # Attempt allocation
+    # Attempt allocation on actively DISRUPTED route
     req = AllocationRequest(
-        idempotency_key=f"sem-disrupt-creation-{t0}",
+        idempotency_key=f"sem-disrupt-creation-{t_active}",
         source_depot_id="depot-gazipur",
         destination_station_id="station-mirpur",
         route_id="route-gazipur-mirpur",
@@ -335,47 +349,59 @@ async def test_dispatch_cap_resets_per_tick_after_departure(sim: SimClient) -> N
     inst_res = await sim.instance()
     t0 = inst_res.data["tick"]
 
-    # depot-gazipur dispatch capacity is 12,000L per tick
-    # 1. Allocate 7,000L on gazipur-mirpur at tick t0
+    # depot-gazipur dispatch capacity is 12,000L per tick.
+    # Station-mirpur starts with 9000L DIESEL (capacity 15000L, room 6000L).
+    # 1. Allocate 5,000L to mirpur + 5,000L to tongi at tick t0 (total 10,000L <= 12,000L)
     req1 = AllocationRequest(
         idempotency_key=f"sem-cap-1-{t0}",
         source_depot_id="depot-gazipur",
         destination_station_id="station-mirpur",
         route_id="route-gazipur-mirpur",
         fuel_type="DIESEL",
-        quantity=7000.0,
+        quantity=5000.0,
     )
     res1 = await sim.create_allocation(req1)
     assert res1.status == 201
 
-    # 2. Attempting to allocate 6,000L in the same tick t0 exceeds cap (7000 + 6000 = 13000 > 12000)
-    req_excess = AllocationRequest(
-        idempotency_key=f"sem-cap-excess-{t0}",
-        source_depot_id="depot-gazipur",
-        destination_station_id="station-tongi",
-        route_id="route-gazipur-tongi",
-        fuel_type="PETROL",
-        quantity=6000.0,
-    )
-    with pytest.raises(SimDomainError) as exc_info:
-        await sim.create_allocation(req_excess)
-    assert exc_info.value.code == "DISPATCH_CAPACITY_EXCEEDED"
-
-    # 3. Advance to tick t0 + 1: req1 departs to IN_TRANSIT
-    await sim.admin_step()
-
-    # 4. At tick t0 + 1, full 12,000L dispatch capacity is available again
     req2 = AllocationRequest(
         idempotency_key=f"sem-cap-2-{t0}",
         source_depot_id="depot-gazipur",
         destination_station_id="station-tongi",
         route_id="route-gazipur-tongi",
-        fuel_type="PETROL",
-        quantity=6000.0,
+        fuel_type="DIESEL",
+        quantity=5000.0,
     )
     res2 = await sim.create_allocation(req2)
     assert res2.status == 201
-    assert res2.data["status"] == "PENDING"
+
+    # 2. Attempting to allocate another 3,000L in the same tick t0 exceeds cap (10000 + 3000 = 13000 > 12000)
+    req_excess = AllocationRequest(
+        idempotency_key=f"sem-cap-excess-{t0}",
+        source_depot_id="depot-gazipur",
+        destination_station_id="station-mirpur",
+        route_id="route-gazipur-mirpur",
+        fuel_type="PETROL",
+        quantity=3000.0,
+    )
+    with pytest.raises(SimDomainError) as exc_info:
+        await sim.create_allocation(req_excess)
+    assert exc_info.value.code == "DISPATCH_CAPACITY_EXCEEDED"
+
+    # 3. Advance to tick t0 + 1: req1 and req2 depart to IN_TRANSIT
+    await sim.admin_step()
+
+    # 4. At tick t0 + 1, full 12,000L dispatch capacity is available again
+    req_fresh = AllocationRequest(
+        idempotency_key=f"sem-cap-fresh-{t0}",
+        source_depot_id="depot-gazipur",
+        destination_station_id="station-tongi",
+        route_id="route-gazipur-tongi",
+        fuel_type="PETROL",
+        quantity=2500.0,
+    )
+    res_fresh = await sim.create_allocation(req_fresh)
+    assert res_fresh.status == 201
+    assert res_fresh.data["status"] == "PENDING"
 
 
 # -----------------------------------------------------------------------------
@@ -392,12 +418,12 @@ async def test_live_sse_stream_receives_ticks_and_keepalive(sim: SimClient) -> N
     async def on_connect() -> None:
         connected_event.set()
 
-    # Short inactivity timeout (e.g. 5s) to test live stream liveliness
+    # Use inactivity_timeout=1.5s so watchdog timeout under injected fault triggers quickly
     listener = SSEListener(
         base_url=SIM_BASE_URL,
         on_tick=on_tick,
         on_connect=on_connect,
-        inactivity_timeout=10.0,
+        inactivity_timeout=1.5,
     )
 
     listener_task = asyncio.create_task(listener.run())
@@ -417,9 +443,10 @@ async def test_live_sse_stream_receives_ticks_and_keepalive(sim: SimClient) -> N
 
         assert target_tick in ticks_received
 
-        # Test stream_disconnect fault injection
+        # Test stream_disconnect fault injection (2 seconds)
         await sim.admin_faults_create(FaultCreate(type="stream_disconnect", duration_seconds=2))
-        await asyncio.sleep(1.0)
+        # Watchdog timeout is 1.5s; sleeping 2.0s ensures watchdog detects silence and reconnects
+        await asyncio.sleep(2.0)
         assert listener.reconnects >= 1 or not listener.connected
 
         # Clear fault and verify automatic reconnection

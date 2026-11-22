@@ -6,7 +6,7 @@ Format for notes: `- [x] 1.3 SimClient done. Note: <deviation or measured result
 | Phase | Status (TODO / IN PROGRESS / DONE) | Acceptance passed | Notes |
 |---:|---|---|---|
 | 00 | DONE | 33 Python tests (100%) + 5 Vitest tests + Vite build + Ruff clean + full Docker Compose stack running healthy (7/7 services) + live smoke test passed (SMOKE OK, overall Healthy) | Complete end-to-end verification verified on host Docker |
-| 01 | DONE | Tasks 1.1–1.10 complete (222 unit tests passed: 99 common, 119 engine, 3 api, 1 intel; 6 integration tests in test_sim_semantics.py; Ruff clean) | All Phase 01 unit tests complete; simulator semantics verified & documented; ready for Phase 02 |
+| 01 | DONE | Tasks 1.1–1.10 complete (228 tests passed: 99 common, 125 engine [including all 6 live integration tests against simulator container], 3 api, 1 intel; Ruff clean) | All Phase 01 unit & live integration tests complete; simulator semantics verified against live simulator; ready for Phase 02 |
 
 | 02 | TODO | | |
 | 03 | TODO | | |
@@ -36,11 +36,11 @@ Deadline: **Thu 2026-11-26**. Feature freeze: Wed 2026-11-25 18:00.
 | 1 | 2026-11-19 | D0 | | docs/progress/2026-11-19.md |
 
 ## Verified simulator semantics (fill in during phase 01, task 1.9)
-- Arrival timing (created T, transit k): departure_tick = T, expected_arrival_tick = T+k (T=0, k=2 → expected 2, inventory up at instance tick 3). Implemented `expected_arrival_tick(created_tick, transit_ticks)` in `fsip_common.timeutil`. Evidence: manual live observation (Phase 00) + unit-tested; automated live test in `test_sim_semantics.py` ready (skipped while Docker offline).
-- Mid-transit route disruption effect: NO effect on shipments already IN_TRANSIT. Route check occurs strictly at departure; once in transit, shipments complete and deliver fuel normally. Evidence: inferred from simulator spec; automated live test in `test_sim_semantics.py` ready (skipped while Docker offline).
-- Route disrupted at creation → rejected with HTTP 409 ROUTE_DISRUPTED (no depot inventory loss); at departure → transitions to FAILED (ROUTE_UNAVAILABLE) without refund (fuel lost). Evidence: departure failure without refund observed live in Phase 00; creation rejection unit-tested; automated live test ready.
-- Dispatch cap counts PENDING from the previous tick? NO. Once departed to IN_TRANSIT at tick boundary, previous allocations do not count against the next tick's dispatch cap. Full dispatch_capacity_per_tick resets every tick. Evidence: per-tick cap observed live in Phase 00; tick reset verified via domain model; automated live test ready.
-- Live SSE stream & keepalives: `: keepalive` raw comments reset the 30s inactivity watchdog; `stream_disconnect` fault causes fallback to polling `/v1/instance` and reconnects on recovery. Evidence: unit-tested via `test_sse.py`; automated live test ready.
+- Arrival timing (created T, transit k): departure_tick = T, expected_arrival_tick = T+k (T=0, k=2 → expected 2, inventory up at instance tick 3). Implemented `expected_arrival_tick(created_tick, transit_ticks)` in `fsip_common.timeutil`. Evidence: manual live observation (Phase 00) + unit-tested + automated live integration test in `test_sim_semantics.py` PASSED on live simulator container (`asifmahmoud414/bup-fuel-supply-simulator:1.0.0`).
+- Mid-transit route disruption effect: NO effect on shipments already IN_TRANSIT. Route check occurs strictly at departure; once in transit, shipments complete and deliver fuel normally. Evidence: automated live integration test in `test_sim_semantics.py` PASSED on live simulator (shipment stayed IN_TRANSIT and arrived cleanly with `failure_reason=None`).
+- Route disrupted at creation → rejected with HTTP 409 ROUTE_DISRUPTED (no depot inventory loss); at departure → transitions to FAILED (ROUTE_UNAVAILABLE) without refund (fuel lost). Evidence: automated live integration test in `test_sim_semantics.py` PASSED on live simulator (departure failure without refund and creation 409 both confirmed).
+- Dispatch cap counts PENDING from the previous tick? NO. Once departed to IN_TRANSIT at tick boundary, previous allocations do not count against the next tick's dispatch cap. Full dispatch_capacity_per_tick resets every tick. Evidence: automated live integration test in `test_sim_semantics.py` PASSED on live simulator (tick reset verified with 5000L+5000L, 3000L rejected with 409, then 2500L accepted next tick).
+- Live SSE stream & keepalives: `: keepalive` raw comments reset the inactivity watchdog; `stream_disconnect` fault causes watchdog to trigger reconnect backoff, and reconnects automatically upon recovery. Evidence: unit-tested via `test_sse.py` + automated live integration test in `test_sim_semantics.py` PASSED on real simulator SSE stream.
 
 
 
