@@ -26,6 +26,7 @@ from app.db.session import get_sessionmaker, run_migrations
 from app.sim.circuit import CircuitBreaker
 from app.sim.client import SimClient
 from app.sim.sse import SSEListener
+from app.state.publisher import Publisher
 from app.state.store import WorldState
 from app.state.sync import FSIP_LOOP_RESTARTS, SyncLoop
 
@@ -101,12 +102,17 @@ async def lifespan(app: FastAPI):
     write_buffer = WriteBuffer(sessionmaker=sessionmaker)
     app.state.write_buffer = write_buffer
 
+    # Initialize Redis publisher
+    publisher = Publisher(redis_url=s.redis_url)
+    app.state.publisher = publisher
+
     # Initialize SyncLoop and SSEListener
     sync_loop = SyncLoop(
         client=client,
         store=store,
         poll_interval=s.engine_poll_interval_sec,
         write_buffer=write_buffer,
+        publisher=publisher,
     )
     sse_listener = SSEListener(
         base_url=s.sim_base_url,
@@ -171,6 +177,7 @@ async def lifespan(app: FastAPI):
 
     await asyncio.gather(sync_task, sse_task, buffer_task, return_exceptions=True)
     await client.close()
+    await publisher.close()
     log.info("engine.stop")
 
 

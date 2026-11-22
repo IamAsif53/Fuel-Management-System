@@ -25,6 +25,7 @@ from app.db.buffer import WriteBuffer
 from app.sim.client import SimClient, SimInvalidPayload
 from app.sim.validation import validate_resource
 from app.state.persistence import StatePersistence
+from app.state.publisher import Publisher
 from app.state.store import WorldState
 
 log = get_logger()
@@ -68,12 +69,14 @@ class SyncLoop:
         hooks: list[Callable[[WorldState], Awaitable[None]]] | None = None,
         poll_interval: float = 1.0,
         write_buffer: WriteBuffer | None = None,
+        publisher: Publisher | None = None,
     ) -> None:
         self.client = client
         self.store = store
         self.hooks: list[Callable[[WorldState], Awaitable[None]]] = list(hooks or [])
         self.poll_interval = poll_interval
         self.write_buffer = write_buffer
+        self.publisher = publisher
         self.persistence: StatePersistence | None = (
             StatePersistence(write_buffer) if write_buffer is not None else None
         )
@@ -263,6 +266,10 @@ class SyncLoop:
         # Asynchronously enqueue persistence via WriteBuffer
         if self.persistence is not None:
             self.persistence.persist_cycle(self.store, demand_items=demand_items)
+
+        # Publish state to Redis
+        if self.publisher is not None:
+            await self.publisher.publish_state(self.store)
 
         # Update metrics
         current_sim_tick = self.last_tick or (self.store.tick if self.store.instance else 0)
