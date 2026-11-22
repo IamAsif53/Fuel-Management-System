@@ -11,6 +11,7 @@ from .client import (
     SimValidationError,
     parse_error,
 )
+from .sse import FSIP_SSE_CONNECTED, FSIP_SSE_RECONNECTS, SSEListener
 from .validation import (
     FSIP_SIM_INVALID_RESPONSES,
     ValidatedSnapshot,
@@ -23,6 +24,9 @@ __all__ = [
     "CircuitBreaker",
     "CircuitOpenError",
     "FSIP_SIM_INVALID_RESPONSES",
+    "FSIP_SSE_CONNECTED",
+    "FSIP_SSE_RECONNECTS",
+    "SSEListener",
     "SimClient",
     "SimDomainError",
     "SimError",
