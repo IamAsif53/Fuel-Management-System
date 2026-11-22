@@ -21,8 +21,10 @@ from fsip_common.logging import get_logger
 from fsip_common.models import Instance
 from prometheus_client import REGISTRY, Counter, Gauge, Histogram
 
+from app.db.buffer import WriteBuffer
 from app.sim.client import SimClient, SimInvalidPayload
 from app.sim.validation import validate_resource
+from app.state.persistence import StatePersistence
 from app.state.store import WorldState
 
 log = get_logger()
@@ -65,11 +67,16 @@ class SyncLoop:
         store: WorldState,
         hooks: list[Callable[[WorldState], Awaitable[None]]] | None = None,
         poll_interval: float = 1.0,
+        write_buffer: WriteBuffer | None = None,
     ) -> None:
         self.client = client
         self.store = store
         self.hooks: list[Callable[[WorldState], Awaitable[None]]] = list(hooks or [])
         self.poll_interval = poll_interval
+        self.write_buffer = write_buffer
+        self.persistence: StatePersistence | None = (
+            StatePersistence(write_buffer) if write_buffer is not None else None
+        )
 
         self.last_tick: int | None = store.tick if store.instance is not None else None
         self._is_running: bool = False
@@ -95,7 +102,7 @@ class SyncLoop:
         """Handle simulator reset condition.
 
         Increments sim_run_id, clears cached store resources, resets last_tick,
-        and logs reset.detected.
+        closes the active database simulation run, and logs reset.detected.
         """
         old_run = self.store.sim_run_id
         new_run = old_run + 1
@@ -106,6 +113,8 @@ class SyncLoop:
             old_tick=self.last_tick,
             new_tick=new_tick,
         )
+        if self.persistence is not None:
+            self.persistence.handle_reset(old_tick=self.last_tick, new_tick=new_tick)
         self.store.reset(new_sim_run_id=new_run)
         self.last_tick = new_tick
 
@@ -250,6 +259,10 @@ class SyncLoop:
             self.store.degraded_reasons.discard("demand_failed")
         elif demand_failed:
             self.store.degraded_reasons.add("demand_failed")
+
+        # Asynchronously enqueue persistence via WriteBuffer
+        if self.persistence is not None:
+            self.persistence.persist_cycle(self.store, demand_items=demand_items)
 
         # Update metrics
         current_sim_tick = self.last_tick or (self.store.tick if self.store.instance else 0)

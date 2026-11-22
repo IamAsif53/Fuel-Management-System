@@ -21,7 +21,8 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from fsip_common.logging import configure_logging, get_logger
 from prometheus_client import Counter, Gauge, make_asgi_app
 
-from app.db.session import run_migrations
+from app.db.buffer import WriteBuffer
+from app.db.session import get_sessionmaker, run_migrations
 from app.sim.circuit import CircuitBreaker
 from app.sim.client import SimClient
 from app.sim.sse import SSEListener
@@ -95,11 +96,17 @@ async def lifespan(app: FastAPI):
         breaker=breaker,
     )
 
+    # Initialize WriteBuffer for asynchronous DB persistence
+    sessionmaker = get_sessionmaker()
+    write_buffer = WriteBuffer(sessionmaker=sessionmaker)
+    app.state.write_buffer = write_buffer
+
     # Initialize SyncLoop and SSEListener
     sync_loop = SyncLoop(
         client=client,
         store=store,
         poll_interval=s.engine_poll_interval_sec,
+        write_buffer=write_buffer,
     )
     sse_listener = SSEListener(
         base_url=s.sim_base_url,
@@ -107,7 +114,6 @@ async def lifespan(app: FastAPI):
         on_notice=sync_loop.on_notice,
         on_connect=sync_loop.full_sync,
     )
-
 
     # Attach to app.state
     app.state.store = store
@@ -143,7 +149,12 @@ async def lifespan(app: FastAPI):
         _supervised_runner("sse", sse_listener.run, stop_event),
         name="supervised-sse-listener",
     )
+    buffer_task = asyncio.create_task(
+        _supervised_runner("write_buffer", write_buffer.run, stop_event),
+        name="supervised-write-buffer",
+    )
     app.state.tasks = [sync_task, sse_task]
+    app.state.buffer_task = buffer_task
 
     yield
 
@@ -152,12 +163,13 @@ async def lifespan(app: FastAPI):
     stop_event.set()
     sync_loop.stop()
     sse_listener.stop()
+    await write_buffer.stop(timeout=5.0, task=buffer_task)
 
-    for task in [sync_task, sse_task]:
+    for task in [sync_task, sse_task, buffer_task]:
         if not task.done():
             task.cancel()
 
-    await asyncio.gather(sync_task, sse_task, return_exceptions=True)
+    await asyncio.gather(sync_task, sse_task, buffer_task, return_exceptions=True)
     await client.close()
     log.info("engine.stop")
 
