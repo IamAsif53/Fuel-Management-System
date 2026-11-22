@@ -1,38 +1,90 @@
-"""Operator API (phase-00 skeleton). Routers are added per 21_API_CONTRACTS.md (state, stream, risk, alerts,
-recommendations, decisions, system, whatif, assistant, control, auth, ledger, replay...)."""
+"""Operator API Service for BUP Fuel Supply Intelligence & Resilience Platform.
+
+Serves /api/state, /api/stream, /api/stations/{id}, /api/depots/{id}, /api/system/status,
+with Redis state caching, TimescaleDB fallback, SSE streaming replay, and rate limiting.
+"""
 from __future__ import annotations
 
-import asyncio
-import os
 import time
 from contextlib import asynccontextmanager
 
 import httpx
 import redis.asyncio as aioredis
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fsip_common.logging import configure_logging, get_logger
-from fsip_common.settings import BaseServiceSettings
-from prometheus_client import Counter, Histogram, make_asgi_app
+from prometheus_client import REGISTRY, Counter, Histogram, make_asgi_app
+
+from app.config import get_settings
+from app.db import check_db_health, close_db
+from app.metrics_tracker import tracker
+from app.middleware.ratelimit import RateLimitMiddleware
+from app.routers import (
+    entities_router,
+    state_router,
+    stream_router,
+    system_router,
+)
 
 log = get_logger()
-settings = BaseServiceSettings()
-REQS = Counter("http_requests_total", "HTTP requests", ["service", "route", "method", "status"])
-LAT = Histogram("http_request_duration_seconds", "HTTP latency", ["service", "route"],
-                buckets=(.005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5))
+
+# ---------------------------------------------------------------- Prometheus Metrics
+try:
+    REQS = Counter("http_requests_total", "HTTP requests", ["service", "route", "method", "status"])
+except ValueError:
+    REQS = REGISTRY._names_to_collectors.get("http_requests_total")  # type: ignore[assignment]
+
+try:
+    LAT = Histogram(
+        "http_request_duration_seconds",
+        "HTTP latency",
+        ["service", "route"],
+        buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5),
+    )
+except ValueError:
+    LAT = REGISTRY._names_to_collectors.get("http_request_duration_seconds")  # type: ignore[assignment]
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    settings = get_settings()
     configure_logging("api", settings.log_level)
-    app.state.redis = aioredis.from_url(settings.redis_url, socket_timeout=1, socket_connect_timeout=1)
+    app.state.redis = aioredis.from_url(
+        settings.redis_url,
+        decode_responses=True,
+        socket_timeout=1,
+        socket_connect_timeout=1,
+    )
     app.state.http = httpx.AsyncClient(timeout=1.5)
     yield
     await app.state.http.aclose()
     await app.state.redis.aclose()
+    await close_db()
 
 
-app = FastAPI(title="fsip-api", version="0.1.0", lifespan=lifespan, docs_url="/api/docs",
-              openapi_url="/api/openapi.json")
+app = FastAPI(
+    title="fsip-api",
+    version="0.1.0",
+    lifespan=lifespan,
+    docs_url="/api/docs",
+    openapi_url="/api/openapi.json",
+)
+
+# CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Rate limiting
+app.add_middleware(RateLimitMiddleware)
+
+# Prometheus metrics
 app.mount("/metrics", make_asgi_app())
 
 
@@ -40,14 +92,41 @@ app.mount("/metrics", make_asgi_app())
 async def metrics_mw(request: Request, call_next):
     t0 = time.perf_counter()
     response = await call_next(request)
+    duration = time.perf_counter() - t0
+    lat_ms = duration * 1000.0
+
     route = request.scope.get("route")
-    path = getattr(route, "path", "unmatched")          # route template -> low cardinality
+    path = getattr(route, "path", "unmatched")  # route template -> low cardinality
     if not path.startswith("/metrics"):
-        REQS.labels("api", path, request.method, str(response.status_code)).inc()
-        LAT.labels("api", path).observe(time.perf_counter() - t0)
+        if REQS is not None:
+            REQS.labels("api", path, request.method, str(response.status_code)).inc()
+        if LAT is not None:
+            LAT.labels("api", path).observe(duration)
+        tracker.record(lat_ms, response.status_code >= 500)
     return response
 
 
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    """Ensure all HTTP exceptions adhere to standardized detail code and message structure."""
+    if isinstance(exc.detail, dict) and "code" in exc.detail:
+        detail = exc.detail
+    else:
+        detail = {"code": "HTTP_ERROR", "message": str(exc.detail)}
+    return JSONResponse(status_code=exc.status_code, content={"detail": detail}, headers=exc.headers)
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    detail = {
+        "code": "VALIDATION_ERROR",
+        "message": "Invalid request parameters",
+        "errors": exc.errors(),
+    }
+    return JSONResponse(status_code=422, content={"detail": detail})
+
+
+# ---------------------------------------------------------------- Core Health Endpoints
 @app.get("/health/live")
 async def live():
     return {"status": "ok", "service": "api"}
@@ -55,49 +134,32 @@ async def live():
 
 @app.get("/health/ready")
 async def ready():
+    """Readiness probe checking Redis and Database."""
+    redis_ok = False
     try:
-        await app.state.redis.ping()
-        return {"status": "ready", "redis": "UP"}
-    except Exception:  # noqa: BLE001
-        # still serve (DB fallback in phase 02), but report degraded
-        return {"status": "degraded", "redis": "DOWN"}
+        redis_client = getattr(app.state, "redis", None)
+        if redis_client is not None:
+            await redis_client.ping()
+            redis_ok = True
+    except Exception:
+        redis_ok = False
 
+    db_ok = await check_db_health()
 
-@app.get("/api/ping")
-async def ping():
-    return {"pong": True, "version": os.getenv("APP_VERSION", "dev")}
+    if redis_ok:
+        return {"status": "ready", "redis": "UP", "database": "UP" if db_ok else "DOWN"}
+    if db_ok:
+        # Fallback to database available -> degraded ready
+        return {"status": "degraded", "redis": "DOWN", "database": "UP"}
 
-
-async def _probe(name: str, url: str) -> tuple[str, dict]:
-    t0 = time.perf_counter()
-    try:
-        r = await app.state.http.get(url)
-        ok = r.status_code == 200
-        lat = round((time.perf_counter() - t0) * 1000, 1)
-        return name, {"status": "Healthy" if ok else "Degraded", "latency_ms": lat}
-    except Exception as e:  # noqa: BLE001
-        return name, {"status": "Down", "error": type(e).__name__}
-
-
-@app.get("/api/system/status")
-async def system_status():
-    """Phase-00 version: probes components directly. Phase 02/10 extends it to the full shape in 21_API_CONTRACTS.md."""
-    probes = await asyncio.gather(
-        _probe("decision_engine", f"{settings.engine_internal_url}/health/ready"),
-        _probe("prediction_service", f"{settings.intelligence_url}/health/ready"),
-        _probe("fuel_simulator", f"{settings.sim_base_url}/v1/health"),
+    return JSONResponse(
+        status_code=503,
+        content={"status": "down", "redis": "DOWN", "database": "DOWN"},
     )
-    comps = dict(probes)
-    try:
-        await app.state.redis.ping()
-        comps["redis"] = {"status": "Healthy"}
-    except Exception:  # noqa: BLE001
-        comps["redis"] = {"status": "Down"}
-    comps["backend_api"] = {"status": "Healthy"}
-    worst = "Healthy"
-    if any(c["status"] == "Down" for c in comps.values()):
-        worst = "Down" if comps["fuel_simulator"]["status"] == "Down" else "Degraded"
-    elif any(c["status"] == "Degraded" for c in comps.values()):
-        worst = "Degraded"
-    return {"overall": worst, "components": comps,
-            "versions": {"api": os.getenv("APP_VERSION", "dev"), "git_sha": os.getenv("GIT_SHA", "unknown")}}
+
+
+# Include Routers
+app.include_router(state_router)
+app.include_router(stream_router)
+app.include_router(entities_router)
+app.include_router(system_router)
