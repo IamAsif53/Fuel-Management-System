@@ -324,7 +324,7 @@ class WorldState:
 
         # Handle demand observations if provided
         dem_data = demand_rows or data.get("demand") or data.get("demand_history")
-        if dem_data:
+        if dem_data and not isinstance(dem_data, Exception):
             self.apply_demand(dem_data)
 
     def apply(self, partial: dict[str, Any | Exception], tick: int | None = None) -> None:
@@ -332,6 +332,30 @@ class WorldState:
         self.apply_snapshot(partial=partial)
         if tick is not None and self.instance is not None:
             self.instance.tick = tick
+
+    def reset(self, new_sim_run_id: int | None = None) -> None:
+        """Clear simulator state resources for a new simulation run."""
+        if new_sim_run_id is not None:
+            self.sim_run_id = new_sim_run_id
+        else:
+            self.sim_run_id += 1
+        self.instance = None
+        self.regions.clear()
+        self.depots.clear()
+        self.stations.clear()
+        self.routes.clear()
+        self.events.clear()
+        self.supply.clear()
+        self.allocations.clear()
+        self.metrics = None
+        self.demand_rows.clear()
+        self._demand_seen_ids.clear()
+        self.last_good_at.clear()
+        self.stale = False
+        self.degraded_reasons.clear()
+        self.risk.clear()
+        self.pending.clear()
+        self.bottleneck = None
 
     # ---------------------------------------------------------------- Public JSON Projection
     def to_public_json(self) -> dict[str, Any]:
