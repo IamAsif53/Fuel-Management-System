@@ -44,8 +44,15 @@ async def get_station_detail(
     snapshots = await fetch_recent_snapshots(session, limit=history_ticks)
     history: list[dict[str, Any]] = []
     for snap in snapshots:
-        st_list = _parse_json_field(snap.get("stations")) or []
-        st_match = next((s for s in st_list if s.get("id") == station_id), None)
+        raw_st = _parse_json_field(snap.get("stations"))
+        if isinstance(raw_st, dict):
+            st_list = list(raw_st.values())
+        elif isinstance(raw_st, list):
+            st_list = raw_st
+        else:
+            st_list = []
+
+        st_match = next((s for s in st_list if isinstance(s, dict) and s.get("id") == station_id), None)
         if st_match:
             history.append({
                 "tick": snap.get("tick", 0),
@@ -90,8 +97,15 @@ async def get_depot_detail(
     snapshots = await fetch_recent_snapshots(session, limit=history_ticks)
     history: list[dict[str, Any]] = []
     for snap in snapshots:
-        dp_list = _parse_json_field(snap.get("depots")) or []
-        dp_match = next((d for d in dp_list if d.get("id") == depot_id), None)
+        raw_dp = _parse_json_field(snap.get("depots"))
+        if isinstance(raw_dp, dict):
+            dp_list = list(raw_dp.values())
+        elif isinstance(raw_dp, list):
+            dp_list = raw_dp
+        else:
+            dp_list = []
+
+        dp_match = next((d for d in dp_list if isinstance(d, dict) and d.get("id") == depot_id), None)
         if dp_match:
             history.append({
                 "tick": snap.get("tick", 0),

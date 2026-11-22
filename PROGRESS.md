@@ -8,7 +8,7 @@ Format for notes: `- [x] 1.3 SimClient done. Note: <deviation or measured result
 | 00 | DONE | 33 Python tests (100%) + 5 Vitest tests + Vite build + Ruff clean + full Docker Compose stack running healthy (7/7 services) + live smoke test passed (SMOKE OK, overall Healthy) | Complete end-to-end verification verified on host Docker |
 | 01 | DONE | Tasks 1.1–1.10 complete (228 tests passed: 99 common, 125 engine [including all 6 live integration tests against simulator container], 3 api, 1 intel; Ruff clean) | All Phase 01 unit & live integration tests complete; simulator semantics verified against live simulator; ready for Phase 02 |
 
-| 02 | IN PROGRESS | Tasks 2.1–2.4 complete (28 DB unit & migration tests, 11 async repo tests, 17 write buffer tests, 14 sync persistence tests covering run lifecycle, snapshot persistence, demand deduplication, reset handling, outage resilience, & live TimescaleDB; total 298 tests passing across repo: 195 engine, 99 common, 3 api, 1 intel; Ruff clean; live smoke test OK) | Persistence models, migrations, async repository, async write buffer, and sync loop persistence wired |
+| 02 | DONE | Tasks 2.1–2.8 complete (324 tests passed across repo: 201 engine, 99 common, 23 api, 1 intel; Ruff clean; live TimescaleDB, Redis publisher, and API endpoints verified against Docker stack) | Phase 02 persistence, Redis snapshot, core API, and acceptance complete |
 | 03 | TODO | | |
 | 04 | TODO | | |
 | 05 | TODO | | |
@@ -62,7 +62,7 @@ Deadline: **Thu 2026-11-26**. Feature freeze: Wed 2026-11-25 18:00.
 - [x] 1.1  - [x] 1.2  - [x] 1.3  - [x] 1.4  - [x] 1.5  - [x] 1.6  - [x] 1.7  - [x] 1.8  - [x] 1.9  - [x] 1.10
 
 ### Phase 02
-- [x] 2.1  - [x] 2.2  - [x] 2.3  - [x] 2.4  - [x] 2.5  - [x] 2.6  - [x] 2.7  - [ ] 2.8
+- [x] 2.1  - [x] 2.2  - [x] 2.3  - [x] 2.4  - [x] 2.5  - [x] 2.6  - [x] 2.7  - [x] 2.8
 ### Phase 03
 - [ ] 3.1  - [ ] 3.2  - [ ] 3.3  - [ ] 3.4  - [ ] 3.5  - [ ] 3.6  - [ ] 3.7  - [ ] 3.8
 ### Phase 04
