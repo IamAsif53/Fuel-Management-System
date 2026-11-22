@@ -109,6 +109,15 @@ class SyncLoop:
         self.store.reset(new_sim_run_id=new_run)
         self.last_tick = new_tick
 
+    async def on_notice(self, payload: dict[str, Any]) -> None:
+        """Handle simulator.notice SSE event payloads (e.g. simulation reset)."""
+        msg = str(payload.get("message", "")).lower()
+        if "reset" in msg:
+            log.info("sync.notice.reset_detected", message=payload.get("message"))
+            self.on_reset(new_tick=0)
+            await self.full_sync()
+
+
     def _calc_demand_limit(self, target_tick: int | None) -> int:
         """Calculate dynamic demand history retrieval limit according to formula:
 

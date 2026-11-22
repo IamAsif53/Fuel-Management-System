@@ -90,6 +90,94 @@ def test_malformed_station_rejected(mutate):
         Station.model_validate(st)
 
 
+@pytest.mark.parametrize("mutate", [
+    lambda d: d["capacity"].pop("DIESEL"),                   # missing fuel key
+    lambda d: d["inventory"].__setitem__("PETROL", -10),     # negative inventory
+    lambda d: d.__setitem__("dispatch_capacity_per_tick", -1),  # negative dispatch cap
+    lambda d: d.__setitem__("status", "DESTROYED"),          # unknown enum
+    lambda d: d.pop("region_id"),                            # missing required field
+    lambda d: d.__setitem__("dispatch_capacity_per_tick", "infinite"),  # wrong type
+])
+def test_malformed_depot_rejected(mutate):
+    dp = copy.deepcopy(load("depots")[0])
+    mutate(dp)
+    with pytest.raises(ValidationError):
+        Depot.model_validate(dp)
+
+
+@pytest.mark.parametrize("mutate", [
+    lambda r: r.__setitem__("transit_ticks", 0),             # non-positive transit
+    lambda r: r.__setitem__("transit_ticks", -2),            # negative transit
+    lambda r: r.__setitem__("max_shipment", 0),              # non-positive shipment
+    lambda r: r.__setitem__("status", "BLOCKED"),            # unknown enum
+    lambda r: r.pop("source_depot_id"),                      # missing field
+    lambda r: r.pop("destination_station_id"),               # missing field
+])
+def test_malformed_route_rejected(mutate):
+    rt = copy.deepcopy(load("routes")[0])
+    mutate(rt)
+    with pytest.raises(ValidationError):
+        Route.model_validate(rt)
+
+
+@pytest.mark.parametrize("mutate", [
+    lambda ev: ev.__setitem__("start_tick", -1),             # negative start_tick
+    lambda ev: ev.__setitem__("end_tick", -1),               # negative end_tick
+    lambda ev: ev.__setitem__("type", "alien_invasion"),     # unknown event type
+    lambda ev: ev.__setitem__("status", "PENDING"),          # unknown event status
+    lambda ev: ev.pop("id"),                                 # missing required id
+])
+def test_malformed_event_rejected(mutate):
+    ev = copy.deepcopy(load("events")[0])
+    mutate(ev)
+    with pytest.raises(ValidationError):
+        SimEvent.model_validate(ev)
+
+
+
+@pytest.mark.parametrize("mutate", [
+    lambda sa: sa.__setitem__("quantity", -100),             # negative quantity
+    lambda sa: sa.__setitem__("planned_tick", -1),           # negative planned_tick
+    lambda sa: sa.__setitem__("fuel_type", "BIODIESEL"),     # unknown fuel type
+    lambda sa: sa.__setitem__("status", "LOST"),             # unknown status enum
+    lambda sa: sa.pop("depot_id"),                           # missing depot_id
+])
+def test_malformed_supply_arrival_rejected(mutate):
+    sa = copy.deepcopy(load("supply_arrivals")[0])
+    mutate(sa)
+    with pytest.raises(ValidationError):
+        SupplyArrival.model_validate(sa)
+
+
+@pytest.mark.parametrize("mutate", [
+    lambda inst: inst.__setitem__("tick", -1),               # negative tick
+    lambda inst: inst.__setitem__("tick_minutes", 0),        # non-positive tick_minutes
+    lambda inst: inst.__setitem__("status", "TERMINATED"),   # unknown status enum
+    lambda inst: inst.pop("scenario_id"),                    # missing field
+    lambda inst: inst.__setitem__("sim_time", "not-a-date"),  # invalid timestamp
+])
+def test_malformed_instance_rejected(mutate):
+    inst = copy.deepcopy(load("instance"))
+    mutate(inst)
+    with pytest.raises((ValidationError, ValueError)):
+        Instance.model_validate(inst)
+
+
+@pytest.mark.parametrize("mutate", [
+    lambda m: m.__setitem__("service_level", 1.5),           # > 1.0
+    lambda m: m.__setitem__("service_level", -0.1),          # < 0.0
+    lambda m: m.__setitem__("served_demand_liters", -1),     # negative
+    lambda m: m.__setitem__("unmet_demand_liters", -1),      # negative
+    lambda m: m.__setitem__("allocation_failures", -1),      # negative
+])
+def test_malformed_metrics_rejected(mutate):
+    m = copy.deepcopy(load("metrics"))
+    mutate(m)
+    with pytest.raises(ValidationError):
+        SimMetrics.model_validate(m)
+
+
+
 def test_extra_fields_ignored():
     st = copy.deepcopy(load("stations")[0])
     st["brand_new_field"] = 123
@@ -304,4 +392,11 @@ def test_timeutil():
         expected_arrival_tick(-1, 2)
     with pytest.raises(ValueError):
         expected_arrival_tick(0, -1)
+    with pytest.raises(TypeError):
+        expected_arrival_tick("0", 2)  # type: ignore[arg-type]
+    with pytest.raises(TypeError):
+        expected_arrival_tick(0, 2.5)  # type: ignore[arg-type]
+    with pytest.raises(TypeError):
+        expected_arrival_tick(True, 2)  # type: ignore[arg-type]
+
 

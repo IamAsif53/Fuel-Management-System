@@ -44,7 +44,8 @@ import httpx
 import pytest
 from app.sim.client import SimClient, SimDomainError
 from app.sim.sse import SSEListener
-from fsip_common.models import AllocationRequest, EventCreate, FaultCreate, expected_arrival_tick
+from fsip_common import expected_arrival_tick
+from fsip_common.models import AllocationRequest, EventCreate, FaultCreate
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
@@ -430,4 +431,12 @@ async def test_live_sse_stream_receives_ticks_and_keepalive(sim: SimClient) -> N
         assert listener.connected is True
     finally:
         listener.stop()
-        await listener_task
+        try:
+            await asyncio.wait_for(listener_task, timeout=3.0)
+        except (TimeoutError, asyncio.CancelledError):
+            listener_task.cancel()
+            try:
+                await listener_task
+            except asyncio.CancelledError:
+                pass
+

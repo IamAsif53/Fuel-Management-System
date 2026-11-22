@@ -99,8 +99,10 @@ async def lifespan(app: FastAPI):
     sse_listener = SSEListener(
         base_url=s.sim_base_url,
         on_tick=sync_loop.request_cycle,
+        on_notice=sync_loop.on_notice,
         on_connect=sync_loop.full_sync,
     )
+
 
     # Attach to app.state
     app.state.store = store

@@ -113,7 +113,7 @@ class SupplyArrival(_Base):
     depot_id: str
     fuel_type: FuelType
     quantity: NonNeg
-    planned_tick: int
+    planned_tick: int = Field(ge=0)
     actual_tick: int | None = None
     status: Literal["SCHEDULED", "DELAYED", "ARRIVED"]
 
@@ -121,10 +121,11 @@ class SupplyArrival(_Base):
 class SimEvent(_Base):
     id: int
     type: EventType
-    start_tick: int
-    end_tick: int
+    start_tick: int = Field(ge=0)
+    end_tick: int = Field(ge=0)
     status: Literal["SCHEDULED", "ACTIVE", "RESOLVED"]
     parameters: dict[str, Any] = Field(default_factory=dict)
+
 
     def targets(self, key: str) -> list[str]:
         """Filter list for station_ids/region_ids/route_ids/depot_ids/fuel_types. EMPTY LIST = ALL entities."""
@@ -329,21 +330,4 @@ def world_issues(depots: list[Depot], stations: list[Station], routes: list[Rout
                 issues.append(f"{node.id}: {f} inventory {node.inventory[f]} > capacity {node.capacity[f]}")
     return issues
 
-
-# ---------------------------------------------------------------- timing helpers
-def expected_arrival_tick(created_tick: int, transit_ticks: int) -> int:
-    """Calculate the expected arrival tick for an allocation.
-
-    Semantics (02_SIMULATOR_FACTS.md §3, verified in Task 1.9):
-    - When an allocation is created at `created_tick` on a route with `transit_ticks`:
-      - Departure occurs at `departure_tick = created_tick`.
-      - Expected arrival tick is `created_tick + transit_ticks`.
-      - Arrival occurs during the step processing tick `expected_arrival_tick`,
-        and station inventory increases at instance tick `expected_arrival_tick + 1`.
-    """
-    if created_tick < 0:
-        raise ValueError(f"created_tick must be >= 0, got {created_tick}")
-    if transit_ticks < 0:
-        raise ValueError(f"transit_ticks must be >= 0, got {transit_ticks}")
-    return int(created_tick) + int(transit_ticks)
 

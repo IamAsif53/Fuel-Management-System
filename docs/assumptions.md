@@ -20,9 +20,17 @@ This document records verified simulator semantics, operational assumptions, and
        - Station inventory increases by the received fuel volume.
        - The delivered fuel is visible in station inventory when the instance reports tick $T + k + 1$.
 - **Timing Helper Function:**
-  - Function: `expected_arrival_tick(created_tick: int, transit_ticks: int) -> int` in `fsip_common.models` and `fsip_common.timeutil`.
+  - Authoritative function: `expected_arrival_tick(created_tick: int, transit_ticks: int) -> int` in `fsip_common.timeutil`, re-exported via `fsip_common`.
   - Formula: $\text{expected\_arrival\_tick} = \text{created\_tick} + \text{transit\_ticks}$.
-  - Enforces strict validation: `created_tick >= 0` and `transit_ticks >= 0`.
+  - Strict validation: requires non-negative integers (`isinstance(int)`, `not bool`, `created_tick >= 0`, `transit_ticks >= 0`).
+
+### Verification Evidence Status
+- **Finding A (Arrival Timing):** Verified via manual live simulator observation during Phase 00 planning (`02_SIMULATOR_FACTS.md` §3). Automated live verification in `test_sim_semantics.py` is written and ready, currently skipped pending live Docker daemon.
+- **Finding B (Mid-Transit Route Disruption):** Inferred from simulator specification (failure checked at departure moment). Automated live test written; live execution pending Docker.
+- **Finding C (Disruption at Creation vs. Departure):** Departure failure without refund verified via manual live simulator observation in Phase 00 (`02_SIMULATOR_FACTS.md` §3 line 113). Creation rejection (409 ROUTE_DISRUPTED) verified via API contract and unit tests; automated live test pending Docker.
+- **Finding D (Dispatch Cap Reset):** Per-tick dispatch cap verified via manual live simulator observation in Phase 00 (3000 + 6500 OK, +3000 PETROL -> 409). Cap reset on subsequent ticks verified by domain logic; automated live test pending Docker.
+- **Finding E (Live SSE Keepalive & Disconnect/Reconnect):** Watchdog reset on raw `: keepalive` comments and reconnect backoff verified via unit tests (`test_sse.py`); automated live test against real stream pending Docker.
+
 
 ### Station Inventory Capacity & Spillage
 - If $\text{current\_inventory} + \text{quantity} > \text{capacity}$ upon arrival, only the remaining room is received; excess fuel is spilled and lost.

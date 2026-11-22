@@ -119,6 +119,24 @@ async def test_full_sync_populates_store_correctly(fixtures_data: dict[str, Any]
         assert store.last_good_at[k] > 0
 
 
+@pytest.mark.asyncio
+async def test_sync_propagates_stale_header_to_world_state(fixtures_data: dict[str, Any]):
+    client = make_mock_client(fixtures_data)
+    # Simulator returns stale=True (e.g. stale_data fault injected)
+    client.instance.return_value = SimResult(
+        data=fixtures_data["instance"], stale=True, status=200, latency_ms=5.0
+    )
+    store = WorldState()
+    sync = SyncLoop(client=client, store=store)
+
+    await sync.full_sync()
+
+    assert store.stale is True
+    assert "stale_data" in store.degraded_reasons
+    assert store.degraded is True
+
+
+
 # =============================================================================
 # 2. Concurrent resource fetching works and applies snapshot
 # =============================================================================
@@ -615,3 +633,42 @@ async def test_observability_metrics_updated(fixtures_data: dict[str, Any]):
 
     # Ticks behind is updated (after cycle completion at tick 5, behind is 0)
     assert FSIP_TICKS_BEHIND._value.get() == 0
+
+
+# =============================================================================
+# 17. Notice event with "reset" triggers on_reset and full_sync
+# =============================================================================
+@pytest.mark.asyncio
+async def test_notice_reset_triggers_on_reset_and_full_sync(fixtures_data: dict[str, Any]):
+    client = make_mock_client(fixtures_data)
+    store = WorldState()
+    sync = SyncLoop(client=client, store=store)
+
+    sync.last_tick = 20
+    store.sim_run_id = 3
+
+    # Receive reset notice
+    await sync.on_notice({"message": "Simulation reset"})
+
+    # sim_run_id incremented, state reset, and full_sync completed
+    assert store.sim_run_id == 4
+    assert sync.last_tick == fixtures_data["instance"]["tick"]
+    assert store.instance is not None
+
+
+@pytest.mark.asyncio
+async def test_notice_non_reset_ignored(fixtures_data: dict[str, Any]):
+    client = make_mock_client(fixtures_data)
+    store = WorldState()
+    sync = SyncLoop(client=client, store=store)
+
+    sync.last_tick = 20
+    store.sim_run_id = 3
+
+    # Receive non-reset notice
+    await sync.on_notice({"level": "info", "message": "Routine maintenance scheduled"})
+
+    # sim_run_id remains 3
+    assert store.sim_run_id == 3
+    assert sync.last_tick == 20
+
