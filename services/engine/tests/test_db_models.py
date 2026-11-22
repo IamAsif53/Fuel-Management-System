@@ -1,7 +1,7 @@
 """Unit tests for SQLAlchemy 2 async database models (Task 2.1).
 
-Validates all 18 tables, column types, nullabilities, primary keys, foreign keys,
-unique constraints, indexes, and relationships against the Phase 02 specification.
+Validates all 18 tables, column names, types, nullabilities, primary keys, foreign keys,
+unique constraints, indexes, and relationships against the Phase 02 locked specification.
 """
 from __future__ import annotations
 
@@ -43,6 +43,9 @@ def test_sim_runs_table_schema():
     table = Base.metadata.tables["sim_runs"]
     pk_cols = [c.name for c in table.primary_key.columns]
     assert pk_cols == ["id"]
+    expected_cols = {"id", "scenario_id", "seed", "tick_minutes", "started_at", "ended_at", "first_tick", "last_tick"}
+    assert set(table.c.keys()) == expected_cols
+    assert "status" not in table.c
     assert isinstance(table.c.id.type, BigInteger)
     assert isinstance(table.c.scenario_id.type, Text | String)
     assert isinstance(table.c.seed.type, BigInteger)
@@ -94,13 +97,19 @@ def test_demand_observations_hypertable_pk_and_indexes():
     assert idx_cols == ["sim_run_id", "station_id", "fuel_type", "tick"]
 
 
-def test_forecasts_table_schema():
+def test_forecasts_table_schema_and_time_columns():
     table = Base.metadata.tables["forecasts"]
     assert [c.name for c in table.primary_key.columns] == ["id"]
     assert isinstance(table.c.p10.type, Float)
     assert isinstance(table.c.p50.type, Float)
     assert isinstance(table.c.p90.type, Float)
     assert isinstance(table.c.is_fallback.type, Boolean)
+
+    # V2 time column and created_at
+    assert "sim_time" in table.c
+    assert table.c.sim_time.type.timezone is True
+    assert "created_at" in table.c
+    assert table.c.created_at.type.timezone is True
 
     idx_cols = []
     for idx in table.indexes:
@@ -109,10 +118,16 @@ def test_forecasts_table_schema():
     assert idx_cols == ["sim_run_id", "station_id", "fuel_type", "target_tick"]
 
 
-def test_risk_assessments_table_schema():
+def test_risk_assessments_table_schema_and_time_columns():
     table = Base.metadata.tables["risk_assessments"]
     assert [c.name for c in table.primary_key.columns] == ["id"]
     assert isinstance(table.c.drivers.type, JSONB)
+
+    # V2 time column and created_at
+    assert "sim_time" in table.c
+    assert table.c.sim_time.type.timezone is True
+    assert "created_at" in table.c
+    assert table.c.created_at.type.timezone is True
 
     idx_cols = []
     for idx in table.indexes:
@@ -121,12 +136,19 @@ def test_risk_assessments_table_schema():
     assert idx_cols == ["sim_run_id", "tick", "station_id", "fuel_type"]
 
 
-def test_decisions_and_decision_lines_relationships():
+def test_decisions_and_decision_lines_contract():
     dec_table = Base.metadata.tables["decisions"]
     line_table = Base.metadata.tables["decision_lines"]
 
     assert [c.name for c in dec_table.primary_key.columns] == ["id"]
     assert [c.name for c in line_table.primary_key.columns] == ["id"]
+
+    # Verify decision_lines fields against 04 contract
+    assert "destination_station_id" in line_table.c
+    assert "quantity" in line_table.c
+    assert "dest_station_id" not in line_table.c
+    assert "liters" not in line_table.c
+    assert "created_at" in line_table.c
 
     # Foreign key from decision_lines to decisions
     fks = list(line_table.c.decision_id.foreign_keys)
@@ -147,9 +169,25 @@ def test_alerts_partial_index():
     assert "status <> 'RESOLVED'" in str(alert_idx.dialect_options.get("postgresql", {}).get("where", ""))
 
 
-def test_ledger_append_only_schema():
+def test_audit_log_contract():
+    table = Base.metadata.tables["audit_log"]
+    assert [c.name for c in table.primary_key.columns] == ["id"]
+    assert "entity_type" in table.c
+    assert "entity_id" in table.c
+    assert "payload" in table.c
+    assert "resource_type" not in table.c
+    assert "resource_id" not in table.c
+    assert "diff_json" not in table.c
+
+
+def test_ledger_append_only_contract():
     table = Base.metadata.tables["ledger"]
     assert [c.name for c in table.primary_key.columns] == ["id"]
+    expected_cols = {"id", "at", "actor", "action", "payload", "prev_hash", "hash"}
+    assert set(table.c.keys()) == expected_cols
+    assert "entry_type" not in table.c
+    assert "amount_bdt" not in table.c
+    assert "sha256_hash" not in table.c
     assert table.c.at.type.timezone is True
     assert table.c.hash.unique is True or any(
         uq.columns.contains(table.c.hash) for uq in table.constraints
@@ -157,42 +195,89 @@ def test_ledger_append_only_schema():
     assert isinstance(table.c.payload.type, JSONB)
 
 
-def test_feature_flags_schema():
-    table = Base.metadata.tables["feature_flags"]
-    assert [c.name for c in table.primary_key.columns] == ["key"]
-    assert isinstance(table.c.value.type, JSONB)
+def test_eval_runs_contract():
+    table = Base.metadata.tables["eval_runs"]
+    assert [c.name for c in table.primary_key.columns] == ["id"]
+    expected_cols = {
+        "id", "scenario", "policy", "ticks", "seed", "service_level",
+        "unmet_liters", "failures", "overflow_liters", "liters_shipped",
+        "cross_region_liters", "min_station_service", "runtime_sec",
+        "details", "created_at"
+    }
+    assert set(table.c.keys()) == expected_cols
+    assert "wape" not in table.c
+    assert "mape" not in table.c
+    assert "rmse" not in table.c
 
 
-def test_model_versions_unique_constraint():
+def test_incidents_contract():
+    table = Base.metadata.tables["incidents"]
+    assert [c.name for c in table.primary_key.columns] == ["id"]
+    expected_cols = {
+        "id", "kind", "component", "status", "started_at",
+        "mitigated_at", "resolved_at", "summary", "timeline", "created_at"
+    }
+    assert set(table.c.keys()) == expected_cols
+    assert "incident_key" not in table.c
+    assert "declared_tick" not in table.c
+
+
+def test_model_versions_contract():
     table = Base.metadata.tables["model_versions"]
     assert [c.name for c in table.primary_key.columns] == ["id"]
+    expected_cols = {"id", "name", "version", "created_at", "metrics", "params", "artifact_path", "is_active"}
+    assert set(table.c.keys()) == expected_cols
     uq = next((c for c in table.constraints if c.name == "uq_model_versions_name_version"), None)
     assert uq is not None
     assert [c.name for c in uq.columns] == ["name", "version"]
 
 
-def test_quarantine_schema():
+def test_feature_flags_contract():
+    table = Base.metadata.tables["feature_flags"]
+    assert [c.name for c in table.primary_key.columns] == ["key"]
+    expected_cols = {"key", "value", "updated_by", "updated_at"}
+    assert set(table.c.keys()) == expected_cols
+    assert isinstance(table.c.value.type, JSONB)
+
+
+def test_quarantine_contract():
     table = Base.metadata.tables["quarantine"]
     assert [c.name for c in table.primary_key.columns] == ["id"]
+    expected_cols = {"id", "at", "resource", "errors", "raw_body", "sim_tick"}
+    assert set(table.c.keys()) == expected_cols
+    assert "payload_type" not in table.c
     assert isinstance(table.c.errors.type, JSONB)
     assert isinstance(table.c.raw_body.type, Text | String)
 
 
-def test_allocation_reconciliation_and_decision_outcomes_pks():
-    rec_table = Base.metadata.tables["allocation_reconciliation"]
-    assert [c.name for c in rec_table.primary_key.columns] == ["decision_line_id"]
-    fks = list(rec_table.c.decision_line_id.foreign_keys)
+def test_allocation_reconciliation_contract():
+    table = Base.metadata.tables["allocation_reconciliation"]
+    assert [c.name for c in table.primary_key.columns] == ["decision_line_id"]
+    expected_cols = {"decision_line_id", "sent", "received", "loss", "loss_reason", "method"}
+    assert set(table.c.keys()) == expected_cols
+    assert "dispatched_liters" not in table.c
+    assert "delivered_liters" not in table.c
+    assert "variance_liters" not in table.c
+    fks = list(table.c.decision_line_id.foreign_keys)
     assert fks[0].target_fullname == "decision_lines.id"
 
-    out_table = Base.metadata.tables["decision_outcomes"]
-    assert [c.name for c in out_table.primary_key.columns] == ["decision_id"]
-    fks_out = list(out_table.c.decision_id.foreign_keys)
-    assert fks_out[0].target_fullname == "decisions.id"
+
+def test_decision_outcomes_contract():
+    table = Base.metadata.tables["decision_outcomes"]
+    assert [c.name for c in table.primary_key.columns] == ["decision_id"]
+    expected_cols = {"decision_id", "evaluated_tick", "predicted", "realised", "hit"}
+    assert set(table.c.keys()) == expected_cols
+    assert "actual_stockouts_avoided" not in table.c
+    assert "counterfactual_penalty_bdt" not in table.c
+    fks = list(table.c.decision_id.foreign_keys)
+    assert fks[0].target_fullname == "decisions.id"
 
 
-def test_playbook_runs_schema():
+def test_playbook_runs_contract():
     table = Base.metadata.tables["playbook_runs"]
     assert [c.name for c in table.primary_key.columns] == ["id"]
+    expected_cols = {"id", "playbook_id", "sim_run_id", "started_tick", "status", "steps", "started_at", "ended_at"}
+    assert set(table.c.keys()) == expected_cols
     assert isinstance(table.c.steps.type, JSONB)
     fks = list(table.c.sim_run_id.foreign_keys)
     assert fks[0].target_fullname == "sim_runs.id"

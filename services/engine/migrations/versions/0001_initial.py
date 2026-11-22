@@ -60,11 +60,12 @@ def upgrade() -> None:
     sa.Column('kind', sa.Text(), nullable=True),
     sa.Column('component', sa.Text(), nullable=True),
     sa.Column('status', sa.Text(), nullable=False),
-    sa.Column('started_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('started_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
     sa.Column('mitigated_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('resolved_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('summary', sa.Text(), nullable=True),
     sa.Column('timeline', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_table('ledger',
@@ -192,6 +193,8 @@ def upgrade() -> None:
     sa.Column('model_name', sa.Text(), nullable=True),
     sa.Column('model_version', sa.Text(), nullable=True),
     sa.Column('is_fallback', sa.Boolean(), server_default=sa.text('false'), nullable=False),
+    sa.Column('sim_time', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.ForeignKeyConstraint(['sim_run_id'], ['sim_runs.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
@@ -225,6 +228,8 @@ def upgrade() -> None:
     sa.Column('stockout_prob', sa.Float(), nullable=True),
     sa.Column('risk_level', sa.Text(), nullable=False),
     sa.Column('drivers', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
+    sa.Column('sim_time', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.ForeignKeyConstraint(['sim_run_id'], ['sim_runs.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
@@ -270,6 +275,7 @@ def upgrade() -> None:
     sa.Column('actual_arrival_tick', sa.Integer(), nullable=True),
     sa.Column('received_liters', sa.Float(), nullable=True),
     sa.Column('reason', sa.Text(), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.ForeignKeyConstraint(['decision_id'], ['decisions.id'], ),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('idempotency_key')

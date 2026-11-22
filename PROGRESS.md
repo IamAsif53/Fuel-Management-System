@@ -8,7 +8,7 @@ Format for notes: `- [x] 1.3 SimClient done. Note: <deviation or measured result
 | 00 | DONE | 33 Python tests (100%) + 5 Vitest tests + Vite build + Ruff clean + full Docker Compose stack running healthy (7/7 services) + live smoke test passed (SMOKE OK, overall Healthy) | Complete end-to-end verification verified on host Docker |
 | 01 | DONE | Tasks 1.1–1.10 complete (228 tests passed: 99 common, 125 engine [including all 6 live integration tests against simulator container], 3 api, 1 intel; Ruff clean) | All Phase 01 unit & live integration tests complete; simulator semantics verified against live simulator; ready for Phase 02 |
 
-| 02 | IN PROGRESS | Task 2.1 complete (23 new DB unit & integration tests, all 18 tables + TimescaleDB hypertables + caggs verified against live TimescaleDB container; total 251 tests passing across repo; Ruff clean) | Persistence models and Alembic migrations complete |
+| 02 | IN PROGRESS | Task 2.1 complete (27 DB unit & integration tests, all 18 tables verified with exact contract columns + TimescaleDB hypertables + caggs against live TimescaleDB container; total 255 tests passing across repo; Ruff clean; live smoke test OK) | Persistence models and Alembic migrations aligned with locked contracts |
 | 03 | TODO | | |
 | 04 | TODO | | |
 | 05 | TODO | | |

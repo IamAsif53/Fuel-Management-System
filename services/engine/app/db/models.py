@@ -125,6 +125,8 @@ class Forecast(Base):
     model_name: Mapped[str | None] = mapped_column(Text, nullable=True)
     model_version: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_fallback: Mapped[bool] = mapped_column(Boolean, server_default=text("false"), nullable=False)
+    sim_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     __table_args__ = (
         Index("ix_forecasts_lookup", "sim_run_id", "station_id", "fuel_type", "target_tick"),
@@ -148,6 +150,8 @@ class RiskAssessment(Base):
     stockout_prob: Mapped[float | None] = mapped_column(Float, nullable=True)
     risk_level: Mapped[str] = mapped_column(Text, nullable=False)  # LOW|MEDIUM|HIGH|CRITICAL
     drivers: Mapped[dict[str, Any] | list[Any] | None] = mapped_column(JSONB, nullable=True)
+    sim_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     __table_args__ = (
         Index("ix_risk_assessments_tick", "sim_run_id", "tick", "station_id", "fuel_type"),
@@ -212,6 +216,7 @@ class DecisionLine(Base):
     actual_arrival_tick: Mapped[int | None] = mapped_column(Integer, nullable=True)
     received_liters: Mapped[float | None] = mapped_column(Float, nullable=True)
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     decision: Mapped[Decision] = relationship("Decision", back_populates="lines")
 
@@ -258,11 +263,14 @@ class Incident(Base):
     kind: Mapped[str | None] = mapped_column(Text, nullable=True)
     component: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(Text, nullable=False)  # OPEN|MITIGATED|RESOLVED
-    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=True
+    )
     mitigated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     timeline: Mapped[list[Any] | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
 class AuditLog(Base):
