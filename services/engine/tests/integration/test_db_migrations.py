@@ -13,7 +13,9 @@ from app.db.models import (
     Decision,
     DecisionLine,
     DemandObservation,
+    Forecast,
     Ledger,
+    RiskAssessment,
     SimRun,
     WorldSnapshot,
 )
@@ -253,3 +255,40 @@ async def test_decision_and_decision_lines_cascade(db_session: AsyncSession):
     assert line1.id is not None
     assert line1.decision_id == dec.id
     assert len(dec.lines) == 1
+
+
+async def test_forecast_and_risk_assessment_sim_time_not_null(db_session: AsyncSession):
+    """Verify Forecast and RiskAssessment require sim_time TIMESTAMPTZ NOT NULL (13_ARCHITECTURE_V2.md §6)."""
+    sim_run = SimRun(scenario_id="forecast-test", tick_minutes=15)
+    db_session.add(sim_run)
+    await db_session.flush()
+
+    now = datetime.now(UTC)
+    forecast = Forecast(
+        sim_run_id=sim_run.id,
+        made_at_tick=10,
+        station_id="station-mirpur",
+        fuel_type="DIESEL",
+        target_tick=12,
+        p10=100.0,
+        p50=200.0,
+        p90=300.0,
+        sim_time=now,
+    )
+    risk = RiskAssessment(
+        sim_run_id=sim_run.id,
+        tick=10,
+        station_id="station-mirpur",
+        fuel_type="DIESEL",
+        risk_level="MEDIUM",
+        sim_time=now,
+    )
+    db_session.add(forecast)
+    db_session.add(risk)
+    await db_session.flush()
+
+    assert forecast.id is not None
+    assert forecast.sim_time == now
+    assert risk.id is not None
+    assert risk.sim_time == now
+

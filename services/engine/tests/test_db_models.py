@@ -108,6 +108,7 @@ def test_forecasts_table_schema_and_time_columns():
     # V2 time column and created_at
     assert "sim_time" in table.c
     assert table.c.sim_time.type.timezone is True
+    assert table.c.sim_time.nullable is False
     assert "created_at" in table.c
     assert table.c.created_at.type.timezone is True
 
@@ -126,6 +127,7 @@ def test_risk_assessments_table_schema_and_time_columns():
     # V2 time column and created_at
     assert "sim_time" in table.c
     assert table.c.sim_time.type.timezone is True
+    assert table.c.sim_time.nullable is False
     assert "created_at" in table.c
     assert table.c.created_at.type.timezone is True
 

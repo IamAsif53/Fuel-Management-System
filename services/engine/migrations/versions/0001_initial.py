@@ -193,7 +193,7 @@ def upgrade() -> None:
     sa.Column('model_name', sa.Text(), nullable=True),
     sa.Column('model_version', sa.Text(), nullable=True),
     sa.Column('is_fallback', sa.Boolean(), server_default=sa.text('false'), nullable=False),
-    sa.Column('sim_time', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('sim_time', sa.DateTime(timezone=True), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.ForeignKeyConstraint(['sim_run_id'], ['sim_runs.id'], ),
     sa.PrimaryKeyConstraint('id')
@@ -228,7 +228,7 @@ def upgrade() -> None:
     sa.Column('stockout_prob', sa.Float(), nullable=True),
     sa.Column('risk_level', sa.Text(), nullable=False),
     sa.Column('drivers', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-    sa.Column('sim_time', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('sim_time', sa.DateTime(timezone=True), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.ForeignKeyConstraint(['sim_run_id'], ['sim_runs.id'], ),
     sa.PrimaryKeyConstraint('id')

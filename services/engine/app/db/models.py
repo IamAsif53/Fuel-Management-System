@@ -125,7 +125,7 @@ class Forecast(Base):
     model_name: Mapped[str | None] = mapped_column(Text, nullable=True)
     model_version: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_fallback: Mapped[bool] = mapped_column(Boolean, server_default=text("false"), nullable=False)
-    sim_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    sim_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     __table_args__ = (
@@ -150,7 +150,7 @@ class RiskAssessment(Base):
     stockout_prob: Mapped[float | None] = mapped_column(Float, nullable=True)
     risk_level: Mapped[str] = mapped_column(Text, nullable=False)  # LOW|MEDIUM|HIGH|CRITICAL
     drivers: Mapped[dict[str, Any] | list[Any] | None] = mapped_column(JSONB, nullable=True)
-    sim_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    sim_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     __table_args__ = (
