@@ -286,6 +286,7 @@ def upgrade() -> None:
     sa.Column('predicted', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
     sa.Column('realised', postgresql.JSONB(astext_type=sa.Text()), nullable=True),
     sa.Column('hit', sa.Boolean(), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.ForeignKeyConstraint(['decision_id'], ['decisions.id'], ),
     sa.PrimaryKeyConstraint('decision_id')
     )
@@ -296,6 +297,7 @@ def upgrade() -> None:
     sa.Column('loss', sa.Float(), nullable=True),
     sa.Column('loss_reason', sa.Text(), nullable=True),
     sa.Column('method', sa.Text(), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.ForeignKeyConstraint(['decision_line_id'], ['decision_lines.id'], ),
     sa.PrimaryKeyConstraint('decision_line_id')
     )

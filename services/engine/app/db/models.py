@@ -378,6 +378,7 @@ class AllocationReconciliation(Base):
     loss: Mapped[float | None] = mapped_column(Float, nullable=True)
     loss_reason: Mapped[str | None] = mapped_column(Text, nullable=True)  # OVERFLOW|FAILED_ROUTE|NONE
     method: Mapped[str | None] = mapped_column(Text, nullable=True)       # audit|estimate
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     decision_line: Mapped[DecisionLine] = relationship("DecisionLine")
 
@@ -391,6 +392,7 @@ class DecisionOutcome(Base):
     predicted: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     realised: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     hit: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     decision: Mapped[Decision] = relationship("Decision")
 

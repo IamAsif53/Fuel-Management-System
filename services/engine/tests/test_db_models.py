@@ -255,11 +255,14 @@ def test_quarantine_contract():
 def test_allocation_reconciliation_contract():
     table = Base.metadata.tables["allocation_reconciliation"]
     assert [c.name for c in table.primary_key.columns] == ["decision_line_id"]
-    expected_cols = {"decision_line_id", "sent", "received", "loss", "loss_reason", "method"}
+    expected_cols = {"decision_line_id", "sent", "received", "loss", "loss_reason", "method", "created_at"}
     assert set(table.c.keys()) == expected_cols
     assert "dispatched_liters" not in table.c
     assert "delivered_liters" not in table.c
     assert "variance_liters" not in table.c
+    assert "created_at" in table.c
+    assert table.c.created_at.type.timezone is True
+    assert table.c.created_at.nullable is False
     fks = list(table.c.decision_line_id.foreign_keys)
     assert fks[0].target_fullname == "decision_lines.id"
 
@@ -267,10 +270,13 @@ def test_allocation_reconciliation_contract():
 def test_decision_outcomes_contract():
     table = Base.metadata.tables["decision_outcomes"]
     assert [c.name for c in table.primary_key.columns] == ["decision_id"]
-    expected_cols = {"decision_id", "evaluated_tick", "predicted", "realised", "hit"}
+    expected_cols = {"decision_id", "evaluated_tick", "predicted", "realised", "hit", "created_at"}
     assert set(table.c.keys()) == expected_cols
     assert "actual_stockouts_avoided" not in table.c
     assert "counterfactual_penalty_bdt" not in table.c
+    assert "created_at" in table.c
+    assert table.c.created_at.type.timezone is True
+    assert table.c.created_at.nullable is False
     fks = list(table.c.decision_id.foreign_keys)
     assert fks[0].target_fullname == "decisions.id"
 
