@@ -9,6 +9,8 @@ RUN pip install /opt/fsip_common
 # sanity check at build time: the bundled CBC solver must work inside the slim image
 RUN python -c "import pulp; p=pulp.LpProblem('t', pulp.LpMinimize); x=pulp.LpVariable('x', 0, 10); p+=x; p+=x>=3; assert pulp.LpStatus[p.solve(pulp.PULP_CBC_CMD(msg=False))]=='Optimal'"
 COPY services/engine/app /app/app
+COPY services/engine/migrations /app/migrations
+COPY services/engine/alembic.ini /app/alembic.ini
 ARG APP_VERSION=dev
 ARG GIT_SHA=unknown
 ENV APP_VERSION=${APP_VERSION} GIT_SHA=${GIT_SHA}

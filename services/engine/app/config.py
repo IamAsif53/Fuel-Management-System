@@ -6,6 +6,7 @@ from fsip_common.settings import BaseServiceSettings
 class EngineSettings(BaseServiceSettings):
     engine_mode: str = "advisory"            # advisory | autopilot
     engine_policy: str = "optimizer"         # optimizer | heuristic
+    auto_migrate: bool = True
     engine_decision_interval_ticks: int = 1
     engine_poll_interval_sec: float = 1.0
     sim_timeout_sec: float = 2.0

@@ -8,7 +8,7 @@ Format for notes: `- [x] 1.3 SimClient done. Note: <deviation or measured result
 | 00 | DONE | 33 Python tests (100%) + 5 Vitest tests + Vite build + Ruff clean + full Docker Compose stack running healthy (7/7 services) + live smoke test passed (SMOKE OK, overall Healthy) | Complete end-to-end verification verified on host Docker |
 | 01 | DONE | Tasks 1.1–1.10 complete (228 tests passed: 99 common, 125 engine [including all 6 live integration tests against simulator container], 3 api, 1 intel; Ruff clean) | All Phase 01 unit & live integration tests complete; simulator semantics verified against live simulator; ready for Phase 02 |
 
-| 02 | TODO | | |
+| 02 | IN PROGRESS | Task 2.1 complete (23 new DB unit & integration tests, all 18 tables + TimescaleDB hypertables + caggs verified against live TimescaleDB container; total 251 tests passing across repo; Ruff clean) | Persistence models and Alembic migrations complete |
 | 03 | TODO | | |
 | 04 | TODO | | |
 | 05 | TODO | | |
@@ -62,7 +62,7 @@ Deadline: **Thu 2026-11-26**. Feature freeze: Wed 2026-11-25 18:00.
 - [x] 1.1  - [x] 1.2  - [x] 1.3  - [x] 1.4  - [x] 1.5  - [x] 1.6  - [x] 1.7  - [x] 1.8  - [x] 1.9  - [x] 1.10
 
 ### Phase 02
-- [ ] 2.1  - [ ] 2.2  - [ ] 2.3  - [ ] 2.4  - [ ] 2.5  - [ ] 2.6  - [ ] 2.7  - [ ] 2.8
+- [x] 2.1  - [ ] 2.2  - [ ] 2.3  - [ ] 2.4  - [ ] 2.5  - [ ] 2.6  - [ ] 2.7  - [ ] 2.8
 ### Phase 03
 - [ ] 3.1  - [ ] 3.2  - [ ] 3.3  - [ ] 3.4  - [ ] 3.5  - [ ] 3.6  - [ ] 3.7  - [ ] 3.8
 ### Phase 04

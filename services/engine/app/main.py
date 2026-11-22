@@ -21,6 +21,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from fsip_common.logging import configure_logging, get_logger
 from prometheus_client import Counter, Gauge, make_asgi_app
 
+from app.db.session import run_migrations
 from app.sim.circuit import CircuitBreaker
 from app.sim.client import SimClient
 from app.sim.sse import SSEListener
@@ -75,6 +76,10 @@ async def lifespan(app: FastAPI):
     s = get_settings()
     configure_logging("engine", s.log_level)
     ENGINE_INFO.labels(s.app_version, s.git_sha).set(1)
+
+    # Run database migrations on startup if enabled
+    if s.auto_migrate:
+        await run_migrations(s.database_url)
 
     # Initialize store and client
     store = WorldState(engine_mode="NORMAL", operating_mode=s.engine_mode, policy=s.engine_policy)
