@@ -83,13 +83,13 @@ class SyncLoop:
 
         self.last_tick: int | None = store.tick if store.instance is not None else None
         self._is_running: bool = False
+        self._pending_tick: int | None = None
+        self._lock = asyncio.Lock()
+        self._stop_event = asyncio.Event()
 
     def add_hook(self, hook: Callable[[WorldState], Awaitable[None]]) -> None:
         """Register a lifecycle hook to execute after each successful sync cycle."""
         self.hooks.append(hook)
-        self._pending_tick: int | None = None
-        self._lock = asyncio.Lock()
-        self._stop_event = asyncio.Event()
 
     @property
     def is_running(self) -> bool:

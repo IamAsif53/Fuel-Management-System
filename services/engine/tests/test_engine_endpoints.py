@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 import pytest_asyncio
@@ -132,6 +132,11 @@ def client_app(session_factory, test_world_state: WorldState):
     executor = Executor(sim_client=mock_sim, session_factory=session_factory)
     decision_engine = DecisionEngine(session_factory=session_factory, executor=executor)
 
+    mock_sync = AsyncMock()
+    mock_sync.stop = MagicMock()
+    app.state.sync_loop = mock_sync
+    app.state.sse_listener = AsyncMock()
+
     app.state.store = test_world_state
     app.state.decision_engine = decision_engine
     app.state.executor = executor
@@ -161,7 +166,7 @@ async def test_control_mode_and_policy(client_app: TestClient):
         headers=INTERNAL_HEADERS,
         json={"mode": "autopilot"},
     )
-    assert resp.status_code == 200
+    assert resp.status_code == 200, resp.json()
     assert resp.json()["mode"] == "autopilot"
 
     # Bad mode -> 400
@@ -178,13 +183,13 @@ async def test_control_mode_and_policy(client_app: TestClient):
         headers=INTERNAL_HEADERS,
         json={"policy": "heuristic"},
     )
-    assert resp.status_code == 200
+    assert resp.status_code == 200, resp.json()
     assert resp.json()["policy"] == "heuristic"
 
 
 async def test_plan_now(client_app: TestClient):
     resp = client_app.post("/engine/plan-now", headers=INTERNAL_HEADERS)
-    assert resp.status_code == 200
+    assert resp.status_code == 200, resp.json()
     data = resp.json()
     assert data["status"] in ("ok", "no_op")
 
@@ -225,7 +230,7 @@ async def test_approve_and_reject_decision(
         headers=INTERNAL_HEADERS,
         json={"operator": "lead_op"},
     )
-    assert resp.status_code == 200
+    assert resp.status_code == 200, resp.json()
     assert resp.json()["status"] == "ok"
     assert resp.json()["decision_status"] == "EXECUTED"
 
@@ -252,7 +257,7 @@ async def test_manual_allocation_valid_and_invalid(client_app: TestClient):
             "reason": "Emergency top-up",
         },
     )
-    assert resp.status_code == 200
+    assert resp.status_code == 200, resp.json()
     data = resp.json()
     assert data["status"] == "ok"
     assert data["decision_id"] is not None

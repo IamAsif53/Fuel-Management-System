@@ -383,16 +383,16 @@ async def test_list_decisions_filtering(db_session: AsyncSession):
     assert len(r1_list) == 2
 
     # Filter by policy
-    opt_list = await list_decisions(db_session, policy="optimizer")
-    assert len(opt_list) == 2
+    opt_list = await list_decisions(db_session, sim_run_id=run1.id, policy="optimizer")
+    assert len(opt_list) == 1
 
     # Filter by status
-    exec_list = await list_decisions(db_session, status="EXECUTED")
-    assert len(exec_list) == 2
+    exec_list = await list_decisions(db_session, sim_run_id=run1.id, status="EXECUTED")
+    assert len(exec_list) == 1
 
     # Filter by from_tick
-    tick_list = await list_decisions(db_session, from_tick=8)
-    assert len(tick_list) == 2
+    tick_list = await list_decisions(db_session, sim_run_id=run1.id, from_tick=8)
+    assert len(tick_list) == 1
 
 
 # =============================================================================

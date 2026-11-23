@@ -219,6 +219,13 @@ async def lifespan(app: FastAPI):
     await asyncio.gather(sync_task, sse_task, buffer_task, return_exceptions=True)
     await client.close()
     await publisher.close()
+    app.state.sync_loop = None
+    app.state.sse_listener = None
+    app.state.client = None
+    app.state.store = None
+    app.state.executor = None
+    app.state.decision_engine = None
+    app.state.tracker = None
     log.info("engine.stop")
 
 

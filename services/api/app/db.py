@@ -215,3 +215,214 @@ async def fetch_recent_snapshots(
     result = await session.execute(query, {"limit": limit})
     rows = result.mappings().all()
     return [dict(r) for r in reversed(rows)]
+
+
+# ---------------------------------------------------------------- Decisions & Audit Queries
+async def fetch_decisions(
+    session: AsyncSession,
+    sim_run_id: int | None = None,
+    status: str | None = None,
+    policy: str | None = None,
+    from_tick: int | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[list[dict[str, Any]], int]:
+    """Fetch decisions with optional filtering, returning (items, total_count)."""
+    conditions = []
+    params: dict[str, Any] = {"limit": limit, "offset": offset}
+
+    if sim_run_id is not None:
+        conditions.append("sim_run_id = :sim_run_id")
+        params["sim_run_id"] = sim_run_id
+    if status is not None:
+        conditions.append("status = :status")
+        params["status"] = status
+    if policy is not None:
+        conditions.append("policy = :policy")
+        params["policy"] = policy
+    if from_tick is not None:
+        conditions.append("tick >= :from_tick")
+        params["from_tick"] = from_tick
+
+    where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
+    count_q = text(f"SELECT COUNT(*) FROM decisions {where_clause}")
+    count_res = await session.execute(count_q, params)
+    total = count_res.scalar() or 0
+
+    select_q = text(
+        f"""
+        SELECT id, sim_run_id, tick, policy, policy_version, trigger, status, mode,
+               confidence, degraded, fallback_reason, narrative, approved_by, approved_at,
+               rejected_reason, expires_at_tick, created_at
+        FROM decisions
+        {where_clause}
+        ORDER BY tick DESC, id DESC
+        LIMIT :limit OFFSET :offset
+        """
+    )
+    res = await session.execute(select_q, params)
+    rows = [dict(r) for r in res.mappings().all()]
+    return rows, int(total)
+
+
+async def fetch_decision_by_id(session: AsyncSession, decision_id: int) -> dict[str, Any] | None:
+    """Fetch full decision by ID, including lines and outcome."""
+    q_dec = text(
+        """
+        SELECT id, sim_run_id, tick, policy, policy_version, trigger, status, mode,
+               confidence, degraded, fallback_reason, narrative, approved_by, approved_at,
+               rejected_reason, expires_at_tick, created_at, explanation, impact, objective
+        FROM decisions
+        WHERE id = :decision_id
+        """
+    )
+    res_dec = await session.execute(q_dec, {"decision_id": decision_id})
+    dec_row = res_dec.mappings().first()
+    if not dec_row:
+        return None
+
+    dec_dict = dict(dec_row)
+
+    # Fetch lines
+    q_lines = text(
+        """
+        SELECT id, line_no, source_depot_id, destination_station_id, route_id,
+               fuel_type, quantity, idempotency_key, status, sim_allocation_id,
+               sim_error_code, expected_arrival_tick, actual_arrival_tick,
+               received_liters, reason, created_at
+        FROM decision_lines
+        WHERE decision_id = :decision_id
+        ORDER BY line_no ASC
+        """
+    )
+    res_lines = await session.execute(q_lines, {"decision_id": decision_id})
+    dec_dict["lines"] = [dict(r) for r in res_lines.mappings().all()]
+
+    # Fetch outcome if present
+    q_outcome = text(
+        """
+        SELECT decision_id, evaluated_tick, predicted, realised, hit, created_at
+        FROM decision_outcomes
+        WHERE decision_id = :decision_id
+        """
+    )
+    res_out = await session.execute(q_outcome, {"decision_id": decision_id})
+    out_row = res_out.mappings().first()
+    dec_dict["outcome"] = dict(out_row) if out_row else None
+
+    return dec_dict
+
+
+async def fetch_recommendations(session: AsyncSession, sim_run_id: int | None = None) -> list[dict[str, Any]]:
+    """Fetch active pending recommendations (decisions pending approval with lines)."""
+    conditions = ["status IN ('PENDING_APPROVAL', 'PROPOSED')"]
+    params: dict[str, Any] = {}
+    if sim_run_id is not None:
+        conditions.append("sim_run_id = :sim_run_id")
+        params["sim_run_id"] = sim_run_id
+
+    where_clause = "WHERE " + " AND ".join(conditions)
+
+    q = text(
+        f"""
+        SELECT id, sim_run_id, tick, policy, policy_version, trigger, status, mode,
+               confidence, degraded, fallback_reason, narrative, expires_at_tick, created_at,
+               explanation, impact, objective
+        FROM decisions
+        {where_clause}
+        ORDER BY tick DESC, id DESC
+        """
+    )
+    res = await session.execute(q, params)
+    decisions = [dict(r) for r in res.mappings().all()]
+
+    if not decisions:
+        return []
+
+    dec_ids = [d["id"] for d in decisions]
+    q_lines = text(
+        """
+        SELECT id, decision_id, line_no, source_depot_id, destination_station_id, route_id,
+               fuel_type, quantity, idempotency_key, status, expected_arrival_tick, reason
+        FROM decision_lines
+        WHERE decision_id = ANY(:dec_ids)
+        ORDER BY decision_id ASC, line_no ASC
+        """
+    )
+    lines_res = await session.execute(q_lines, {"dec_ids": dec_ids})
+    lines_by_dec: dict[int, list[dict[str, Any]]] = {}
+    for ln in lines_res.mappings().all():
+        lines_by_dec.setdefault(ln["decision_id"], []).append(dict(ln))
+
+    for d in decisions:
+        d["lines"] = lines_by_dec.get(d["id"], [])
+
+    return decisions
+
+
+async def insert_audit_entry(
+    session: AsyncSession,
+    actor: str,
+    action: str,
+    entity_type: str | None = None,
+    entity_id: str | None = None,
+    payload: dict[str, Any] | None = None,
+) -> int:
+    """Insert an operator action record into audit_log table."""
+    q = text(
+        """
+        INSERT INTO audit_log (at, actor, action, entity_type, entity_id, payload)
+        VALUES (NOW(), :actor, :action, :entity_type, :entity_id, :payload)
+        RETURNING id
+        """
+    )
+    res = await session.execute(
+        q,
+        {
+            "actor": actor,
+            "action": action,
+            "entity_type": entity_type,
+            "entity_id": str(entity_id) if entity_id is not None else None,
+            "payload": orjson.dumps(payload).decode() if payload else None,
+        },
+    )
+    row_id = res.scalar() or 0
+    return int(row_id)
+
+
+async def fetch_audit_logs(
+    session: AsyncSession,
+    action: str | None = None,
+    actor: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> list[dict[str, Any]]:
+    """Fetch audit logs ordered newest first."""
+    conditions = []
+    params: dict[str, Any] = {"limit": limit, "offset": offset}
+    if action:
+        conditions.append("action = :action")
+        params["action"] = action
+    if actor:
+        conditions.append("actor = :actor")
+        params["actor"] = actor
+
+    where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
+    q = text(
+        f"""
+        SELECT id, at, actor, action, entity_type, entity_id, payload
+        FROM audit_log
+        {where_clause}
+        ORDER BY at DESC, id DESC
+        LIMIT :limit OFFSET :offset
+        """
+    )
+    res = await session.execute(q, params)
+    rows = []
+    for r in res.mappings().all():
+        d = dict(r)
+        d["payload"] = _parse_json_field(d.get("payload"))
+        rows.append(d)
+    return rows

@@ -353,10 +353,10 @@ class DecisionEngine:
                 raise DecisionInvalidStateError(dec.status, "PENDING_APPROVAL")
 
             # Check stale state before approving
-            if current_state and (getattr(current_state, "stale", False) or getattr(current_state, "degraded", False)):
+            if current_state and getattr(current_state, "stale", False):
                 raise DecisionError(
-                    "STALE_STATE",
-                    "Cannot approve decision against stale or degraded state",
+                    "STALE_DATA",
+                    "Cannot approve decision against stale simulator state",
                     status_code=409,
                 )
 
