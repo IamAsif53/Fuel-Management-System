@@ -9,7 +9,7 @@ Format for notes: `- [x] 1.3 SimClient done. Note: <deviation or measured result
 | 01 | DONE | Tasks 1.1–1.10 complete (228 tests passed: 99 common, 125 engine [including all 6 live integration tests against simulator container], 3 api, 1 intel; Ruff clean) | All Phase 01 unit & live integration tests complete; simulator semantics verified against live simulator; ready for Phase 02 |
 
 | 02 | DONE | Tasks 2.1–2.8 complete (324 tests passed across repo: 201 engine, 99 common, 23 api, 1 intel; Ruff clean; live TimescaleDB, Redis publisher, and API endpoints verified against Docker stack) | Phase 02 persistence, Redis snapshot, core API, and acceptance complete |
-| 03 | DONE | Tasks 3.1–3.8 complete (34 Vitest tests passing, Vite build clean, TypeScript strict clean, live Docker Compose verified, overview topology, disruption red rendering, and docs screenshot captured) | Phase 03 complete frontend foundation delivered |
+| 03 | DONE | Tasks 3.1–3.8 complete + audit fixes verified (39 Vitest tests passing, Vite build clean, TypeScript strict clean, live Docker outage & recovery verified, overview & offline screenshots captured) | Phase 03 complete frontend foundation delivered & audit approved |
 | 04 | TODO | | |
 | 05 | TODO | | |
 | 06 | TODO | | |

@@ -25,7 +25,7 @@ export function Header({ state, connection }: HeaderProps) {
 
       {/* Clock Badge */}
       <div className="ml-4">
-        <ClockBadge state={state} />
+        <ClockBadge state={state} connection={connection} />
       </div>
 
       {/* Engine Mode */}

@@ -28,6 +28,8 @@ class LiveStateManager {
   private static instance: LiveStateManager | null = null;
 
   private es: EventSource | null = null;
+  private isSseConnected = false;
+  private isHttpOk = true;
   private subscribers = new Set<(conn: ConnectionState, err: Error | null) => void>();
   private pollTimer: NodeJS.Timeout | null = null;
   private reconnectTimer: NodeJS.Timeout | null = null;
@@ -86,6 +88,22 @@ class LiveStateManager {
     }
   }
 
+  private updateConnectionState(error: Error | null = null) {
+    let nextState: ConnectionState;
+    if (this.isSseConnected) {
+      nextState = "live";
+      error = null;
+    } else if (this.isHttpOk) {
+      nextState = "polling";
+    } else {
+      nextState = "offline";
+      if (!error) {
+        error = this.lastError || new Error("API unreachable");
+      }
+    }
+    this.setConnection(nextState, error);
+  }
+
   private start() {
     this.connectSSE();
     // Do an immediate fetch to prime the state
@@ -112,9 +130,10 @@ class LiveStateManager {
       this.es = es;
 
       es.onopen = () => {
+        this.isSseConnected = true;
         this.backoffMs = INITIAL_BACKOFF_MS;
         this.stopPolling();
-        this.setConnection("live", null);
+        this.updateConnectionState(null);
       };
 
       es.addEventListener("state.updated", () => {
@@ -130,6 +149,7 @@ class LiveStateManager {
   }
 
   private disconnectSSE() {
+    this.isSseConnected = false;
     if (this.es) {
       this.es.onopen = null;
       this.es.onerror = null;
@@ -143,7 +163,10 @@ class LiveStateManager {
 
     // Start fallback polling if not already active
     this.startPolling();
-    this.setConnection("polling", err || null);
+    this.updateConnectionState(err || null);
+
+    // Immediately attempt a poll to know if HTTP is available
+    this.fetchLatestState();
 
     // Schedule exponential backoff SSE reconnect
     if (!this.reconnectTimer) {
@@ -179,15 +202,15 @@ class LiveStateManager {
         timeoutMs: 5000,
       });
 
+      this.isHttpOk = true;
+
       if (meta.etag) {
         this.currentEtag = meta.etag;
       }
 
       if (meta.notModified) {
         // If 304, our cached state is fresh
-        if (this.currentConnection === "offline") {
-          this.setConnection(this.es ? "live" : "polling", null);
-        }
+        this.updateConnectionState(null);
         return null;
       }
 
@@ -201,19 +224,16 @@ class LiveStateManager {
           }
         }
 
-        if (this.currentConnection === "offline") {
-          this.setConnection(this.es ? "live" : "polling", null);
-        }
+        this.updateConnectionState(null);
         return newState;
       }
 
+      this.updateConnectionState(null);
       return null;
     } catch (err: unknown) {
       const error = err instanceof Error ? err : new Error("Failed to fetch state");
-      // If both SSE is down and HTTP poll fails, expose offline
-      if (!this.es) {
-        this.setConnection("offline", error);
-      }
+      this.isHttpOk = false;
+      this.updateConnectionState(error);
       return null;
     } finally {
       this.isFetching = false;
@@ -223,6 +243,8 @@ class LiveStateManager {
   public reset() {
     this.stop();
     this.subscribers.clear();
+    this.isSseConnected = false;
+    this.isHttpOk = true;
     this.currentConnection = "polling";
     this.lastError = null;
     this.currentEtag = null;

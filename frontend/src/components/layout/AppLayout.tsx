@@ -21,7 +21,7 @@ export function AppLayout() {
       <Header state={state} connection={connection} />
 
       {/* Degraded Banner */}
-      <DegradedBanner state={state} />
+      <DegradedBanner state={state} connection={connection} />
 
       {/* Main Body */}
       <div className="flex min-h-0 flex-1 overflow-hidden">
