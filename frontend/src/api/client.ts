@@ -16,9 +16,16 @@ export class ApiError extends Error {
   }
 }
 
-let operatorToken: string | null = null;
+let operatorToken: string | null = typeof window !== "undefined"
+  ? localStorage.getItem("fsip_operator_token") || "change-me-operator"
+  : "change-me-operator";
+
 export const setToken = (t: string | null) => {
   operatorToken = t;
+  if (typeof window !== "undefined") {
+    if (t) localStorage.setItem("fsip_operator_token", t);
+    else localStorage.removeItem("fsip_operator_token");
+  }
 };
 
 export interface RequestOptions extends RequestInit {
@@ -198,4 +205,122 @@ function anySignal(signals: AbortSignal[]): AbortSignal {
   }
 
   return controller.signal;
+}
+
+// ---------------------------------------------------------------- Decision & Control API Helpers
+import type {
+  AuditResponse,
+  Decision,
+  DecisionsResponse,
+  Fuel,
+  RecommendationsResponse,
+} from "./types";
+
+export async function fetchRecommendations(simRunId?: number): Promise<Decision[]> {
+  const q = simRunId ? `?sim_run_id=${simRunId}` : "";
+  const res = await api<RecommendationsResponse>(`/recommendations${q}`);
+  return res.items;
+}
+
+export async function fetchDecisions(params?: {
+  sim_run_id?: number;
+  status?: string;
+  policy?: string;
+  from_tick?: number;
+  limit?: number;
+  offset?: number;
+}): Promise<DecisionsResponse> {
+  const sp = new URLSearchParams();
+  if (params?.sim_run_id !== undefined) sp.set("sim_run_id", String(params.sim_run_id));
+  if (params?.status) sp.set("status", params.status);
+  if (params?.policy) sp.set("policy", params.policy);
+  if (params?.from_tick !== undefined) sp.set("from_tick", String(params.from_tick));
+  if (params?.limit !== undefined) sp.set("limit", String(params.limit));
+  if (params?.offset !== undefined) sp.set("offset", String(params.offset));
+  const query = sp.toString() ? `?${sp.toString()}` : "";
+  return api<DecisionsResponse>(`/decisions${query}`);
+}
+
+export async function fetchDecisionById(id: number): Promise<Decision> {
+  return api<Decision>(`/decisions/${id}`);
+}
+
+export async function approveDecision(
+  id: number,
+  body?: {
+    line_ids?: number[];
+    quantities?: Record<string, number>;
+    reviewed_driver?: boolean;
+  }
+): Promise<Decision> {
+  return api<Decision>(`/decisions/${id}/approve`, {
+    method: "POST",
+    body: JSON.stringify(body || {}),
+  });
+}
+
+export async function rejectDecision(
+  id: number,
+  body?: {
+    reason_code?: string;
+    comment?: string;
+  }
+): Promise<Decision> {
+  return api<Decision>(`/decisions/${id}/reject`, {
+    method: "POST",
+    body: JSON.stringify(body || {}),
+  });
+}
+
+export async function triggerPlanNow(): Promise<{ accepted: boolean; details: unknown }> {
+  return api<{ accepted: boolean; details: unknown }>("/plan-now", {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
+export async function setControlMode(mode: string): Promise<{ status: string; mode: string }> {
+  return api<{ status: string; mode: string }>("/control/mode", {
+    method: "POST",
+    body: JSON.stringify({ mode }),
+  });
+}
+
+export async function setControlPolicy(
+  policy: string,
+  scarcityPolicy?: string
+): Promise<{ status: string; policy: string }> {
+  return api<{ status: string; policy: string }>("/control/policy", {
+    method: "POST",
+    body: JSON.stringify({ policy, scarcity_policy: scarcityPolicy }),
+  });
+}
+
+export async function dispatchManualAllocation(body: {
+  source_depot_id: string;
+  destination_station_id: string;
+  route_id: string;
+  fuel_type: Fuel;
+  quantity: number;
+  comment?: string;
+}): Promise<unknown> {
+  return api("/manual-allocation", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function fetchAuditLogs(params?: {
+  action?: string;
+  actor?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<AuditResponse> {
+  const sp = new URLSearchParams();
+  if (params?.action) sp.set("action", params.action);
+  if (params?.actor) sp.set("actor", params.actor);
+  if (params?.limit !== undefined) sp.set("limit", String(params.limit));
+  if (params?.offset !== undefined) sp.set("offset", String(params.offset));
+  const query = sp.toString() ? `?${sp.toString()}` : "";
+  return api<AuditResponse>(`/audit${query}`);
 }

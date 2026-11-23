@@ -3,6 +3,8 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import Overview from "@/pages/Overview";
 import Network from "@/pages/Network";
 import SystemHealth from "@/pages/SystemHealth";
+import Recommendations from "@/pages/Recommendations";
+import Decisions from "@/pages/Decisions";
 import { PlaceholderPage } from "@/pages/PlaceholderPage";
 
 export default function App() {
@@ -28,26 +30,9 @@ export default function App() {
             />
           }
         />
-        <Route
-          path="/recommendations"
-          element={
-            <PlaceholderPage
-              title="Recommendations"
-              phase={4}
-              description="Prescriptive shipment allocation recommendations with explanation narratives and supervisor approval."
-            />
-          }
-        />
-        <Route
-          path="/decisions"
-          element={
-            <PlaceholderPage
-              title="Decisions Ledger"
-              phase={4}
-              description="Cryptographic hash-chained audit ledger of all human and automated dispatch decisions."
-            />
-          }
-        />
+        {/* Phase 04 Pages */}
+        <Route path="/recommendations" element={<Recommendations />} />
+        <Route path="/decisions" element={<Decisions />} />
         <Route
           path="/alerts"
           element={

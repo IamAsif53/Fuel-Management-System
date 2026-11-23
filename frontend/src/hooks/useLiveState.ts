@@ -140,6 +140,35 @@ class LiveStateManager {
         this.fetchLatestState();
       });
 
+      const sseEvents = [
+        "decision.created",
+        "decision.approved",
+        "decision.rejected",
+        "allocation.submitted",
+        "allocation.delivered",
+        "allocation.failed",
+        "engine.mode_changed",
+        "engine.policy_changed",
+      ];
+
+      for (const evName of sseEvents) {
+        es.addEventListener(evName, (e: MessageEvent) => {
+          this.fetchLatestState();
+          if (typeof window !== "undefined") {
+            try {
+              const data = JSON.parse(e.data);
+              window.dispatchEvent(
+                new CustomEvent("fsip-event", {
+                  detail: { type: evName, data },
+                })
+              );
+            } catch {
+              /* ignore parse error */
+            }
+          }
+        });
+      }
+
       es.onerror = () => {
         this.handleSseFailure();
       };

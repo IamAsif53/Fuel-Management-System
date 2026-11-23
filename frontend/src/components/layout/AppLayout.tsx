@@ -3,6 +3,7 @@ import { useLiveState } from "@/hooks/useLiveState";
 import { Header } from "./Header";
 import { Sidebar } from "./Sidebar";
 import { DegradedBanner } from "./DegradedBanner";
+import { ToastContainer } from "@/components/Toast";
 
 export function AppLayout() {
   const { state, connection } = useLiveState();
@@ -33,6 +34,9 @@ export function AppLayout() {
           <Outlet />
         </main>
       </div>
+
+      {/* Real-time Toast Notifications */}
+      <ToastContainer />
     </div>
   );
 }

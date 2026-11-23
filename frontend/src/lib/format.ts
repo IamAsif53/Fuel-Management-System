@@ -1,4 +1,7 @@
 /** Number/label formatting used everywhere (22_UI_SPEC.md §1.4). */
+export const formatNumber = (v: number | null | undefined): string =>
+  v == null || Number.isNaN(v) ? "0" : Math.round(v).toLocaleString("en-US");
+
 export const liters = (v: number | null | undefined): string =>
   v == null || Number.isNaN(v) ? "—" : `${Math.round(v).toLocaleString("en-US")} L`;
 

@@ -56,7 +56,7 @@ export function Sidebar() {
         >
           <Icon size={18} aria-hidden className="shrink-0" />
           <span className="hidden truncate xl:inline">{label}</span>
-          {phase > 3 && (
+          {phase > 4 && (
             <span className="ml-auto hidden rounded bg-bg-raised px-1.5 py-0.2 text-[10px] text-ink-faint xl:inline">
               P{phase}
             </span>

@@ -245,6 +245,83 @@ export interface StationDemandEntry {
   unmet_liters: number;
 }
 
+export interface DecisionLine {
+  id: number;
+  decision_id: number;
+  line_no: number;
+  source_depot_id: string;
+  destination_station_id: string;
+  route_id: string;
+  fuel_type: Fuel;
+  quantity: number;
+  idempotency_key: string;
+  status: LineStatus;
+  sim_allocation_id?: number | null;
+  sim_error_code?: string | null;
+  expected_arrival_tick?: number | null;
+  actual_arrival_tick?: number | null;
+  received_liters?: number | null;
+  reason?: string | null;
+  created_at?: string;
+}
+
+export interface DecisionOutcome {
+  decision_id: number;
+  evaluated_tick: number;
+  predicted?: Record<string, unknown> | null;
+  realised?: Record<string, unknown> | null;
+  hit?: boolean | null;
+  created_at?: string;
+}
+
+export interface Decision {
+  id: number;
+  sim_run_id?: number | null;
+  tick: number;
+  policy: string;
+  policy_version?: string;
+  trigger?: string;
+  status: DecisionStatus;
+  mode?: string;
+  confidence?: number;
+  degraded?: boolean;
+  fallback_reason?: string | null;
+  narrative?: string | null;
+  approved_by?: string | null;
+  approved_at?: string | null;
+  rejected_reason?: string | null;
+  expires_at_tick?: number | null;
+  created_at?: string;
+  explanation?: Record<string, unknown> | null;
+  impact?: Record<string, unknown> | null;
+  objective?: Record<string, unknown> | null;
+  lines: DecisionLine[];
+  outcome?: DecisionOutcome | null;
+}
+
+export interface DecisionsResponse {
+  items: Decision[];
+  total: number;
+}
+
+export interface RecommendationsResponse {
+  items: Decision[];
+}
+
+export interface AuditLogEntry {
+  id: number;
+  at: string;
+  actor: string;
+  action: string;
+  entity_type?: string | null;
+  entity_id?: string | null;
+  payload?: Record<string, unknown> | null;
+}
+
+export interface AuditResponse {
+  items: AuditLogEntry[];
+}
+
 export interface StationDetailResponse {
   station: StationView;
   history: StationHistoryEntry[];
