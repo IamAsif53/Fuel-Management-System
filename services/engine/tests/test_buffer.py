@@ -4,6 +4,7 @@ Verifies FIFO queue ordering, drop-oldest capacity enforcement, Prometheus metri
 transactional batching, rollback guarantees, exponential backoff, retry preservation,
 graceful shutdown, cancellation, and poison-pill isolation.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -37,6 +38,7 @@ DB_TEST_URL = resolve_database_url()
 # Live Database Fixtures (with graceful skip if DB offline)
 # =============================================================================
 
+
 @pytest_asyncio.fixture
 async def db_engine() -> AsyncEngine:
     """Fixture providing a connected AsyncEngine with NullPool."""
@@ -62,6 +64,7 @@ async def db_sessionmaker(db_engine: AsyncEngine) -> async_sessionmaker[AsyncSes
 # =============================================================================
 # Mock Sessionmaker Helper for Deterministic Unit Tests
 # =============================================================================
+
 
 class MockAsyncSession:
     """Lightweight session double for unit testing transactions."""
@@ -118,6 +121,7 @@ def create_mock_sessionmaker(should_fail: bool = False, fail_exc: Exception | No
 # 1. Queue Submission and FIFO Ordering
 # =============================================================================
 
+
 async def test_submit_and_fifo_ordering():
     """Verify submitted writes are buffered non-blocking and committed in FIFO order."""
     execution_order: list[int] = []
@@ -125,6 +129,7 @@ async def test_submit_and_fifo_ordering():
     async def write_op(item_id: int):
         async def _write(session: AsyncSession):
             execution_order.append(item_id)
+
         return _write
 
     sm = create_mock_sessionmaker()
@@ -148,6 +153,7 @@ async def test_submit_and_fifo_ordering():
 # 2. Configurable Queue Capacity and Drop-Oldest Behavior
 # =============================================================================
 
+
 async def test_configurable_capacity_and_drop_oldest():
     """Verify buffer drops the oldest queued items when capacity is exceeded."""
     executed: list[int] = []
@@ -155,6 +161,7 @@ async def test_configurable_capacity_and_drop_oldest():
     async def make_op(val: int):
         async def _fn(session: AsyncSession):
             executed.append(val)
+
         return _fn
 
     sm = create_mock_sessionmaker()
@@ -185,6 +192,7 @@ async def test_configurable_capacity_and_drop_oldest():
 # =============================================================================
 # 3. Prometheus Metrics: Dropped Writes & Queue Depth
 # =============================================================================
+
 
 async def test_metrics_dropped_writes_and_queue_depth():
     """Verify fsip_db_dropped_writes_total and fsip_db_buffered_writes update accurately."""
@@ -220,6 +228,7 @@ async def test_metrics_dropped_writes_and_queue_depth():
 # 4. Successful Batch Transaction and Commit
 # =============================================================================
 
+
 async def test_batch_transaction_and_commit():
     """Verify writes in a batch execute atomically within a single transaction."""
     records_written: list[str] = []
@@ -251,6 +260,7 @@ async def test_batch_transaction_and_commit():
 # =============================================================================
 # 5. Failed Batch Rollback Guarantees
 # =============================================================================
+
 
 async def test_failed_batch_rolls_back_completely():
     """Verify if any operation in a batch fails, the entire batch is rolled back and requeued."""
@@ -288,6 +298,7 @@ async def test_failed_batch_rolls_back_completely():
 # =============================================================================
 # 6. Retry with Exponential Backoff and Work Preservation
 # =============================================================================
+
 
 async def test_retry_and_work_preservation():
     """Verify failed batches are preserved and retried with exponential backoff."""
@@ -334,6 +345,7 @@ async def test_retry_and_work_preservation():
 # 7. Recovery After Database Reconnection
 # =============================================================================
 
+
 async def test_recovery_after_db_reconnect():
     """Verify writes queued during a prolonged DB outage are drained upon reconnection."""
     db_online = False
@@ -355,6 +367,7 @@ async def test_recovery_after_db_reconnect():
     def make_demand_op(item_val: int):
         async def _op(s):
             committed_items.append(item_val)
+
         return _op
 
     for i in range(1, 4):
@@ -384,6 +397,7 @@ async def test_recovery_after_db_reconnect():
 # =============================================================================
 # 8. Graceful Shutdown & Cancellation
 # =============================================================================
+
 
 async def test_graceful_shutdown():
     """Verify stop() signals worker, awaits queue drain, and terminates cleanly."""
@@ -424,6 +438,7 @@ async def test_cancellation_behavior():
 # =============================================================================
 # 9. Failure Isolation (Poison Pill does not kill worker)
 # =============================================================================
+
 
 async def test_poison_pill_isolation():
     """Verify a bad payload is isolated and discarded after max_item_retries without killing worker."""
@@ -472,6 +487,7 @@ async def test_poison_pill_isolation():
 # =============================================================================
 # 10. Live TimescaleDB Integration via WriteBuffer
 # =============================================================================
+
 
 @pytest.mark.integration
 async def test_live_timescaledb_integration_via_buffer(db_sessionmaker: async_sessionmaker[AsyncSession]):
@@ -548,6 +564,7 @@ async def test_live_timescaledb_integration_via_buffer(db_sessionmaker: async_se
 # 11. Exponential Backoff Calculation
 # =============================================================================
 
+
 async def test_exponential_backoff_calculation():
     """Verify exponential backoff calculation increases exponentially and caps at max_backoff."""
     sm = create_mock_sessionmaker()
@@ -570,6 +587,7 @@ async def test_exponential_backoff_calculation():
 # =============================================================================
 # 12. Cancellation Data Preservation & In-Flight Rollback Guarantees
 # =============================================================================
+
 
 async def test_cancellation_during_in_flight_tx_rolls_back_and_requeues():
     """Verify cancellation during in-flight batch execution rolls back and requeues all items."""
@@ -628,6 +646,7 @@ async def test_requeued_items_retain_original_fifo_order_after_cancellation():
                 in_flight_event.set()
                 await block_event.wait()
             executed_order.append(item_id)
+
         return _op
 
     sm = create_mock_sessionmaker()
@@ -776,3 +795,94 @@ async def test_queue_depth_and_dropped_metrics_accuracy_under_cancellation():
     assert FSIP_DB_DROPPED_WRITES.labels(kind="metric_cancel")._value.get() == initial_dropped
 
 
+async def test_post_commit_callback_runs_on_commit_and_not_on_rollback():
+    """Verify on_commit runs after commit and never on rollback, and on_rollback runs on rollback."""
+    sm = create_mock_sessionmaker()
+    buf = WriteBuffer(sessionmaker=sm, batch_size=5, flush_interval=0.01)
+
+    commit_called = []
+    rollback_called = []
+
+    def on_commit_1():
+        commit_called.append(1)
+
+    def on_rollback_1():
+        rollback_called.append(1)
+
+    # 1. Successful commit
+    buf.submit(lambda s: None, kind="ok", on_commit=on_commit_1, on_rollback=on_rollback_1)
+    await buf.flush_once()
+
+    assert commit_called == [1]
+    assert rollback_called == []
+
+    # 2. Failed batch -> rollback
+    commit_called.clear()
+    rollback_called.clear()
+
+    def bad_op(s):
+        raise ValueError("Intentional batch failure")
+
+    def on_commit_2():
+        commit_called.append(2)
+
+    def on_rollback_2():
+        rollback_called.append(2)
+
+    buf.submit(bad_op, kind="bad", on_commit=on_commit_2, on_rollback=on_rollback_2)
+    await buf.flush_once()
+
+    # Must NOT run on_commit, MUST run on_rollback
+    assert commit_called == []
+    assert rollback_called == [2]
+
+
+async def test_on_commit_exception_does_not_mark_batch_as_failed():
+    """Verify an exception raised within on_commit does not cause committed batch to fail or requeue."""
+    sm = create_mock_sessionmaker()
+    buf = WriteBuffer(sessionmaker=sm, batch_size=5, flush_interval=0.01)
+
+    def exploding_commit():
+        raise RuntimeError("Callback crashed")
+
+    buf.submit(lambda s: None, kind="ok", on_commit=exploding_commit)
+    committed = await buf.flush_once()
+
+    # Must still return committed count 1 and queue remains 0 (not requeued)
+    assert committed == 1
+    assert buf.qsize == 0
+
+
+async def test_on_discard_invoked_on_queue_overflow_and_poison_pill():
+    """Verify on_discard is invoked when item is dropped via capacity overflow or poison pill."""
+    sm = create_mock_sessionmaker()
+    buf = WriteBuffer(sessionmaker=sm, max_items=2, batch_size=1, max_item_retries=1, flush_interval=0.01)
+
+    discarded = []
+
+    def on_discard_item(name):
+        return lambda: discarded.append(name)
+
+    # 1. Capacity overflow in submit()
+    buf.submit(lambda s: None, kind="k1", on_discard=on_discard_item("item1"))
+    buf.submit(lambda s: None, kind="k2", on_discard=on_discard_item("item2"))
+    # Queue is full (2/2). Submitting 3rd drops oldest (item1)
+    buf.submit(lambda s: None, kind="k3", on_discard=on_discard_item("item3"))
+
+    assert "item1" in discarded
+
+    # 2. Poison pill dropped in _handle_batch_failure()
+    discarded.clear()
+
+    def failing_op(s):
+        raise ValueError("Schema validation error")
+
+    buf_pp = WriteBuffer(sessionmaker=sm, batch_size=1, max_item_retries=1, flush_interval=0.01)
+    buf_pp.submit(failing_op, kind="bad_row", on_discard=on_discard_item("poison_pill"))
+
+    # Attempt 1: fails and reaches max_item_retries=1
+    batch = buf_pp._get_batch(1)
+    await buf_pp._process_batch(batch)
+    buf_pp._handle_batch_failure(batch, consecutive_failures=1)
+
+    assert "poison_pill" in discarded

@@ -8,6 +8,7 @@ Integrates SyncLoop, WorldState, database repository, and WriteBuffer:
 - Ensures deep-copied, immutable payloads for queued callbacks.
 - Enforces FIFO ordering so dependent writes (snapshots, demand) always resolve their sim_run_id.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -61,6 +62,7 @@ except ValueError:
 # Timestamp Helper
 # -----------------------------------------------------------------------------
 
+
 def ensure_utc_datetime(dt: datetime | str | None) -> datetime:
     """Ensure a timestamp is a valid UTC-aware datetime object."""
     if dt is None:
@@ -76,28 +78,61 @@ def ensure_utc_datetime(dt: datetime | str | None) -> datetime:
 # RunHandle: Asynchronous Run ID Resolution
 # -----------------------------------------------------------------------------
 
+
 class RunHandle:
     """Handle tracking an asynchronous database simulation run creation."""
 
     def __init__(self, key: str | None = None) -> None:
         self.key = key
-        self.db_run_id: int | None = None
+        self.committed_id: int | None = None
+        self.pending_id: int | None = None
         self._ready_event = asyncio.Event()
 
-    def set_id(self, run_id: int) -> None:
-        """Record the database-assigned sequence ID and signal readiness."""
-        self.db_run_id = run_id
-        self._ready_event.set()
+    @property
+    def db_run_id(self) -> int | None:
+        """The committed database run ID exposed to external callers."""
+        return self.committed_id
 
     @property
     def is_ready(self) -> bool:
-        """Return True if the database run ID has been established."""
-        return self.db_run_id is not None
+        """Return True if the database run ID has been successfully committed."""
+        return self.committed_id is not None
+
+    def set_id(self, run_id: int) -> None:
+        """Directly record committed database run ID (for testing or synchronous setup)."""
+        self.committed_id = run_id
+        self.pending_id = None
+        self._ready_event.set()
+
+    def set_pending_id(self, run_id: int) -> None:
+        """Record the pending database-assigned sequence ID within an in-flight transaction."""
+        self.pending_id = run_id
+
+    def commit_id(self) -> int | None:
+        """Promote the pending ID to committed status upon successful transaction commit."""
+        if self.pending_id is not None:
+            self.committed_id = self.pending_id
+            self.pending_id = None
+            self._ready_event.set()
+        return self.committed_id
+
+    def rollback_pending(self) -> None:
+        """Clear the pending ID on transaction rollback or failure."""
+        self.pending_id = None
+
+    def resolve_tx_run_id(self) -> int:
+        """Resolve run ID for operations executing within the same transaction or committed."""
+        if self.pending_id is not None:
+            return self.pending_id
+        if self.committed_id is not None:
+            return self.committed_id
+        raise RuntimeError("sim_run_id not yet resolved")
 
 
 # -----------------------------------------------------------------------------
 # StatePersistence Adapter
 # -----------------------------------------------------------------------------
+
 
 class StatePersistence:
     """Orchestrates database persistence for SyncLoop via WriteBuffer."""
@@ -107,6 +142,7 @@ class StatePersistence:
         self.active_run_handle: RunHandle | None = None
         self.last_persisted_tick: int | None = None
         self.persisted_demand_ids: set[int] = set()
+        self.pending_demand_ids: set[int] = set()
 
     def handle_reset(self, old_tick: int | None, new_tick: int) -> None:
         """Handle simulator reset: enqueue close for old run and reset tracking state."""
@@ -143,6 +179,7 @@ class StatePersistence:
         self.active_run_handle = None
         self.last_persisted_tick = None
         self.persisted_demand_ids.clear()
+        self.pending_demand_ids.clear()
 
     def persist_cycle(
         self,
@@ -176,18 +213,38 @@ class StatePersistence:
                     started_at=started_at,
                     first_tick=first_tick,
                 )
-                handle.set_id(sim_run.id)
-                store.sim_run_id = sim_run.id
-                log.info(
-                    "db.sim_run.created",
+                handle.set_pending_id(sim_run.id)
+                log.debug(
+                    "db.sim_run.pending",
                     sim_run_id=sim_run.id,
                     scenario_id=scenario_id,
                     seed=seed,
                     first_tick=first_tick,
                 )
 
+            def _on_create_run_commit() -> None:
+                committed_id = handle.commit_id()
+                if committed_id is not None:
+                    store.sim_run_id = committed_id
+                    log.info(
+                        "db.sim_run.created",
+                        sim_run_id=committed_id,
+                        scenario_id=scenario_id,
+                        seed=seed,
+                        first_tick=first_tick,
+                    )
+
+            def _on_create_run_rollback() -> None:
+                handle.rollback_pending()
+                log.debug("db.sim_run.rollback_pending", handle_key=handle.key)
+
             try:
-                self.write_buffer.submit(_create_run_op, kind="sim_run")
+                self.write_buffer.submit(
+                    _create_run_op,
+                    kind="sim_run",
+                    on_commit=_on_create_run_commit,
+                    on_rollback=_on_create_run_rollback,
+                )
             except Exception as exc:
                 if FSIP_PERSISTENCE_ERRORS is not None:
                     FSIP_PERSISTENCE_ERRORS.labels(kind="sim_run").inc()
@@ -210,24 +267,19 @@ class StatePersistence:
 
             # Create isolated deep copies of JSONB fields to prevent race with in-memory mutations
             depots_copy = [
-                d.model_dump(mode="json") if hasattr(d, "model_dump") else copy.deepcopy(d)
-                for d in store.depots
+                d.model_dump(mode="json") if hasattr(d, "model_dump") else copy.deepcopy(d) for d in store.depots
             ]
             stations_copy = [
-                s.model_dump(mode="json") if hasattr(s, "model_dump") else copy.deepcopy(s)
-                for s in store.stations
+                s.model_dump(mode="json") if hasattr(s, "model_dump") else copy.deepcopy(s) for s in store.stations
             ]
             routes_copy = [
-                r.model_dump(mode="json") if hasattr(r, "model_dump") else copy.deepcopy(r)
-                for r in store.routes
+                r.model_dump(mode="json") if hasattr(r, "model_dump") else copy.deepcopy(r) for r in store.routes
             ]
             events_copy = [
-                e.model_dump(mode="json") if hasattr(e, "model_dump") else copy.deepcopy(e)
-                for e in store.events
+                e.model_dump(mode="json") if hasattr(e, "model_dump") else copy.deepcopy(e) for e in store.events
             ]
             supply_copy = [
-                s.model_dump(mode="json") if hasattr(s, "model_dump") else copy.deepcopy(s)
-                for s in store.supply
+                s.model_dump(mode="json") if hasattr(s, "model_dump") else copy.deepcopy(s) for s in store.supply
             ]
             metrics_copy = (
                 store.metrics.model_dump(mode="json")
@@ -251,16 +303,13 @@ class StatePersistence:
             }
 
             async def _save_snapshot_op(session: AsyncSession) -> None:
-                if not current_handle.is_ready:
-                    raise RuntimeError(
-                        f"Cannot persist snapshot for tick {tick}: sim_run_id not yet resolved"
-                    )
-                snapshot_data["sim_run_id"] = current_handle.db_run_id
+                run_id = current_handle.resolve_tx_run_id()
+                snapshot_data["sim_run_id"] = run_id
                 await upsert_snapshot(session, snapshot_data)
                 log.debug(
                     "db.snapshot.persisted",
                     tick=tick,
-                    sim_run_id=current_handle.db_run_id,
+                    sim_run_id=run_id,
                 )
 
             try:
@@ -288,20 +337,19 @@ class StatePersistence:
         # ---------------------------------------------------------------------
         if demand_items:
             new_demand_records: list[dict[str, Any]] = []
+            new_obs_ids: list[int] = []
             for obs in demand_items:
                 obs_id = obs.id if hasattr(obs, "id") else obs.get("id")
                 if obs_id is None:
                     continue
-                if obs_id in self.persisted_demand_ids:
+                if obs_id in self.persisted_demand_ids or obs_id in self.pending_demand_ids:
                     continue
-                self.persisted_demand_ids.add(obs_id)
 
+                new_obs_ids.append(obs_id)
                 station_id = obs.station_id if hasattr(obs, "station_id") else obs.get("station_id")
                 fuel_type = str(obs.fuel_type if hasattr(obs, "fuel_type") else obs.get("fuel_type"))
                 obs_tick = obs.tick if hasattr(obs, "tick") else obs.get("tick")
-                obs_time = ensure_utc_datetime(
-                    obs.sim_time if hasattr(obs, "sim_time") else obs.get("sim_time")
-                )
+                obs_time = ensure_utc_datetime(obs.sim_time if hasattr(obs, "sim_time") else obs.get("sim_time"))
                 raw_demand = obs.demand_liters if hasattr(obs, "demand_liters") else obs.get("demand_liters", 0.0)
                 demand_liters = float(raw_demand)
                 raw_served = obs.served_liters if hasattr(obs, "served_liters") else obs.get("served_liters", 0.0)
@@ -309,34 +357,55 @@ class StatePersistence:
                 raw_unmet = obs.unmet_liters if hasattr(obs, "unmet_liters") else obs.get("unmet_liters", 0.0)
                 unmet_liters = float(raw_unmet)
 
-                new_demand_records.append({
-                    "sim_row_id": obs_id,
-                    "station_id": station_id,
-                    "fuel_type": fuel_type,
-                    "tick": obs_tick,
-                    "sim_time": obs_time,
-                    "demand_liters": demand_liters,
-                    "served_liters": served_liters,
-                    "unmet_liters": unmet_liters,
-                })
+                new_demand_records.append(
+                    {
+                        "sim_row_id": obs_id,
+                        "station_id": station_id,
+                        "fuel_type": fuel_type,
+                        "tick": obs_tick,
+                        "sim_time": obs_time,
+                        "demand_liters": demand_liters,
+                        "served_liters": served_liters,
+                        "unmet_liters": unmet_liters,
+                    }
+                )
 
             if new_demand_records:
+                batch_obs_ids = list(new_obs_ids)
+                self.pending_demand_ids.update(batch_obs_ids)
+
                 async def _save_demand_op(session: AsyncSession) -> None:
-                    if not current_handle.is_ready:
-                        raise RuntimeError(
-                            f"Cannot persist {len(new_demand_records)} demand rows: sim_run_id not yet resolved"
-                        )
+                    run_id = current_handle.resolve_tx_run_id()
                     for row in new_demand_records:
-                        row["sim_run_id"] = current_handle.db_run_id
+                        row["sim_run_id"] = run_id
                     await insert_demand_rows(session, new_demand_records)
                     log.debug(
                         "db.demand.persisted",
                         count=len(new_demand_records),
-                        sim_run_id=current_handle.db_run_id,
+                        sim_run_id=run_id,
                     )
 
+                def _on_demand_commit() -> None:
+                    self.pending_demand_ids.difference_update(batch_obs_ids)
+                    self.persisted_demand_ids.update(batch_obs_ids)
+                    if len(self.persisted_demand_ids) > 50000:
+                        min_keep = max(self.persisted_demand_ids) - 40000
+                        self.persisted_demand_ids = {i for i in self.persisted_demand_ids if i >= min_keep}
+
+                def _on_demand_rollback() -> None:
+                    self.pending_demand_ids.difference_update(batch_obs_ids)
+
+                def _on_demand_discard() -> None:
+                    self.pending_demand_ids.difference_update(batch_obs_ids)
+
                 try:
-                    self.write_buffer.submit(_save_demand_op, kind="demand")
+                    self.write_buffer.submit(
+                        _save_demand_op,
+                        kind="demand",
+                        on_commit=_on_demand_commit,
+                        on_rollback=_on_demand_rollback,
+                        on_discard=_on_demand_discard,
+                    )
                     if FSIP_DEMAND_ROWS_ENQUEUED is not None:
                         FSIP_DEMAND_ROWS_ENQUEUED.inc(len(new_demand_records))
                     log.info(
@@ -345,6 +414,7 @@ class StatePersistence:
                         tick=tick,
                     )
                 except Exception as exc:
+                    self.pending_demand_ids.difference_update(batch_obs_ids)
                     if FSIP_PERSISTENCE_ERRORS is not None:
                         FSIP_PERSISTENCE_ERRORS.labels(kind="demand").inc()
                     log.error(

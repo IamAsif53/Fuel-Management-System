@@ -24,6 +24,7 @@ Reliability & Poison-Pill Policy:
   retry attempt counts, `fsip_db_buffered_writes` is updated, and `CancelledError`
   is re-raised. Successfully committed batches are never requeued.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -35,6 +36,7 @@ import time
 from collections import deque
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+from typing import Any
 
 from prometheus_client import REGISTRY, Counter, Gauge
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -86,6 +88,7 @@ except ValueError:
 # Helper Utilities
 # =============================================================================
 
+
 def is_connection_error(exc: Exception) -> bool:
     """Determine whether an exception is caused by an unreachable or dropped DB connection."""
     if isinstance(exc, ConnectionError | OSError | TimeoutError | socket.error):
@@ -112,6 +115,7 @@ def is_connection_error(exc: Exception) -> bool:
 # Data Structures
 # =============================================================================
 
+
 @dataclass
 class WriteItem:
     """Single database write operation wrapped for buffering."""
@@ -120,11 +124,15 @@ class WriteItem:
     kind: str = "unknown"
     created_at: float = field(default_factory=time.monotonic)
     attempts: int = 0
+    on_commit: Callable[[], Any] | None = None
+    on_rollback: Callable[[], Any] | None = None
+    on_discard: Callable[[], Any] | None = None
 
 
 # =============================================================================
 # WriteBuffer Implementation
 # =============================================================================
+
 
 class WriteBuffer:
     """Asynchronous, bounded, fault-tolerant write buffer with transactional batching."""
@@ -192,28 +200,47 @@ class WriteBuffer:
         self,
         fn: Callable[[AsyncSession], Awaitable[None]],
         kind: str = "unknown",
+        on_commit: Callable[[], Any] | None = None,
+        on_rollback: Callable[[], Any] | None = None,
+        on_discard: Callable[[], Any] | None = None,
     ) -> None:
         """Submit an async write operation to the buffer.
 
         Never blocks. If the buffer is full, discards the oldest queued item,
         accepts the new item, and increments fsip_db_dropped_writes_total.
         """
+        dropped_item: WriteItem | None = None
         with self._lock:
             if len(self._queue) >= self.max_items:
-                dropped = self._queue.popleft()
+                dropped_item = self._queue.popleft()
                 self._dropped_count += 1
-                FSIP_DB_DROPPED_WRITES.labels(kind=dropped.kind).inc()
+                FSIP_DB_DROPPED_WRITES.labels(kind=dropped_item.kind).inc()
                 log.warning(
                     "db.write_buffer.dropped",
-                    kind=dropped.kind,
+                    kind=dropped_item.kind,
                     queue_size=len(self._queue),
                     max_items=self.max_items,
                 )
 
-            item = WriteItem(fn=fn, kind=kind)
+            item = WriteItem(
+                fn=fn,
+                kind=kind,
+                on_commit=on_commit,
+                on_rollback=on_rollback,
+                on_discard=on_discard,
+            )
             self._queue.append(item)
             depth = len(self._queue)
             FSIP_DB_BUFFERED_WRITES.set(depth)
+
+        # Notify dropped item outside lock
+        if dropped_item is not None and dropped_item.on_discard is not None:
+            try:
+                res = dropped_item.on_discard()
+                if inspect.isawaitable(res):
+                    asyncio.create_task(res)
+            except Exception as exc:
+                log.error("db.write_buffer.on_discard_failed", kind=dropped_item.kind, error=str(exc))
 
         # Wake worker loop outside lock
         self._wake_event.set()
@@ -251,9 +278,7 @@ class WriteBuffer:
 
         while self.qsize > 0 or self._in_flight > 0:
             if time.monotonic() - start_time > timeout:
-                raise TimeoutError(
-                    f"WriteBuffer.flush() timed out after {timeout}s with {self.qsize} items remaining"
-                )
+                raise TimeoutError(f"WriteBuffer.flush() timed out after {timeout}s with {self.qsize} items remaining")
             if not self._running:
                 committed = await self.flush_once()
                 if committed == 0 and self.qsize > 0:
@@ -323,9 +348,7 @@ class WriteBuffer:
                     break
 
                 # 2. Extract batch (scale down to 1 if retrying to isolate failures)
-                effective_batch_size = (
-                    1 if consecutive_failures >= 1 else self.batch_size
-                )
+                effective_batch_size = 1 if consecutive_failures >= 1 else self.batch_size
                 batch = self._get_batch(effective_batch_size)
                 if not batch:
                     continue
@@ -380,6 +403,7 @@ class WriteBuffer:
 
     def _requeue(self, batch: list[WriteItem]) -> None:
         """Prepend batch back to head of queue preserving FIFO order."""
+        dropped_items: list[WriteItem] = []
         with self._lock:
             for item in reversed(batch):
                 if len(self._queue) >= self.max_items:
@@ -390,9 +414,20 @@ class WriteBuffer:
                         kind=item.kind,
                         max_items=self.max_items,
                     )
+                    dropped_items.append(item)
                 else:
                     self._queue.appendleft(item)
             FSIP_DB_BUFFERED_WRITES.set(len(self._queue))
+
+        for item in dropped_items:
+            if item.on_discard is not None:
+                try:
+                    res = item.on_discard()
+                    if inspect.isawaitable(res):
+                        asyncio.create_task(res)
+                except Exception as exc:
+                    log.error("db.write_buffer.on_discard_failed", kind=item.kind, error=str(exc))
+
         self._wake_event.set()
 
     async def _process_batch(
@@ -428,6 +463,24 @@ class WriteBuffer:
 
             FSIP_DB_BATCHES_TOTAL.labels(status="committed").inc()
             log.debug("db.write_buffer.batch_committed", count=len(batch))
+
+            # Execute post-commit callbacks safely outside the transaction context.
+            # A failure in a post-commit callback must NOT cause the batch to be
+            # treated as rolled back or re-executed.
+            for item in batch:
+                if item.on_commit is not None:
+                    try:
+                        res = item.on_commit()
+                        if inspect.isawaitable(res):
+                            await res
+                    except Exception as cb_exc:
+                        log.error(
+                            "db.write_buffer.post_commit_callback_failed",
+                            kind=item.kind,
+                            error=str(cb_exc),
+                            exc_info=True,
+                        )
+
             return True
         except asyncio.CancelledError:
             # If cancelled before commit succeeded, restore each item's attempt count
@@ -435,6 +488,14 @@ class WriteBuffer:
             if committed_flag is None or not committed_flag[0]:
                 for item, orig in zip(batch, initial_attempts, strict=True):
                     item.attempts = orig
+                for item in batch:
+                    if item.on_rollback is not None:
+                        try:
+                            res = item.on_rollback()
+                            if inspect.isawaitable(res):
+                                pass
+                        except Exception:
+                            pass
             raise
         except Exception as exc:
             FSIP_DB_BATCHES_TOTAL.labels(status="rolled_back").inc()
@@ -448,6 +509,22 @@ class WriteBuffer:
             # Store last error on items for inspection
             for it in batch:
                 it.last_error = exc  # type: ignore[attr-defined]
+
+            # Invoke rollback callbacks safely
+            for item in batch:
+                if item.on_rollback is not None:
+                    try:
+                        res = item.on_rollback()
+                        if inspect.isawaitable(res):
+                            await res
+                    except Exception as cb_exc:
+                        log.error(
+                            "db.write_buffer.on_rollback_failed",
+                            kind=item.kind,
+                            error=str(cb_exc),
+                            exc_info=True,
+                        )
+
             return False
 
     def _handle_batch_failure(
@@ -474,6 +551,7 @@ class WriteBuffer:
         # Check for poison pills: if a single item fails repeatedly and error is NOT
         # a connection error, discard that specific item to prevent killing worker.
         items_to_requeue = []
+        items_to_discard = []
         for item in batch:
             last_err = getattr(item, "last_error", None)
             is_conn = is_connection_error(last_err) if last_err else True
@@ -489,8 +567,18 @@ class WriteBuffer:
                     error=str(last_err),
                     note="Discarded from buffer. Not persisted to DB quarantine table.",
                 )
+                items_to_discard.append(item)
             else:
                 items_to_requeue.append(item)
+
+        for item in items_to_discard:
+            if item.on_discard is not None:
+                try:
+                    res = item.on_discard()
+                    if inspect.isawaitable(res):
+                        asyncio.create_task(res)
+                except Exception as exc:
+                    log.error("db.write_buffer.on_discard_failed", kind=item.kind, error=str(exc))
 
         if items_to_requeue:
             self._requeue(items_to_requeue)

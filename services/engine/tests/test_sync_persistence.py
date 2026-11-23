@@ -8,6 +8,7 @@ Verifies:
 - Category E: Failure isolation & non-blocking resilience.
 - Category F: Live TimescaleDB integration test.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -26,7 +27,7 @@ from app.db.models import DemandObservation as DBObservation
 from app.db.models import SimRun, WorldSnapshot
 from app.db.session import check_db_health, resolve_database_url
 from app.sim.client import SimClient, SimResult
-from app.state.persistence import StatePersistence
+from app.state.persistence import RunHandle, StatePersistence
 from app.state.store import WorldState
 from app.state.sync import SyncLoop
 from fsip_common.models import DemandObservation, Depot, Instance, SimMetrics, Station
@@ -47,6 +48,7 @@ DB_TEST_URL = resolve_database_url()
 # =============================================================================
 # Test Doubles & Fixtures
 # =============================================================================
+
 
 def load_fx(name: str) -> Any:
     return json.loads((FX / f"{name}.json").read_text())
@@ -109,12 +111,29 @@ class RecordingWriteBuffer:
 
     def __init__(self, should_fail_submit: bool = False) -> None:
         self.submitted_ops: list[tuple[Callable[[AsyncSession], Awaitable[None]], str]] = []
+        self.submitted_items: list[dict[str, Any]] = []
         self.should_fail_submit = should_fail_submit
 
-    def submit(self, fn: Callable[[AsyncSession], Awaitable[None]], kind: str = "unknown") -> None:
+    def submit(
+        self,
+        fn: Callable[[AsyncSession], Awaitable[None]],
+        kind: str = "unknown",
+        on_commit: Callable[[], Any] | None = None,
+        on_rollback: Callable[[], Any] | None = None,
+        on_discard: Callable[[], Any] | None = None,
+    ) -> None:
         if self.should_fail_submit:
             raise RuntimeError("Simulated WriteBuffer submission failure")
         self.submitted_ops.append((fn, kind))
+        self.submitted_items.append(
+            {
+                "fn": fn,
+                "kind": kind,
+                "on_commit": on_commit,
+                "on_rollback": on_rollback,
+                "on_discard": on_discard,
+            }
+        )
 
     @property
     def kinds(self) -> list[str]:
@@ -145,6 +164,7 @@ async def live_sessionmaker(live_db_engine: AsyncEngine) -> async_sessionmaker[A
 # =============================================================================
 # A. Initial Simulation Run Lifecycle
 # =============================================================================
+
 
 async def test_initial_sync_creates_single_sim_run(fixtures_data: dict[str, Any]):
     """Verify first sync cycle creates exactly one database simulation run, not repeated."""
@@ -250,13 +270,14 @@ async def test_run_handle_resolves_id_for_dependent_writes(fixtures_data: dict[s
 
     sess = MockSession()
 
-    # Step 1: create_sim_run sets handle
+    # Step 1: create_sim_run sets pending handle ID without exposing as committed
     await create_op(sess)  # type: ignore[arg-type]
     assert persistence.active_run_handle is not None
-    assert persistence.active_run_handle.db_run_id == 999
-    assert store.sim_run_id == 999
+    assert persistence.active_run_handle.pending_id == 999
+    assert persistence.active_run_handle.db_run_id is None  # not exposed before commit
+    assert store.sim_run_id == 1  # remains unchanged at initial state before commit
 
-    # Step 2 & 3: snap_op and demand_op execute without error and resolve 999
+    # Step 2 & 3: snap_op and demand_op execute without error and resolve 999 in-tx
     # Monkeypatch upsert_snapshot and insert_demand_rows to capture payloads
     async def mock_upsert(s, snap):
         captured_snapshot.update(snap)
@@ -278,10 +299,20 @@ async def test_run_handle_resolves_id_for_dependent_writes(fixtures_data: dict[s
     assert captured_snapshot["sim_run_id"] == 999
     assert captured_demand[0]["sim_run_id"] == 999
 
+    # Step 4: After commit callback executes, handle and store expose the committed ID
+    on_commit_create = buf.submitted_items[0]["on_commit"]
+    assert on_commit_create is not None
+    on_commit_create()
+
+    assert persistence.active_run_handle.db_run_id == 999
+    assert persistence.active_run_handle.is_ready is True
+    assert store.sim_run_id == 999
+
 
 # =============================================================================
 # B. World Snapshot Persistence
 # =============================================================================
+
 
 async def test_snapshot_enqueued_per_successful_tick(fixtures_data: dict[str, Any]):
     """Verify one snapshot is enqueued per successful tick with correct fields."""
@@ -319,8 +350,14 @@ async def test_snapshot_jsonb_isolation_from_world_state_mutation(fixtures_data:
 
     store = WorldState()
     store.instance = Instance(
-        id=1, scenario_id="s1", scenario_version="1", seed=1,
-        sim_time=datetime(2026, 1, 1, 12, 0, tzinfo=UTC), tick=1, tick_minutes=15, status="RUNNING",
+        id=1,
+        scenario_id="s1",
+        scenario_version="1",
+        seed=1,
+        sim_time=datetime(2026, 1, 1, 12, 0, tzinfo=UTC),
+        tick=1,
+        tick_minutes=15,
+        status="RUNNING",
     )
     store.depots = [Depot.model_validate(fixtures_data["depots"][0])]
     store.stations = [Station.model_validate(fixtures_data["stations"][0])]
@@ -364,8 +401,14 @@ async def test_snapshot_preserves_stale_and_degraded_flags():
 
     store = WorldState()
     store.instance = Instance(
-        id=1, scenario_id="s1", scenario_version="1", seed=1,
-        sim_time=datetime(2026, 1, 1, 12, 0, tzinfo=UTC), tick=1, tick_minutes=15, status="RUNNING",
+        id=1,
+        scenario_id="s1",
+        scenario_version="1",
+        seed=1,
+        sim_time=datetime(2026, 1, 1, 12, 0, tzinfo=UTC),
+        tick=1,
+        tick_minutes=15,
+        status="RUNNING",
     )
     store.stale = True
     store.degraded_reasons.add("routes_failed")
@@ -393,6 +436,7 @@ async def test_snapshot_preserves_stale_and_degraded_flags():
 # C. Demand Observations Persistence & Deduplication
 # =============================================================================
 
+
 async def test_newly_observed_demand_rows_enqueued():
     """Verify newly observed demand rows are enqueued with complete mapped fields."""
     buf = RecordingWriteBuffer()
@@ -400,8 +444,14 @@ async def test_newly_observed_demand_rows_enqueued():
 
     store = WorldState()
     store.instance = Instance(
-        id=1, scenario_id="s1", scenario_version="1", seed=1,
-        sim_time=datetime(2026, 1, 1, 12, 0, tzinfo=UTC), tick=1, tick_minutes=15, status="RUNNING",
+        id=1,
+        scenario_id="s1",
+        scenario_version="1",
+        seed=1,
+        sim_time=datetime(2026, 1, 1, 12, 0, tzinfo=UTC),
+        tick=1,
+        tick_minutes=15,
+        status="RUNNING",
     )
 
     rows = [
@@ -447,15 +497,26 @@ async def test_overlapping_demand_windows_deduplicated():
 
     store = WorldState()
     store.instance = Instance(
-        id=1, scenario_id="s1", scenario_version="1", seed=1,
-        sim_time=datetime(2026, 1, 1, 12, 0, tzinfo=UTC), tick=1, tick_minutes=15, status="RUNNING",
+        id=1,
+        scenario_id="s1",
+        scenario_version="1",
+        seed=1,
+        sim_time=datetime(2026, 1, 1, 12, 0, tzinfo=UTC),
+        tick=1,
+        tick_minutes=15,
+        status="RUNNING",
     )
 
     def make_obs(row_id: int):
         return DemandObservation(
-            id=row_id, station_id="s1", fuel_type="DIESEL", tick=1,
+            id=row_id,
+            station_id="s1",
+            fuel_type="DIESEL",
+            tick=1,
             sim_time=datetime(2026, 1, 1, 12, 0, tzinfo=UTC),
-            demand_liters=50.0, served_liters=50.0, unmet_liters=0.0,
+            demand_liters=50.0,
+            served_liters=50.0,
+            unmet_liters=0.0,
         )
 
     # Window 1: rows 1 to 5
@@ -503,6 +564,7 @@ async def test_overlapping_demand_windows_deduplicated():
 # =============================================================================
 # D. Simulator Reset Handling
 # =============================================================================
+
 
 async def test_reset_closes_old_run_and_creates_new_run(fixtures_data: dict[str, Any]):
     """Verify simulator reset enqueues close_sim_run for Run A and create_sim_run for Run B."""
@@ -575,6 +637,7 @@ async def test_ordinary_sse_reconnect_does_not_trigger_reset(fixtures_data: dict
 # E. Failure Isolation & Robustness
 # =============================================================================
 
+
 async def test_write_buffer_submission_failure_does_not_crash_sync(fixtures_data: dict[str, Any]):
     """Verify an unexpected exception in WriteBuffer.submit() does not crash SyncLoop."""
     buf = RecordingWriteBuffer(should_fail_submit=True)
@@ -597,8 +660,14 @@ async def test_unresolved_run_id_raises_runtime_error_for_retry():
 
     store = WorldState()
     store.instance = Instance(
-        id=1, scenario_id="s1", scenario_version="1", seed=1,
-        sim_time=datetime(2026, 1, 1, 12, 0, tzinfo=UTC), tick=1, tick_minutes=15, status="RUNNING",
+        id=1,
+        scenario_id="s1",
+        scenario_version="1",
+        seed=1,
+        sim_time=datetime(2026, 1, 1, 12, 0, tzinfo=UTC),
+        tick=1,
+        tick_minutes=15,
+        status="RUNNING",
     )
 
     persistence.persist_cycle(store)
@@ -612,6 +681,7 @@ async def test_unresolved_run_id_raises_runtime_error_for_retry():
 # =============================================================================
 # F. Live TimescaleDB Integration Tests
 # =============================================================================
+
 
 @pytest.mark.integration
 async def test_live_timescaledb_persistence_full_lifecycle(
@@ -657,9 +727,7 @@ async def test_live_timescaledb_persistence_full_lifecycle(
             assert snap0.sim_time == datetime(2026, 1, 1, 0, 0, tzinfo=UTC)
 
             # Demand rows exist for Run 1
-            dem_res = await session.execute(
-                select(DBObservation).where(DBObservation.sim_run_id == run_id_1)
-            )
+            dem_res = await session.execute(select(DBObservation).where(DBObservation.sim_run_id == run_id_1))
             dem_rows = dem_res.scalars().all()
             assert len(dem_rows) > 0
 
@@ -716,3 +784,428 @@ async def test_live_timescaledb_persistence_full_lifecycle(
 
     finally:
         await buf.stop(timeout=2.0, task=worker)
+
+
+# =============================================================================
+# G. Mandatory Regression Tests: Post-Commit Persistence & RunHandle Isolation
+# =============================================================================
+
+
+async def test_demand_enqueue_does_not_mark_persisted_immediately():
+    """Prove that enqueueing demand does not add IDs to persisted_demand_ids before commit."""
+    buf = RecordingWriteBuffer()
+    persistence = StatePersistence(write_buffer=buf)  # type: ignore[arg-type]
+    store = WorldState()
+    store.instance = Instance(
+        id=1,
+        scenario_id="s1",
+        scenario_version="1",
+        seed=1,
+        sim_time=datetime(2026, 1, 1, 12, 0, tzinfo=UTC),
+        tick=1,
+        tick_minutes=15,
+        status="RUNNING",
+    )
+    obs = DemandObservation(
+        id=555,
+        station_id="st-1",
+        fuel_type="DIESEL",
+        tick=1,
+        sim_time=datetime(2026, 1, 1, 12, 0, tzinfo=UTC),
+        demand_liters=100.0,
+        served_liters=100.0,
+        unmet_liters=0.0,
+    )
+    persistence.persist_cycle(store, demand_items=[obs])
+
+    # Must be pending, NOT marked persisted yet
+    assert 555 in persistence.pending_demand_ids
+    assert 555 not in persistence.persisted_demand_ids
+
+
+async def test_demand_successful_commit_marks_persisted():
+    """Prove that successful commit callback moves IDs from pending to persisted_demand_ids."""
+    buf = RecordingWriteBuffer()
+    persistence = StatePersistence(write_buffer=buf)  # type: ignore[arg-type]
+    store = WorldState()
+    store.instance = Instance(
+        id=1,
+        scenario_id="s1",
+        scenario_version="1",
+        seed=1,
+        sim_time=datetime(2026, 1, 1, 12, 0, tzinfo=UTC),
+        tick=1,
+        tick_minutes=15,
+        status="RUNNING",
+    )
+    obs = DemandObservation(
+        id=666,
+        station_id="st-1",
+        fuel_type="DIESEL",
+        tick=1,
+        sim_time=datetime(2026, 1, 1, 12, 0, tzinfo=UTC),
+        demand_liters=100.0,
+        served_liters=100.0,
+        unmet_liters=0.0,
+    )
+    persistence.persist_cycle(store, demand_items=[obs])
+
+    demand_item = [item for item in buf.submitted_items if item["kind"] == "demand"][0]
+    on_commit = demand_item["on_commit"]
+    assert on_commit is not None
+    on_commit()
+
+    assert 666 in persistence.persisted_demand_ids
+    assert 666 not in persistence.pending_demand_ids
+
+
+async def test_demand_rollback_leaves_ids_eligible_for_resubmission():
+    """Prove that transaction rollback leaves IDs eligible for resubmission during subsequent cycles."""
+    buf = RecordingWriteBuffer()
+    persistence = StatePersistence(write_buffer=buf)  # type: ignore[arg-type]
+    store = WorldState()
+    store.instance = Instance(
+        id=1,
+        scenario_id="s1",
+        scenario_version="1",
+        seed=1,
+        sim_time=datetime(2026, 1, 1, 12, 0, tzinfo=UTC),
+        tick=1,
+        tick_minutes=15,
+        status="RUNNING",
+    )
+    obs = DemandObservation(
+        id=777,
+        station_id="st-1",
+        fuel_type="DIESEL",
+        tick=1,
+        sim_time=datetime(2026, 1, 1, 12, 0, tzinfo=UTC),
+        demand_liters=100.0,
+        served_liters=100.0,
+        unmet_liters=0.0,
+    )
+    persistence.persist_cycle(store, demand_items=[obs])
+
+    demand_item = [item for item in buf.submitted_items if item["kind"] == "demand"][0]
+    on_rollback = demand_item["on_rollback"]
+    assert on_rollback is not None
+    on_rollback()
+
+    assert 777 not in persistence.persisted_demand_ids
+    assert 777 not in persistence.pending_demand_ids
+
+    # Next cycle should resubmit obs 777
+    buf.submitted_ops.clear()
+    buf.submitted_items.clear()
+    persistence.persist_cycle(store, demand_items=[obs])
+    assert "demand" in buf.kinds
+    assert 777 in persistence.pending_demand_ids
+
+
+async def test_demand_dropped_operation_leaves_ids_eligible_for_resubmission():
+    """Prove that a dropped WriteBuffer operation leaves IDs eligible for resubmission."""
+    buf = RecordingWriteBuffer()
+    persistence = StatePersistence(write_buffer=buf)  # type: ignore[arg-type]
+    store = WorldState()
+    store.instance = Instance(
+        id=1,
+        scenario_id="s1",
+        scenario_version="1",
+        seed=1,
+        sim_time=datetime(2026, 1, 1, 12, 0, tzinfo=UTC),
+        tick=1,
+        tick_minutes=15,
+        status="RUNNING",
+    )
+    obs = DemandObservation(
+        id=888,
+        station_id="st-1",
+        fuel_type="DIESEL",
+        tick=1,
+        sim_time=datetime(2026, 1, 1, 12, 0, tzinfo=UTC),
+        demand_liters=100.0,
+        served_liters=100.0,
+        unmet_liters=0.0,
+    )
+    persistence.persist_cycle(store, demand_items=[obs])
+
+    demand_item = [item for item in buf.submitted_items if item["kind"] == "demand"][0]
+    on_discard = demand_item["on_discard"]
+    assert on_discard is not None
+    on_discard()  # dropped due to buffer capacity or poison pill
+
+    assert 888 not in persistence.persisted_demand_ids
+    assert 888 not in persistence.pending_demand_ids
+
+    # Resubmission in next cycle works
+    buf.submitted_ops.clear()
+    buf.submitted_items.clear()
+    persistence.persist_cycle(store, demand_items=[obs])
+    assert "demand" in buf.kinds
+
+
+async def test_demand_cancellation_before_commit_does_not_mark_persisted():
+    """Prove that cancellation before commit does not mark IDs as persisted."""
+    buf = RecordingWriteBuffer()
+    persistence = StatePersistence(write_buffer=buf)  # type: ignore[arg-type]
+    store = WorldState()
+    store.instance = Instance(
+        id=1,
+        scenario_id="s1",
+        scenario_version="1",
+        seed=1,
+        sim_time=datetime(2026, 1, 1, 12, 0, tzinfo=UTC),
+        tick=1,
+        tick_minutes=15,
+        status="RUNNING",
+    )
+    obs = DemandObservation(
+        id=9999,
+        station_id="st-1",
+        fuel_type="DIESEL",
+        tick=1,
+        sim_time=datetime(2026, 1, 1, 12, 0, tzinfo=UTC),
+        demand_liters=100.0,
+        served_liters=100.0,
+        unmet_liters=0.0,
+    )
+    persistence.persist_cycle(store, demand_items=[obs])
+
+    demand_item = [item for item in buf.submitted_items if item["kind"] == "demand"][0]
+    # Cancellation invokes rollback
+    demand_item["on_rollback"]()
+
+    assert 9999 not in persistence.persisted_demand_ids
+    assert 9999 not in persistence.pending_demand_ids
+
+
+async def test_run_handle_does_not_expose_uncommitted_id():
+    """Prove newly generated ID is not exposed as committed before transaction commit."""
+    handle = RunHandle(key="test:run")
+    handle.set_pending_id(123)
+
+    assert handle.pending_id == 123
+    assert handle.committed_id is None
+    assert handle.db_run_id is None
+    assert handle.is_ready is False
+
+    # Within tx, resolve_tx_run_id resolves 123
+    assert handle.resolve_tx_run_id() == 123
+
+
+async def test_run_handle_rollback_clears_pending_and_preserves_uncommitted():
+    """Prove rollback clears pending ID without exposing it as committed."""
+    handle = RunHandle(key="test:run")
+    handle.set_pending_id(456)
+    handle.rollback_pending()
+
+    assert handle.pending_id is None
+    assert handle.committed_id is None
+    assert handle.db_run_id is None
+    assert handle.is_ready is False
+
+    with pytest.raises(RuntimeError, match="sim_run_id not yet resolved"):
+        handle.resolve_tx_run_id()
+
+
+async def test_run_handle_commit_promotes_id_and_updates_store():
+    """Prove commit promotes pending ID to committed status and updates store.sim_run_id."""
+    buf = RecordingWriteBuffer()
+    persistence = StatePersistence(write_buffer=buf)  # type: ignore[arg-type]
+    store = WorldState()
+    store.instance = Instance(
+        id=1,
+        scenario_id="s1",
+        scenario_version="1",
+        seed=1,
+        sim_time=datetime(2026, 1, 1, 12, 0, tzinfo=UTC),
+        tick=1,
+        tick_minutes=15,
+        status="RUNNING",
+    )
+    persistence.persist_cycle(store)
+
+    create_item = [item for item in buf.submitted_items if item["kind"] == "sim_run"][0]
+    handle = persistence.active_run_handle
+    assert handle is not None
+
+    # Step 1: execution sets pending ID
+    handle.set_pending_id(300)
+    assert handle.db_run_id is None
+    assert store.sim_run_id == 1  # remains unchanged before commit
+
+    # Step 2: commit callback promotes ID and updates store
+    on_commit = create_item["on_commit"]
+    assert on_commit is not None
+    on_commit()
+
+    assert handle.db_run_id == 300
+    assert handle.is_ready is True
+    assert store.sim_run_id == 300
+
+
+async def test_run_handle_retry_after_rollback_exposes_only_committed_id():
+    """Prove retry after rollback exposes only the successfully committed ID, never the rolled-back ID."""
+    buf = RecordingWriteBuffer()
+    persistence = StatePersistence(write_buffer=buf)  # type: ignore[arg-type]
+    store = WorldState()
+    store.instance = Instance(
+        id=1,
+        scenario_id="s1",
+        scenario_version="1",
+        seed=1,
+        sim_time=datetime(2026, 1, 1, 12, 0, tzinfo=UTC),
+        tick=1,
+        tick_minutes=15,
+        status="RUNNING",
+    )
+    persistence.persist_cycle(store)
+    create_item = [item for item in buf.submitted_items if item["kind"] == "sim_run"][0]
+    handle = persistence.active_run_handle
+    assert handle is not None
+
+    # Attempt 1: sets pending 10, then rolls back
+    handle.set_pending_id(10)
+    create_item["on_rollback"]()
+    assert handle.db_run_id is None
+    assert store.sim_run_id == 1  # remains unchanged on rollback
+
+    # Attempt 2 (Retry): sets pending 20, then commits
+    handle.set_pending_id(20)
+    create_item["on_commit"]()
+    assert handle.db_run_id == 20
+    assert store.sim_run_id == 20
+
+
+async def test_demand_permanently_failed_leaves_ids_eligible_for_resubmission():
+    """Prove that a permanently failed demand write discards from pending and leaves IDs eligible for resubmission."""
+    buf = RecordingWriteBuffer()
+    persistence = StatePersistence(write_buffer=buf)  # type: ignore[arg-type]
+    store = WorldState()
+    store.instance = Instance(
+        id=1,
+        scenario_id="s1",
+        scenario_version="1",
+        seed=1,
+        sim_time=datetime(2026, 1, 1, 12, 0, tzinfo=UTC),
+        tick=1,
+        tick_minutes=15,
+        status="RUNNING",
+    )
+    obs = DemandObservation(
+        id=1234,
+        station_id="st-1",
+        fuel_type="DIESEL",
+        tick=1,
+        sim_time=datetime(2026, 1, 1, 12, 0, tzinfo=UTC),
+        demand_liters=100.0,
+        served_liters=100.0,
+        unmet_liters=0.0,
+    )
+    persistence.persist_cycle(store, demand_items=[obs])
+    demand_item = [item for item in buf.submitted_items if item["kind"] == "demand"][0]
+
+    # Operation fails permanently (poison pill discarded by WriteBuffer)
+    demand_item["on_discard"]()
+
+    assert 1234 not in persistence.persisted_demand_ids
+    assert 1234 not in persistence.pending_demand_ids
+
+    # Next cycle should resubmit
+    buf.submitted_ops.clear()
+    buf.submitted_items.clear()
+    persistence.persist_cycle(store, demand_items=[obs])
+    assert "demand" in buf.kinds
+    assert 1234 in persistence.pending_demand_ids
+
+
+async def test_batch_failure_in_later_operation_does_not_expose_rolled_back_run_id():
+    """Verify that when a later op in batch fails and causes rollback, the rolled-back run ID is not exposed."""
+    buf = RecordingWriteBuffer()
+    persistence = StatePersistence(write_buffer=buf)  # type: ignore[arg-type]
+    store = WorldState()
+    store.instance = Instance(
+        id=1,
+        scenario_id="s1",
+        scenario_version="1",
+        seed=1,
+        sim_time=datetime(2026, 1, 1, 12, 0, tzinfo=UTC),
+        tick=1,
+        tick_minutes=15,
+        status="RUNNING",
+    )
+    obs = DemandObservation(
+        id=501,
+        station_id="st-1",
+        fuel_type="DIESEL",
+        tick=1,
+        sim_time=datetime(2026, 1, 1, 12, 0, tzinfo=UTC),
+        demand_liters=100.0,
+        served_liters=100.0,
+        unmet_liters=0.0,
+    )
+    persistence.persist_cycle(store, demand_items=[obs])
+
+    create_item = [item for item in buf.submitted_items if item["kind"] == "sim_run"][0]
+    handle = persistence.active_run_handle
+    assert handle is not None
+
+    # Operation 1 in batch establishes pending run_id = 888
+    handle.set_pending_id(888)
+
+    # Later operation in batch fails -> batch transaction rolls back
+    create_item["on_rollback"]()
+
+    # Verify rolled back ID is NOT exposed in handle or store
+    assert handle.db_run_id is None
+    assert handle.is_ready is False
+    assert handle.pending_id is None
+    assert store.sim_run_id == 1  # initial store ID preserved
+
+
+async def test_demand_retry_does_not_create_duplicate_database_rows(
+    live_sessionmaker: async_sessionmaker[AsyncSession],
+):
+    """Verify that retrying a demand insert with existing rows does not duplicate database rows."""
+    from app.db.repo import create_sim_run, insert_demand_rows
+
+    async with live_sessionmaker() as session:
+        async with session.begin():
+            run = await create_sim_run(
+                session,
+                scenario_id="test-dup",
+                seed=1,
+                tick_minutes=15,
+                started_at=datetime(2026, 1, 1, 0, 0, tzinfo=UTC),
+                first_tick=0,
+            )
+            run_id = run.id
+
+        # First insert
+        rows = [
+            {
+                "sim_run_id": run_id,
+                "sim_row_id": 9001,
+                "station_id": "st-1",
+                "fuel_type": "DIESEL",
+                "tick": 1,
+                "sim_time": datetime(2026, 1, 1, 0, 15, tzinfo=UTC),
+                "demand_liters": 100.0,
+                "served_liters": 100.0,
+                "unmet_liters": 0.0,
+            }
+        ]
+        async with session.begin():
+            inserted1 = await insert_demand_rows(session, rows)
+        assert inserted1 == 1
+
+        # Second insert (simulated retry of the same rows)
+        async with session.begin():
+            inserted2 = await insert_demand_rows(session, rows)
+        assert inserted2 == 0
+
+        # Query total count for run_id
+        res = await session.execute(
+            select(DBObservation).where(DBObservation.sim_run_id == run_id, DBObservation.sim_row_id == 9001)
+        )
+        assert len(res.scalars().all()) == 1
