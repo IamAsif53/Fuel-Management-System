@@ -322,7 +322,16 @@ export const mockWorldState: WorldState = {
     },
   ],
   events: [],
-  supply_upcoming: [],
+  supply_upcoming: [
+    {
+      id: "supply-gaz-1",
+      depot_id: "depot-gazipur",
+      fuel_type: "DIESEL",
+      quantity: 15000,
+      planned_tick: 50,
+      status: "SCHEDULED",
+    },
+  ],
   allocations_active: [
     {
       sim_allocation_id: 101,
