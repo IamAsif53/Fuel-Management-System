@@ -23,8 +23,10 @@ from .heuristic import (
     Plan,
     plan_heuristic,
 )
+from .tracker import AllocationOutcomeTracker
 
 __all__ = [
+    "AllocationOutcomeTracker",
     "DecisionConstraintViolationError",
     "DecisionEngine",
     "DecisionError",
