@@ -18,6 +18,7 @@ from .engine import (
     DecisionInvalidStateError,
     DecisionNotFoundError,
 )
+from .executor import Executor
 from .heuristic import (
     Plan,
     plan_heuristic,
@@ -30,6 +31,7 @@ __all__ = [
     "DecisionExpiredError",
     "DecisionInvalidStateError",
     "DecisionNotFoundError",
+    "Executor",
     "Plan",
     "PlanLine",
     "Violation",
