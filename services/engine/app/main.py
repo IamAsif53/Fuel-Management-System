@@ -16,13 +16,27 @@ import asyncio
 import time
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fsip_common.logging import configure_logging, get_logger
 from prometheus_client import Counter, Gauge, make_asgi_app
+from pydantic import BaseModel, Field
 
 from app.db.buffer import WriteBuffer
+from app.db.models import Decision, DecisionLine
 from app.db.session import get_sessionmaker, run_migrations
+from app.decision.constraints import PlanLine, check_line
+from app.decision.engine import (
+    DecisionConstraintViolationError,
+    DecisionEngine,
+    DecisionError,
+    DecisionExpiredError,
+    DecisionInvalidStateError,
+    DecisionNotFoundError,
+)
+from app.decision.executor import Executor
+from app.decision.tracker import AllocationOutcomeTracker
 from app.sim.circuit import CircuitBreaker
 from app.sim.client import SimClient
 from app.sim.sse import SSEListener
@@ -83,14 +97,16 @@ async def lifespan(app: FastAPI):
     if s.auto_migrate:
         await run_migrations(s.database_url)
 
-    # Initialize store and client
-    store = WorldState(engine_mode="NORMAL", operating_mode=s.engine_mode, policy=s.engine_policy)
+    # Initialize store and client (respecting existing app.state if injected by tests)
+    store = getattr(app.state, "store", None) or WorldState(
+        engine_mode="NORMAL", operating_mode=s.engine_mode, policy=s.engine_policy
+    )
     breaker = CircuitBreaker(
         "simulator",
         failure_threshold=s.breaker_failure_threshold,
         reset_timeout=s.breaker_reset_sec,
     )
-    client = SimClient(
+    client = getattr(app.state, "client", None) or SimClient(
         base_url=s.sim_base_url,
         timeout=s.sim_timeout_sec,
         max_retries=s.sim_max_retries,
@@ -98,34 +114,59 @@ async def lifespan(app: FastAPI):
     )
 
     # Initialize WriteBuffer for asynchronous DB persistence
-    sessionmaker = get_sessionmaker()
-    write_buffer = WriteBuffer(sessionmaker=sessionmaker)
+    sessionmaker = getattr(app.state, "sessionmaker", None) or get_sessionmaker()
+    write_buffer = getattr(app.state, "write_buffer", None) or WriteBuffer(sessionmaker=sessionmaker)
     app.state.write_buffer = write_buffer
 
     # Initialize Redis publisher
-    publisher = Publisher(redis_url=s.redis_url)
+    publisher = getattr(app.state, "publisher", None) or Publisher(redis_url=s.redis_url)
     app.state.publisher = publisher
 
     # Initialize SyncLoop and SSEListener
-    sync_loop = SyncLoop(
+    sync_loop = getattr(app.state, "sync_loop", None) or SyncLoop(
         client=client,
         store=store,
         poll_interval=s.engine_poll_interval_sec,
         write_buffer=write_buffer,
         publisher=publisher,
     )
-    sse_listener = SSEListener(
+    sse_listener = getattr(app.state, "sse_listener", None) or SSEListener(
         base_url=s.sim_base_url,
         on_tick=sync_loop.request_cycle,
         on_notice=sync_loop.on_notice,
         on_connect=sync_loop.full_sync,
     )
 
+    # Initialize Executor, DecisionEngine, AllocationOutcomeTracker
+    executor = getattr(app.state, "executor", None) or Executor(
+        sim_client=client,
+        session_factory=sessionmaker,
+        publisher=publisher,
+        settings=s,
+    )
+    decision_engine = getattr(app.state, "decision_engine", None) or DecisionEngine(
+        session_factory=sessionmaker,
+        publisher=publisher,
+        settings=s,
+        executor=executor,
+    )
+    tracker = getattr(app.state, "tracker", None) or AllocationOutcomeTracker(
+        session_factory=sessionmaker,
+        publisher=publisher,
+    )
+
+    # Register lifecycle hooks with sync loop
+    sync_loop.add_hook(tracker.track_cycle)
+    sync_loop.add_hook(decision_engine.on_cycle)
+
     # Attach to app.state
     app.state.store = store
     app.state.client = client
     app.state.sync_loop = sync_loop
     app.state.sse_listener = sse_listener
+    app.state.executor = executor
+    app.state.decision_engine = decision_engine
+    app.state.tracker = tracker
 
     log.info(
         "engine.start",
@@ -233,10 +274,14 @@ async def ready():
     status = "ready" if is_ready else "degraded"
 
     READY_CHECKS.labels("ok").inc()
+    dec_engine: DecisionEngine = getattr(app.state, "decision_engine", None)
     return {
         "status": status,
         "last_sync_age_s": age_s,
         "engine_mode": store.engine_mode,
+        "operating_mode": getattr(store, "operating_mode", "advisory"),
+        "policy": getattr(store, "policy", "heuristic"),
+        "last_plan_tick": getattr(dec_engine, "last_plan_tick", -1) if dec_engine else -1,
     }
 
 
@@ -250,3 +295,265 @@ async def debug_state():
             detail={"code": "NOT_INITIALIZED", "message": "Store not initialized"},
         )
     return store.to_public_json()
+
+
+# ---------------------------------------------------------------- Decision & Control Endpoints
+class ApproveDecisionRequest(BaseModel):
+    selected_line_ids: list[int] | None = None
+    modified_quantities: dict[int, float] | None = None
+    operator: str = "operator"
+
+
+class RejectDecisionRequest(BaseModel):
+    reason: str
+    operator: str = "operator"
+
+
+class EngineModeRequest(BaseModel):
+    mode: str = Field(..., description="advisory or autopilot")
+
+
+class EnginePolicyRequest(BaseModel):
+    policy: str = Field(..., description="heuristic or optimizer")
+
+
+class ManualAllocationRequest(BaseModel):
+    source_depot_id: str
+    destination_station_id: str
+    route_id: str
+    fuel_type: str
+    quantity: float
+    reason: str = "Operator manual dispatch"
+    operator: str = "operator"
+
+
+@app.post("/engine/decisions/{decision_id}/approve", dependencies=[Depends(require_internal)])
+async def approve_decision(decision_id: int, req: ApproveDecisionRequest):
+    """Approve a decision, optionally selecting a subset of lines and modifying quantities."""
+    dec_engine: DecisionEngine = getattr(app.state, "decision_engine", None)
+    if not dec_engine:
+        raise HTTPException(status_code=503, detail="Decision engine not initialized")
+
+    try:
+        dec = await dec_engine.approve_decision(
+            decision_id=decision_id,
+            actor=req.operator,
+            selected_line_ids=req.selected_line_ids,
+            modified_quantities=req.modified_quantities,
+            current_state=getattr(app.state, "store", None),
+        )
+    except DecisionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail={"code": "DECISION_NOT_FOUND", "message": str(exc)}) from exc
+    except DecisionExpiredError as exc:
+        raise HTTPException(status_code=409, detail={"code": "DECISION_EXPIRED", "message": str(exc)}) from exc
+    except DecisionInvalidStateError as exc:
+        raise HTTPException(status_code=409, detail={"code": "INVALID_STATE", "message": str(exc)}) from exc
+    except DecisionConstraintViolationError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "CONSTRAINT_VIOLATION",
+                "message": exc.message,
+                "violations": [
+                    {"rule": getattr(v, "rule", str(v)), "message": getattr(v, "message", str(v))}
+                    for v in exc.violations
+                ],
+            },
+        ) from exc
+    except DecisionError as exc:
+        raise HTTPException(status_code=exc.status_code, detail={"code": exc.code, "message": exc.message}) from exc
+
+    return {
+        "status": "ok",
+        "decision_id": dec.id,
+        "decision_status": dec.status,
+        "approved_by": dec.approved_by,
+        "lines_count": len(dec.lines),
+    }
+
+
+@app.post("/engine/decisions/{decision_id}/reject", dependencies=[Depends(require_internal)])
+async def reject_decision(decision_id: int, req: RejectDecisionRequest):
+    """Reject a pending decision with a reason."""
+    dec_engine: DecisionEngine = getattr(app.state, "decision_engine", None)
+    if not dec_engine:
+        raise HTTPException(status_code=503, detail="Decision engine not initialized")
+
+    try:
+        dec = await dec_engine.reject_decision(
+            decision_id=decision_id,
+            reason=req.reason,
+            actor=req.operator,
+        )
+    except DecisionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail={"code": "DECISION_NOT_FOUND", "message": str(exc)}) from exc
+    except DecisionExpiredError as exc:
+        raise HTTPException(status_code=409, detail={"code": "DECISION_EXPIRED", "message": str(exc)}) from exc
+    except DecisionInvalidStateError as exc:
+        raise HTTPException(status_code=409, detail={"code": "INVALID_STATE", "message": str(exc)}) from exc
+
+    return {
+        "status": "ok",
+        "decision_id": dec.id,
+        "decision_status": dec.status,
+        "rejected_reason": dec.rejected_reason,
+    }
+
+
+@app.post("/engine/plan-now", dependencies=[Depends(require_internal)])
+async def plan_now():
+    """Trigger an immediate planning cycle."""
+    dec_engine: DecisionEngine = getattr(app.state, "decision_engine", None)
+    store: WorldState = getattr(app.state, "store", None)
+    if not dec_engine or not store:
+        raise HTTPException(status_code=503, detail="Engine components not initialized")
+
+    dec = await dec_engine.plan_now(store)
+    if dec is None:
+        return {"status": "no_op", "message": "No allocations required", "decision_id": None}
+
+    return {
+        "status": "ok",
+        "decision_id": dec.id,
+        "decision_status": dec.status,
+        "lines_count": len(dec.lines),
+    }
+
+
+@app.post("/engine/control/mode", dependencies=[Depends(require_internal)])
+async def control_mode(req: EngineModeRequest):
+    """Switch operating mode (advisory vs autopilot)."""
+    mode = req.mode.lower()
+    if mode not in ("advisory", "autopilot"):
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "INVALID_MODE", "message": "Mode must be advisory or autopilot"},
+        )
+
+    store: WorldState = getattr(app.state, "store", None)
+    dec_engine: DecisionEngine = getattr(app.state, "decision_engine", None)
+    publisher: Publisher = getattr(app.state, "publisher", None)
+
+    if store:
+        store.operating_mode = mode
+    if dec_engine:
+        dec_engine.settings.engine_mode = mode
+
+    if publisher and store:
+        await publisher.event(
+            type="engine.mode_changed",
+            data={"mode": mode},
+            sim_run_id=store.sim_run_id,
+            tick=store.tick,
+        )
+
+    return {"status": "ok", "mode": mode}
+
+
+@app.post("/engine/control/policy", dependencies=[Depends(require_internal)])
+async def control_policy(req: EnginePolicyRequest):
+    """Switch active policy (heuristic vs optimizer)."""
+    policy = req.policy.lower()
+    if policy not in ("heuristic", "optimizer"):
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "INVALID_POLICY", "message": "Policy must be heuristic or optimizer"},
+        )
+
+    store: WorldState = getattr(app.state, "store", None)
+    dec_engine: DecisionEngine = getattr(app.state, "decision_engine", None)
+    publisher: Publisher = getattr(app.state, "publisher", None)
+
+    if store:
+        store.policy = policy
+    if dec_engine:
+        dec_engine.settings.engine_policy = policy
+
+    if publisher and store:
+        await publisher.event(
+            type="engine.policy_changed",
+            data={"policy": policy},
+            sim_run_id=store.sim_run_id,
+            tick=store.tick,
+        )
+
+    return {"status": "ok", "policy": policy}
+
+
+@app.post("/engine/manual-allocation", dependencies=[Depends(require_internal)])
+async def manual_allocation(req: ManualAllocationRequest):
+    """Validate and execute a manual operator dispatch."""
+    store: WorldState = getattr(app.state, "store", None)
+    dec_engine: DecisionEngine = getattr(app.state, "decision_engine", None)
+    executor: Executor = getattr(app.state, "executor", None)
+
+    if not store or not dec_engine or not executor:
+        raise HTTPException(status_code=503, detail="Engine not ready")
+
+    plan_line = PlanLine(
+        route_id=req.route_id,
+        source_depot_id=req.source_depot_id,
+        destination_station_id=req.destination_station_id,
+        fuel_type=req.fuel_type,
+        quantity=float(req.quantity),
+        reason=req.reason,
+    )
+
+    violations = check_line(store, plan_line, for_execution=True)
+    if violations:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "CONSTRAINT_VIOLATION",
+                "message": "Manual allocation violates constraints",
+                "violations": [
+                    {"rule": v.rule, "message": v.message}
+                    for v in violations
+                ],
+            },
+        )
+
+    # Persist manual decision and line
+    async with dec_engine.session_factory() as session:
+        cur_tick = int(getattr(store, "tick", 0))
+        sim_run_id = getattr(store, "sim_run_id", None)
+
+        dec = Decision(
+            sim_run_id=sim_run_id,
+            tick=cur_tick,
+            policy="manual",
+            status="APPROVED",
+            approved_by=req.operator,
+            approved_at=datetime.now(UTC),
+            trigger="MANUAL_OPERATOR",
+        )
+        session.add(dec)
+        await session.flush()
+
+        idemp_key = f"fsip-{sim_run_id or 0}-{dec.id}-1"
+        line = DecisionLine(
+            decision_id=dec.id,
+            line_no=1,
+            source_depot_id=req.source_depot_id,
+            destination_station_id=req.destination_station_id,
+            route_id=req.route_id,
+            fuel_type=req.fuel_type,
+            quantity=float(req.quantity),
+            idempotency_key=idemp_key,
+            status="APPROVED",
+            reason=req.reason,
+        )
+        session.add(line)
+        await session.commit()
+        await session.refresh(dec)
+        await session.refresh(line)
+
+    # Execute line via executor
+    await executor.execute(dec, [line])
+
+    return {
+        "status": "ok",
+        "decision_id": dec.id,
+        "line_id": line.id,
+        "execution_status": dec.status,
+    }
