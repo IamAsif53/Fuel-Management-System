@@ -181,16 +181,21 @@ def project_station_fuel(
     tick_minutes: int = 15,
 ) -> StationFuelProjection:
     """Build a projection for a single station and fuel combination."""
+    def _extract_fuel_val(container: Any, fuel_key: str) -> float:
+        if isinstance(container, dict):
+            return float(container.get(fuel_key, 0.0))
+        return float(getattr(container, fuel_key, 0.0))
+
     if isinstance(station, dict):
         station_id = station["id"]
         status = station.get("status", "OPEN")
-        capacity = float(station.get("capacity", {}).get(fuel_type, 0.0))
-        inventory = float(station.get("inventory", {}).get(fuel_type, 0.0))
+        capacity = _extract_fuel_val(station.get("capacity", {}), fuel_type)
+        inventory = _extract_fuel_val(station.get("inventory", {}), fuel_type)
     else:
         station_id = station.id
         status = station.status
-        capacity = float(getattr(station.capacity, fuel_type, 0.0))
-        inventory = float(getattr(station.inventory, fuel_type, 0.0))
+        capacity = _extract_fuel_val(station.capacity, fuel_type)
+        inventory = _extract_fuel_val(station.inventory, fuel_type)
 
     is_outage = (status == "OUTAGE")
     est_demand = estimate_demand(demand_history, capacity)

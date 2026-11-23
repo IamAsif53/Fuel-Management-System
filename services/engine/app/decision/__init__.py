@@ -10,12 +10,26 @@ from .constraints import (
     route_safe_at_departure,
     station_room_at_arrival,
 )
+from .engine import (
+    DecisionConstraintViolationError,
+    DecisionEngine,
+    DecisionError,
+    DecisionExpiredError,
+    DecisionInvalidStateError,
+    DecisionNotFoundError,
+)
 from .heuristic import (
     Plan,
     plan_heuristic,
 )
 
 __all__ = [
+    "DecisionConstraintViolationError",
+    "DecisionEngine",
+    "DecisionError",
+    "DecisionExpiredError",
+    "DecisionInvalidStateError",
+    "DecisionNotFoundError",
     "Plan",
     "PlanLine",
     "Violation",
