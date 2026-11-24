@@ -36,10 +36,12 @@ class SeasonalProfileModel:
         tick_minutes: int = 15,
         ewma_alpha: float = 0.3,
         level_window: int = 8,
+        coverage_calibration: float = 1.15,
     ) -> None:
         self.tick_minutes = tick_minutes
         self.ewma_alpha = ewma_alpha
         self.level_window = level_window
+        self.coverage_calibration = coverage_calibration
         # base[(station_id, fuel_type, hour)] -> float
         self.base: dict[tuple[str, str, int], float] = {}
         # residual quantiles per (station_id, fuel_type)
@@ -162,8 +164,8 @@ class SeasonalProfileModel:
         p50_out: list[float] = []
         p90_out: list[float] = []
 
-        q10_val = self.q10.get(key_sf, self.default_q10)
-        q90_val = self.q90.get(key_sf, self.default_q90)
+        q10_val = self.q10.get(key_sf, self.default_q10) * self.coverage_calibration
+        q90_val = self.q90.get(key_sf, self.default_q90) * self.coverage_calibration
 
         # Precompute schedule bounds if present
         sched_bounds = [(from_t, to_t, mult) for from_t, to_t, mult in multiplier_schedule]
