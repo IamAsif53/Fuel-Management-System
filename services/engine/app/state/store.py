@@ -122,6 +122,7 @@ class WorldState:
     policy: str = "optimizer"
 
     risk: dict[str | tuple[str, str], Any] = field(default_factory=dict)
+    depot_risk: dict[tuple[str, str], Any] = field(default_factory=dict)
     pending: list[Any] = field(default_factory=list)
     bottleneck: dict[str, Any] | None = None
     forecaster_label: str = "seasonal@builtin"
@@ -356,6 +357,7 @@ class WorldState:
         self.stale = False
         self.degraded_reasons.clear()
         self.risk.clear()
+        self.depot_risk.clear()
         self.pending.clear()
         self.bottleneck = None
 
@@ -432,7 +434,14 @@ class WorldState:
                 "capacity": {k: float(v) for k, v in d.capacity.items()},
                 "inventory": {k: float(v) for k, v in d.inventory.items()},
                 "next_supply": upcoming_supply,
-                "cover_hours": {k: 0.0 for k in FUELS},
+                "cover_hours": {
+                    k: float((self.depot_risk.get((d.id, k)) or {}).get("cover_hours", 0.0))
+                    for k in FUELS
+                },
+                "projected_days_of_supply": {
+                    k: float((self.depot_risk.get((d.id, k)) or {}).get("projected_days_of_supply", 99.0))
+                    for k in FUELS
+                },
                 "headroom_before_next_supply": {
                     k: max(0.0, float(d.capacity[k] - d.inventory[k])) for k in FUELS
                 },

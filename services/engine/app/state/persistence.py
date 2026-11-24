@@ -23,7 +23,13 @@ from prometheus_client import REGISTRY, Counter
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.buffer import WriteBuffer
-from app.db.repo import close_sim_run, create_sim_run, insert_demand_rows, upsert_snapshot
+from app.db.repo import (
+    close_sim_run,
+    create_sim_run,
+    insert_demand_rows,
+    insert_risk_rows,
+    upsert_snapshot,
+)
 from app.state.store import WorldState
 
 log = get_logger()
@@ -143,6 +149,8 @@ class StatePersistence:
         self.last_persisted_tick: int | None = None
         self.persisted_demand_ids: set[int] = set()
         self.pending_demand_ids: set[int] = set()
+        self.last_persisted_risk_levels: dict[tuple[str, str], str] = {}
+        self.last_risk_persist_tick: int = -1
 
     def handle_reset(self, old_tick: int | None, new_tick: int) -> None:
         """Handle simulator reset: enqueue close for old run and reset tracking state."""
@@ -180,6 +188,8 @@ class StatePersistence:
         self.last_persisted_tick = None
         self.persisted_demand_ids.clear()
         self.pending_demand_ids.clear()
+        self.last_persisted_risk_levels.clear()
+        self.last_risk_persist_tick = -1
 
     def persist_cycle(
         self,
@@ -423,3 +433,70 @@ class StatePersistence:
                         error=str(exc),
                         exc_info=True,
                     )
+
+        # ---------------------------------------------------------------------
+        # 4. Risk Assessments Persistence (Task 6.3)
+        # ---------------------------------------------------------------------
+        # Persist risk_assessments each cycle only when level changes or every 4 ticks
+        risk_results = getattr(store, "risk_results", {})
+        if risk_results:
+            any_level_changed = any(
+                res.risk_level != self.last_persisted_risk_levels.get(k)
+                for k, res in risk_results.items()
+            )
+            should_persist_risk = (
+                any_level_changed
+                or (tick % 4 == 0)
+                or (self.last_risk_persist_tick < 0)
+            )
+
+            if should_persist_risk:
+                risk_records = []
+                for (st_id, f_type), res in risk_results.items():
+                    compact_drivers = {
+                        "drivers": res.drivers,
+                        "stockout_prob_lead": round(res.stockout_prob_lead, 4),
+                        "stockout_prob_horizon": round(res.stockout_prob_horizon, 4),
+                        "lead_time_hours": res.lead_time_hours,
+                        "cover_hours": res.cover_hours,
+                        "band_p10": res.band_p10,
+                        "band_p50": res.band_p50,
+                        "band_p90": res.band_p90,
+                    }
+                    risk_records.append({
+                        "station_id": st_id,
+                        "fuel_type": f_type,
+                        "tick": tick,
+                        "sim_time": sim_time,
+                        "inventory": float(res.inventory),
+                        "inflight": float(res.inflight),
+                        "hours_to_stockout": res.hours_to_stockout,
+                        "stockout_prob": float(res.stockout_prob_horizon),
+                        "risk_level": res.risk_level,
+                        "drivers": compact_drivers,
+                    })
+
+                new_levels = {k: res.risk_level for k, res in risk_results.items()}
+
+                async def _save_risk_op(session: AsyncSession) -> None:
+                    run_id = current_handle.resolve_tx_run_id()
+                    for r in risk_records:
+                        r["sim_run_id"] = run_id
+                    await insert_risk_rows(session, risk_records)
+                    log.debug("db.risk.persisted", count=len(risk_records), sim_run_id=run_id, tick=tick)
+
+                def _on_risk_commit() -> None:
+                    self.last_persisted_risk_levels.update(new_levels)
+                    self.last_risk_persist_tick = tick
+
+                try:
+                    self.write_buffer.submit(
+                        _save_risk_op,
+                        kind="risk",
+                        on_commit=_on_risk_commit,
+                    )
+                    log.info("db.risk.enqueued", count=len(risk_records), tick=tick)
+                except Exception as exc:
+                    if FSIP_PERSISTENCE_ERRORS is not None:
+                        FSIP_PERSISTENCE_ERRORS.labels(kind="risk").inc()
+                    log.error("db.persistence.enqueue_failed", kind="risk", error=str(exc), exc_info=True)

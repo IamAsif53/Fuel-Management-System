@@ -22,6 +22,7 @@ from fsip_common.models import Instance
 from prometheus_client import REGISTRY, Counter, Gauge, Histogram
 
 from app.db.buffer import WriteBuffer
+from app.risk.stockout import assess
 from app.sim.client import SimClient, SimInvalidPayload
 from app.sim.validation import validate_resource
 from app.state.persistence import StatePersistence
@@ -266,6 +267,25 @@ class SyncLoop:
             self.store.degraded_reasons.discard("demand_failed")
         elif demand_failed:
             self.store.degraded_reasons.add("demand_failed")
+
+        # Assess risk across all stations, fuels, and depots
+        try:
+            station_risks, depot_projections = assess(self.store)
+            self.store.risk_results = station_risks
+            self.store.risk.clear()
+            for (st_id, f_type), r_res in station_risks.items():
+                self.store.risk.setdefault(st_id, {})[f_type] = r_res.to_compact_dict()
+
+            self.store.depot_risk.clear()
+            for (d_id, f_type), d_proj in depot_projections.items():
+                self.store.depot_risk[(d_id, f_type)] = {
+                    "projected_days_of_supply": d_proj.projected_days_of_supply,
+                    "hours_to_depletion": d_proj.hours_to_depletion,
+                    "hours_to_overflow": d_proj.hours_to_overflow,
+                    "waste_liters": d_proj.total_predicted_waste_liters,
+                }
+        except Exception as exc:
+            log.error("risk.assessment_failed", error=str(exc), exc_info=True)
 
         # Asynchronously enqueue persistence via WriteBuffer
         if self.persistence is not None:
