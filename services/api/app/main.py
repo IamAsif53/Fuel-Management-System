@@ -24,6 +24,7 @@ from app.middleware.ratelimit import RateLimitMiddleware
 from app.routers import (
     decisions_router,
     entities_router,
+    risk_alerts_router,
     state_router,
     stream_router,
     system_router,
@@ -161,6 +162,7 @@ async def ready():
 
 # Include Routers
 app.include_router(decisions_router)
+app.include_router(risk_alerts_router)
 app.include_router(state_router)
 app.include_router(stream_router)
 app.include_router(entities_router)

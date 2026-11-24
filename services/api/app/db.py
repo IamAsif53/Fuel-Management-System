@@ -426,3 +426,189 @@ async def fetch_audit_logs(
         d["payload"] = _parse_json_field(d.get("payload"))
         rows.append(d)
     return rows
+
+
+# ---------------------------------------------------------------- Alerts, Incidents & Forecasts
+async def fetch_alerts(
+    session: AsyncSession,
+    status: str | None = "OPEN",
+    category: str | None = None,
+    severity: str | None = None,
+    limit: int = 100,
+) -> tuple[list[dict[str, Any]], int]:
+    """Fetch alerts with optional filtering, returning (items, total_count)."""
+    conditions = []
+    params: dict[str, Any] = {"limit": limit}
+
+    if status and status.upper() != "ALL":
+        conditions.append("status = :status")
+        params["status"] = status.upper()
+    if category:
+        conditions.append("category = :category")
+        params["category"] = category
+    if severity:
+        conditions.append("severity = :severity")
+        params["severity"] = severity.upper()
+
+    where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
+    count_q = text(f"SELECT COUNT(*) FROM alerts {where_clause}")
+    count_res = await session.execute(count_q, params)
+    total = count_res.scalar() or 0
+
+    select_q = text(
+        f"""
+        SELECT id, sim_run_id, fingerprint, category, severity, title, message,
+               entity_type, entity_id, fuel_type, status, opened_tick, resolved_tick,
+               opened_at, resolved_at, acknowledged_by, data, related_decision_id
+        FROM alerts
+        {where_clause}
+        ORDER BY opened_at DESC, id DESC
+        LIMIT :limit
+        """
+    )
+    res = await session.execute(select_q, params)
+    rows = []
+    for r in res.mappings().all():
+        d = dict(r)
+        d["data"] = _parse_json_field(d.get("data"))
+        if hasattr(d.get("opened_at"), "isoformat"):
+            d["opened_at"] = d["opened_at"].isoformat()
+        if hasattr(d.get("resolved_at"), "isoformat"):
+            d["resolved_at"] = d["resolved_at"].isoformat()
+        rows.append(d)
+    return rows, int(total)
+
+
+async def ack_alert(
+    session: AsyncSession,
+    alert_id: int,
+    actor: str,
+) -> dict[str, Any] | None:
+    """Acknowledge an alert, setting status=ACKNOWLEDGED and returning updated alert."""
+    q = text(
+        """
+        UPDATE alerts
+        SET status = 'ACKNOWLEDGED', acknowledged_by = :actor
+        WHERE id = :alert_id
+        RETURNING id, sim_run_id, fingerprint, category, severity, title, message,
+                  entity_type, entity_id, fuel_type, status, opened_tick, resolved_tick,
+                  opened_at, resolved_at, acknowledged_by, data, related_decision_id
+        """
+    )
+    res = await session.execute(q, {"alert_id": alert_id, "actor": actor})
+    row = res.mappings().first()
+    if not row:
+        return None
+    d = dict(row)
+    d["data"] = _parse_json_field(d.get("data"))
+    if hasattr(d.get("opened_at"), "isoformat"):
+        d["opened_at"] = d["opened_at"].isoformat()
+    if hasattr(d.get("resolved_at"), "isoformat"):
+        d["resolved_at"] = d["resolved_at"].isoformat()
+    await session.commit()
+    return d
+
+
+async def fetch_incidents(
+    session: AsyncSession,
+    status: str | None = None,
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    """Fetch incidents ordered by started_at DESC."""
+    conditions = []
+    params: dict[str, Any] = {"limit": limit}
+    if status and status.upper() != "ALL":
+        conditions.append("status = :status")
+        params["status"] = status.upper()
+
+    where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
+    q = text(
+        f"""
+        SELECT id, kind, component, status, started_at, mitigated_at, resolved_at,
+               summary, timeline, created_at
+        FROM incidents
+        {where_clause}
+        ORDER BY started_at DESC, id DESC
+        LIMIT :limit
+        """
+    )
+    res = await session.execute(q, params)
+    rows = []
+    for r in res.mappings().all():
+        d = dict(r)
+        d["timeline"] = _parse_json_field(d.get("timeline"))
+        if hasattr(d.get("started_at"), "isoformat"):
+            d["started_at"] = d["started_at"].isoformat()
+        if hasattr(d.get("mitigated_at"), "isoformat"):
+            d["mitigated_at"] = d["mitigated_at"].isoformat()
+        if hasattr(d.get("resolved_at"), "isoformat"):
+            d["resolved_at"] = d["resolved_at"].isoformat()
+        if hasattr(d.get("created_at"), "isoformat"):
+            d["created_at"] = d["created_at"].isoformat()
+        rows.append(d)
+    return rows
+
+
+async def fetch_forecast_series(
+    session: AsyncSession,
+    station_id: str,
+    fuel_type: str,
+    horizon: int = 48,
+    history: int = 96,
+) -> dict[str, Any]:
+    """Fetch forecast series combining history demand observations and forecast p10/p50/p90 points."""
+    hist_q = text(
+        """
+        SELECT tick, demand_liters
+        FROM demand_observations
+        WHERE station_id = :station_id AND fuel_type = :fuel_type
+        ORDER BY tick DESC
+        LIMIT :history
+        """
+    )
+    hist_res = await session.execute(hist_q, {"station_id": station_id, "fuel_type": fuel_type, "history": history})
+    hist_rows = [dict(r) for r in hist_res.mappings().all()]
+    hist_points = [{"tick": r["tick"], "demand": float(r["demand_liters"] or 0.0)} for r in reversed(hist_rows)]
+
+    pts_q = text(
+        """
+        SELECT target_tick, p10, p50, p90, model_name, model_version, is_fallback
+        FROM forecasts
+        WHERE station_id = :station_id AND fuel_type = :fuel_type
+        ORDER BY made_at_tick DESC, target_tick ASC
+        LIMIT :horizon
+        """
+    )
+    pts_res = await session.execute(pts_q, {"station_id": station_id, "fuel_type": fuel_type, "horizon": horizon})
+    pts_rows = [dict(r) for r in pts_res.mappings().all()]
+
+    if pts_rows:
+        model_name = pts_rows[0].get("model_name") or "seasonal"
+        model_version = pts_rows[0].get("model_version") or "builtin"
+        model = f"{model_name}@{model_version}"
+        is_fallback = bool(pts_rows[0].get("is_fallback", False))
+        forecast_points = [
+            {
+                "tick": r["target_tick"],
+                "p10": float(r["p10"]),
+                "p50": float(r["p50"]),
+                "p90": float(r["p90"]),
+            }
+            for r in pts_rows
+        ]
+    else:
+        model = "seasonal@builtin"
+        is_fallback = False
+        forecast_points = []
+
+    return {
+        "station_id": station_id,
+        "fuel_type": fuel_type,
+        "model": model,
+        "is_fallback": is_fallback,
+        "history": hist_points,
+        "points": forecast_points,
+        "coverage_80": 0.80,
+    }
