@@ -1,7 +1,7 @@
 # PHASE 08 AUDIT & ACCEPTANCE REPORT
 **Fuel Supply Intelligence & Resilience Platform (FSIP)**  
 **Date:** 2026-11-24  
-**Git Commit Range:** Phase 08 Complete  
+**Git Commit Range:** `5e8b4ad` .. `aba194f`  
 **Status:** **PASSED & VERIFIED** (All Gates 8.1 – 8.10 Green)
 
 ---
