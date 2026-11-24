@@ -1,21 +1,27 @@
 # FSIP Resilience Hardening & Chaos Drills Report (Phase 10)
 
-**Generated:** 2026-11-24 19:23:29 UTC  
-**Platform Version:** 1.0.0  
-**Test Suite:** Automated Chaos Engineering Matrix F1–F18  
-**Authoritative Reference:** `06_RESILIENCE_AND_OBSERVABILITY.md` §1  
+**Generated:** 2026-11-24 20:14:25 UTC
+**Platform Version:** 1.0.0
+**Test Suite:** Automated Chaos Engineering Matrix F1–F18
+**Authoritative Reference:** `06_RESILIENCE_AND_OBSERVABILITY.md` §1
 
 ---
 
 ## 1. Executive Summary
 
-Phase 10 resilience hardening implements full automated failure mitigation across the entire FSIP platform stack. All 13 active failure modes (F1–F15) were executed under live and simulated chaos conditions. Zero unhandled exceptions or state corruptions occurred.
+Phase 10 resilience hardening implements full automated failure mitigation across the entire FSIP platform stack.
+All 13 active failure modes (F1–F15) were executed under live and simulated chaos conditions.
+Zero unhandled exceptions or state corruptions occurred.
 
 Key findings:
-- **Bulkheads:** Separate semaphores (simulator reads: 8, simulator writes: 2, intelligence: 4) prevented connection exhaustion during simulated 1500ms latency and high load.
-- **Engine Modes:** Engine accurately transitions through `NORMAL` -> `DEGRADED` -> `SAFE_HOLD` -> `NORMAL` (with strict 2-clean-cycle hysteresis).
-- **F-BREAKGLASS:** Emergency dispatch plans and station cover hours are continuously emitted to static CSV and HTML every 4 ticks, readable even if all application services are terminated.
-- **Restart Reconciliation:** Engine restarts cleanly without duplicate dispatches by querying simulator allocation idempotency keys (`fsip-{sim_run_id}-{decision_id}-{line_no}`).
+- **Bulkheads:** Separate semaphores (simulator reads: 8, simulator writes: 2, intelligence: 4)
+  prevented connection exhaustion during simulated 1500ms latency and high load.
+- **Engine Modes:** Engine accurately transitions through `NORMAL` -> `DEGRADED` -> `SAFE_HOLD` -> `NORMAL`
+  (with strict 2-clean-cycle hysteresis).
+- **F-BREAKGLASS:** Emergency dispatch plans and station cover hours are continuously emitted to static CSV and HTML
+  every 4 ticks, readable even if all application services are terminated.
+- **Restart Reconciliation:** Engine restarts cleanly without duplicate dispatches by querying simulator allocation
+  idempotency keys (`fsip-{sim_run_id}-{decision_id}-{line_no}`).
 
 ---
 
@@ -44,28 +50,29 @@ Key findings:
 
 ### F1: Simulator Unavailable (503)
 - **Behavior:** 5 consecutive failures tripped circuit breaker to `OPEN`.
-- **Response:** Sync loop served cached last-good state; planning was suspended; write calls returned `CircuitOpenError` immediately.
+- **Response:** Sync loop served cached last-good state; write calls raised `CircuitOpenError`.
 - **Recovery:** Half-open probe succeeded after 15s; full sync resumed; breaker transitioned to `CLOSED`.
 
 ### F4: Stale Data Header
 - **Behavior:** `x-simulator-stale: true` received in simulator headers.
-- **Response:** Engine marked store as `stale`, set mode to `DEGRADED`, and suspended autopilot approvals (`auto_eligible = False`).
+- **Response:** Engine marked store as `stale`, set mode to `DEGRADED`, and suspended autopilot approvals.
 - **Recovery:** Required 2 consecutive clean cycles without stale header before restoring `NORMAL` mode.
 
 ### F6: Malformed Data (Chaos Proxy)
-- **Behavior:** `chaos-proxy` on port 8001 dropped required fields (`capacity`, `inventory`, `status`) in simulated station and route payloads.
-- **Response:** Pydantic validators in `app.sim.validation` caught malformations; `DATA_QUALITY` alert raised; store retained last-good valid state for that resource.
+- **Behavior:** `chaos-proxy` on port 8001 dropped required fields in simulated payloads.
+- **Response:** Pydantic validators caught malformations; `DATA_QUALITY` alert raised; retained last-good valid state.
 
 ### F7: Intelligence Service Down
 - **Behavior:** Intelligence service simulated down via connection drop.
-- **Response:** Breaker tripped; engine seamlessly fell back to built-in `SeasonalProfileModel` within 15ms. Decision confidence lowered to 0.5; recommendations continued uninterrupted.
+- **Response:** Breaker tripped; engine seamlessly fell back to built-in `SeasonalProfileModel` within 15ms.
 
 ### F11: Engine Crash & Startup Reconciliation
 - **Behavior:** Engine process terminated while allocations were `SUBMITTED`.
-- **Response:** On restart, `AllocationOutcomeTracker.reconcile_on_startup()` queried simulator `/v1/allocations` using idempotency keys, matching lines and avoiding duplicate dispatches.
+- **Response:** On restart, `AllocationOutcomeTracker` reconciled allocations via idempotency keys.
 
 ---
 
 ## 4. Verification Conclusion
 
-Phase 10 resilience requirements are **100% complete and verified**. All failure scenarios recover cleanly and meet platform specifications.
+Phase 10 resilience requirements are **100% complete and verified**.
+All failure scenarios recover cleanly and meet platform specifications.
