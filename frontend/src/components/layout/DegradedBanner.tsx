@@ -8,6 +8,14 @@ interface DegradedBannerProps {
   connection?: ConnectionState;
 }
 
+const KNOWN_REASON_LABELS: Record<string, string> = {
+  prediction_service_down: "Prediction service down – fallback",
+};
+
+export function formatReason(reason: string): string {
+  return KNOWN_REASON_LABELS[reason] || reason;
+}
+
 export function DegradedBanner({ state, connection }: DegradedBannerProps) {
   const isOffline = connection === "offline";
   const isDegraded =
@@ -63,7 +71,7 @@ export function DegradedBanner({ state, connection }: DegradedBannerProps) {
               isCritical ? "bg-state-down/20" : "bg-state-degraded/20"
             )}
           >
-            {reason}
+            {formatReason(reason)}
           </span>
         ))}
       </div>

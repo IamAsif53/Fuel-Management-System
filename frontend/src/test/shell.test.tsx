@@ -66,5 +66,18 @@ describe("Application Shell Components", () => {
     expect(banner).toHaveTextContent("sim_stale");
     expect(banner).toHaveTextContent("t=100");
     expect(banner).toHaveTextContent("12.5s old");
+
+    const predictionDownState = {
+      degraded: true,
+      engine_mode: "DEGRADED",
+      degraded_reasons: ["prediction_service_down"],
+      tick: 101,
+      age_seconds: 1.0,
+    } as unknown as WorldState;
+
+    rerender(<DegradedBanner state={predictionDownState} />);
+    expect(screen.getByTestId("degraded-banner")).toHaveTextContent(
+      "Prediction service down – fallback"
+    );
   });
 });
