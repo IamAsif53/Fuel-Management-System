@@ -227,3 +227,82 @@ def test_project_world_state_helper():
     assert p1.estimated_demand == 100.0
     assert len(p1.inflight_shipments) == 1
     assert p1.fill_pct_with_inflight == 0.7
+
+
+def test_projection_with_demand_trajectory():
+    """Verify that demand_trajectory overrides estimated_demand for trajectory computation."""
+    proj = StationFuelProjection(
+        station_id="st-test",
+        fuel_type="DIESEL",
+        current_tick=0,
+        current_inventory=1000.0,
+        capacity=2000.0,
+        estimated_demand=10.0,
+        horizon_ticks=3,
+        demand_trajectory=[100.0, 200.0, 300.0],
+    )
+    # Step 0: demand 100 -> inv = 900
+    # Step 1: demand 200 -> inv = 700
+    # Step 2: demand 300 -> inv = 400
+    assert proj.inv_at_tick(0) == 1000.0
+    assert proj.inv_at_tick(1) == 900.0
+    assert proj.inv_at_tick(2) == 700.0
+    assert proj.inv_at_tick(3) == 400.0
+
+
+def test_project_station_fuel_with_forecast_bundle():
+    """Verify project_station_fuel extracts p50 from ForecastBundle."""
+    class DummyBundle:
+        def get_trajectory(self, station_id: str, fuel_type: str, horizon: int):
+            return [50.0] * horizon
+
+    station = {
+        "id": "st-fb",
+        "status": "OPEN",
+        "capacity": {"DIESEL": 1000.0},
+        "inventory": {"DIESEL": 500.0},
+    }
+    proj = project_station_fuel(
+        station=station,
+        fuel_type="DIESEL",
+        demand_history=None,
+        inflight=None,
+        current_tick=10,
+        horizon_ticks=4,
+        forecast_bundle=DummyBundle(),
+    )
+    assert proj.demand_trajectory == [50.0, 50.0, 50.0, 50.0]
+    assert proj.inv_at_tick(11) == 450.0
+    assert proj.inv_at_tick(12) == 400.0
+
+
+def test_project_world_state_with_forecast_bundle():
+    """Verify project_world_state connects state.forecast_bundle."""
+    class DummyBundle:
+        def get_trajectory(self, station_id: str, fuel_type: str, horizon: int):
+            return [75.0] * horizon
+
+    class DummyStation:
+        def __init__(self, sid):
+            self.id = sid
+            self.status = "OPEN"
+            self.capacity = type("Cap", (), {"DIESEL": 1000.0, "PETROL": 1000.0, "OCTANE": 1000.0})()
+            self.inventory = type("Inv", (), {"DIESEL": 500.0, "PETROL": 500.0, "OCTANE": 500.0})()
+
+    class DummyState:
+        def __init__(self):
+            self.tick = 0
+            self.stations = [DummyStation("st-1")]
+            self.forecast_bundle = DummyBundle()
+
+        def inflight(self):
+            return []
+
+        def demand(self):
+            return {}
+
+    state = DummyState()
+    projections = project_world_state(state)
+    p = projections[("st-1", "DIESEL")]
+    assert p.demand_trajectory == [75.0] * 96
+    assert p.inv_at_tick(1) == 425.0

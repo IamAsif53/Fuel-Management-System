@@ -179,6 +179,7 @@ def station_room_at_arrival(
     all_inflight = state.inflight() if callable(getattr(state, "inflight", None)) else _get_field(state, "inflight", [])
     demand_map = state.demand() if callable(getattr(state, "demand", None)) else _get_field(state, "demand", {})
     history = demand_map.get((station_id, fuel_type)) if isinstance(demand_map, dict) else None
+    forecast_bundle = getattr(state, "forecast_bundle", None)
 
     proj = project_station_fuel(
         station=station_obj,
@@ -187,6 +188,7 @@ def station_room_at_arrival(
         inflight=all_inflight,
         current_tick=cur_tick,
         horizon_ticks=max(96, arrival_tick - cur_tick + 10),
+        forecast_bundle=forecast_bundle,
     )
 
     inv_at_arrival = proj.inv_at_tick(arrival_tick + 1)

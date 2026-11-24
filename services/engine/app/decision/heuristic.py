@@ -88,6 +88,7 @@ def plan_heuristic(
 
     all_inflight = state.inflight() if callable(getattr(state, "inflight", None)) else _get_field(state, "inflight", [])
     demand_map = state.demand() if callable(getattr(state, "demand", None)) else _get_field(state, "demand", {})
+    forecast_bundle = getattr(state, "forecast_bundle", None)
 
     # Local tracking copies
     local_used_dispatch: dict[str, float] = {}
@@ -123,6 +124,7 @@ def plan_heuristic(
                 demand_history=history,
                 inflight=local_inflight,
                 current_tick=cur_tick,
+                forecast_bundle=forecast_bundle,
             )
 
             risk_num, risk_label = _assess_station_fuel_risk(proj, st_status)

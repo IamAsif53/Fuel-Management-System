@@ -59,6 +59,7 @@ class StationFuelProjection:
     horizon_ticks: int = 96
     tick_minutes: int = 15
     is_outage: bool = False
+    demand_trajectory: Sequence[float] | None = None
 
     # Computed trajectories:
     # _inv_trajectory[i] is projected inventory at tick (current_tick + i), length = horizon_ticks + 1
@@ -80,7 +81,12 @@ class StationFuelProjection:
         self._stockout_tick = None
 
         # Check immediate stockout at current_tick if current inventory is 0 and demand > 0
-        if inv <= 0.0 and self.estimated_demand > 0.0 and not self.is_outage:
+        step0_demand = (
+            float(self.demand_trajectory[0])
+            if (self.demand_trajectory and len(self.demand_trajectory) > 0)
+            else self.estimated_demand
+        )
+        if inv <= 0.0 and step0_demand > 0.0 and not self.is_outage:
             self._stockout_tick = self.current_tick
 
         # Group in-flight arrivals by expected arrival tick
@@ -94,7 +100,12 @@ class StationFuelProjection:
             t = curr_t + step
 
             # 1. Demand occurs during tick t (if not in outage)
-            demand_liters = 0.0 if self.is_outage else self.estimated_demand
+            if self.demand_trajectory and step < len(self.demand_trajectory):
+                step_demand = max(0.0, float(self.demand_trajectory[step]))
+            else:
+                step_demand = self.estimated_demand
+
+            demand_liters = 0.0 if self.is_outage else step_demand
             if inv < demand_liters and self._stockout_tick is None and demand_liters > 0.0:
                 self._stockout_tick = t
 
@@ -179,8 +190,13 @@ def project_station_fuel(
     current_tick: int,
     horizon_ticks: int = 96,
     tick_minutes: int = 15,
+    forecast_bundle: Any | None = None,
+    demand_trajectory: Sequence[float] | None = None,
 ) -> StationFuelProjection:
-    """Build a projection for a single station and fuel combination."""
+    """Build a projection for a single station and fuel combination.
+
+    Uses forecast_bundle p50 trajectory when available, with graceful fallback to estimated_demand.
+    """
     def _extract_fuel_val(container: Any, fuel_key: str) -> float:
         if isinstance(container, dict):
             return float(container.get(fuel_key, 0.0))
@@ -199,6 +215,11 @@ def project_station_fuel(
 
     is_outage = (status == "OUTAGE")
     est_demand = estimate_demand(demand_history, capacity)
+
+    # Extract p50 demand trajectory from forecast_bundle if not explicitly passed
+    if demand_trajectory is None and forecast_bundle is not None:
+        if hasattr(forecast_bundle, "get_trajectory"):
+            demand_trajectory = forecast_bundle.get_trajectory(station_id, fuel_type, horizon_ticks)
 
     # Filter matching in-flight shipments for this (station, fuel)
     relevant_inflight: list[tuple[int, float]] = []
@@ -225,6 +246,7 @@ def project_station_fuel(
         horizon_ticks=horizon_ticks,
         tick_minutes=tick_minutes,
         is_outage=is_outage,
+        demand_trajectory=demand_trajectory,
     )
 
 
@@ -237,6 +259,7 @@ def project_world_state(
     current_tick = state.tick if hasattr(state, "tick") else 0
     all_inflight = state.inflight() if hasattr(state, "inflight") else []
     demand_map = state.demand() if hasattr(state, "demand") else {}
+    forecast_bundle = getattr(state, "forecast_bundle", None)
 
     stations = state.stations if hasattr(state, "stations") else []
     for st in stations:
@@ -250,6 +273,7 @@ def project_world_state(
                 inflight=all_inflight,
                 current_tick=current_tick,
                 horizon_ticks=horizon_ticks,
+                forecast_bundle=forecast_bundle,
             )
             projections[(st_id, f)] = proj
 
