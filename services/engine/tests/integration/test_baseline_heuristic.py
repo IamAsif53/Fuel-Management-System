@@ -26,6 +26,7 @@ from app.db.session import check_db_health, resolve_database_url
 from app.decision.engine import DecisionEngine
 from app.decision.executor import Executor
 from app.decision.tracker import AllocationOutcomeTracker
+from app.sim.circuit import CircuitBreaker
 from app.sim.client import SimClient
 from app.state.store import WorldState
 from app.state.sync import SyncLoop
@@ -45,7 +46,8 @@ DB_TEST_URL = resolve_database_url()
 
 @pytest_asyncio.fixture
 async def sim_client() -> AsyncGenerator[SimClient, None]:
-    client = SimClient(base_url=SIM_TEST_URL, timeout=15.0)
+    breaker = CircuitBreaker("simulator", failure_threshold=20, reset_timeout=5.0)
+    client = SimClient(base_url=SIM_TEST_URL, timeout=30.0, breaker=breaker)
     try:
         health = await client.health()
         if health.status != 200:

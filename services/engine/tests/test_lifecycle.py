@@ -32,6 +32,7 @@ async def test_lifespan_starts_both_background_tasks():
         with patch("app.main.SyncLoop") as mock_sync_cls, patch("app.main.SSEListener") as mock_sse_cls:
             mock_sync = AsyncMock()
             mock_sync.stop = MagicMock()
+            mock_sync.add_hook = MagicMock()
             mock_sync_cls.return_value = mock_sync
             mock_sse = AsyncMock()
             mock_sse.stop = MagicMock()
@@ -168,6 +169,7 @@ async def test_shutdown_cancels_and_awaits_both_tasks():
         with patch("app.main.SyncLoop") as mock_sync_cls, patch("app.main.SSEListener") as mock_sse_cls:
             mock_sync = AsyncMock()
             mock_sync.stop = MagicMock()
+            mock_sync.add_hook = MagicMock()
             mock_sync_cls.return_value = mock_sync
             mock_sse = AsyncMock()
             mock_sse.stop = MagicMock()

@@ -57,7 +57,7 @@ async def _check_simulator_online(url: str) -> bool:
     global _SIM_ONLINE
     if _SIM_ONLINE is not None:
         return _SIM_ONLINE
-    client = httpx.AsyncClient(timeout=0.6)
+    client = httpx.AsyncClient(timeout=3.0)
     try:
         resp = await client.get(f"{url}/v1/health")
         _SIM_ONLINE = resp.status_code == 200

@@ -134,8 +134,11 @@ def client_app(session_factory, test_world_state: WorldState):
 
     mock_sync = AsyncMock()
     mock_sync.stop = MagicMock()
+    mock_sync.add_hook = MagicMock()
     app.state.sync_loop = mock_sync
-    app.state.sse_listener = AsyncMock()
+    mock_sse = AsyncMock()
+    mock_sse.stop = MagicMock()
+    app.state.sse_listener = mock_sse
 
     app.state.store = test_world_state
     app.state.decision_engine = decision_engine
