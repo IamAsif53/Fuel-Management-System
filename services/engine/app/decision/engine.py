@@ -187,7 +187,7 @@ class DecisionEngine:
                 tick=cur_tick,
                 policy=plan.policy,
                 policy_version="1.0.0",
-                trigger="interval" if not self.last_plan_tick else "auto",
+                trigger="alert" if getattr(plan, "has_critical_risk", False) else ("interval" if not self.last_plan_tick else "auto"),
                 status=initial_status,
                 mode=mode,
                 confidence=confidence,

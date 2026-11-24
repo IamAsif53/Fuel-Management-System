@@ -169,3 +169,41 @@ def test_hypothesis_no_generated_lines_violate_constraints(
         # Invariant: No emitted heuristic line may ever violate feasibility rules!
         assert len(violations) == 0, f"Line {line} had violations: {violations}"
         used_disp[line.source_depot_id] = used_disp.get(line.source_depot_id, 0.0) + line.quantity
+
+
+def test_heuristic_prioritizes_critical_risk_results():
+    """Verify heuristic prioritizes stations with CRITICAL risk_results and marks has_critical_risk."""
+    from app.risk.stockout import RiskResult
+
+    state = _make_heuristic_state(
+        station_inv_override={"DIESEL": 4000.0, "PETROL": 4000.0, "OCTANE": 4000.0},
+    )
+
+    # Invalidate DIESEL at Mirpur with CRITICAL risk_results
+    r_res = RiskResult(
+        station_id="station-mirpur",
+        fuel_type="DIESEL",
+        tick=10,
+        risk_level="CRITICAL",
+        hours_to_stockout=2.0,
+        stockout_prob_lead=0.75,
+        stockout_prob_horizon=0.95,
+        inventory=4000.0,
+        inflight=0.0,
+        capacity=10000.0,
+        fill_pct=0.40,
+        fill_pct_with_inflight=0.40,
+        cover_hours=2.0,
+        lead_ticks=5,
+        lead_time_hours=1.25,
+        drivers=["high_lead_stockout_prob"],
+    )
+    state["risk_results"] = {("station-mirpur", "DIESEL"): r_res}
+
+    plan = plan_heuristic(state)
+
+    assert len(plan.lines) > 0
+    # First line must be the CRITICAL DIESEL line
+    assert plan.lines[0].fuel_type == "DIESEL"
+    assert plan.has_critical_risk is True
+

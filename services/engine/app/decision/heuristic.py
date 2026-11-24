@@ -34,6 +34,10 @@ class Plan:
     reasons: list[str] = field(default_factory=list)
     policy: str = "heuristic@1.0.0"
     solver_status: str = "heuristic"
+    has_critical_risk: bool = False
+
+
+RISK_LEVEL_WEIGHTS = {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1}
 
 
 def _assess_station_fuel_risk(
@@ -127,7 +131,16 @@ def plan_heuristic(
                 forecast_bundle=forecast_bundle,
             )
 
-            risk_num, risk_label = _assess_station_fuel_risk(proj, st_status)
+            risk_results = _get_field(state, "risk_results", {})
+            if (st_id, fuel) in risk_results:
+                r_res = risk_results[(st_id, fuel)]
+                risk_label = r_res.risk_level
+                risk_num = RISK_LEVEL_WEIGHTS.get(risk_label, 1)
+                hours_to_stockout = r_res.hours_to_stockout if r_res.hours_to_stockout is not None else 9999.0
+            else:
+                risk_num, risk_label = _assess_station_fuel_risk(proj, st_status)
+                hours_to_stockout = proj.hours_to_stockout if proj.hours_to_stockout is not None else 9999.0
+
             fill_incl = proj.fill_pct_with_inflight
 
             if fill_incl < reorder_fill or risk_num >= 3:
@@ -141,7 +154,7 @@ def plan_heuristic(
                         "fuel_type": fuel,
                         "risk_num": risk_num,
                         "risk_label": risk_label,
-                        "hours_to_stockout": proj.hours_to_stockout if proj.hours_to_stockout is not None else 9999.0,
+                        "hours_to_stockout": hours_to_stockout,
                         "fill_pct": fill_incl,
                         "capacity": s_cap,
                         "need": need,
@@ -278,9 +291,19 @@ def plan_heuristic(
             local_inflight.append((st_id, fuel, arrival_tick, qty))
             rem_need = max(0.0, rem_need - qty)
 
+    has_critical = any(
+        item.get("is_critical", False)
+        for item in targets
+        if any(
+            line.destination_station_id == item["station_id"] and line.fuel_type == item["fuel_type"]
+            for line in planned_lines
+        )
+    )
+
     return Plan(
         lines=planned_lines,
         reasons=plan_reasons,
         policy="heuristic@1.0.0",
         solver_status="optimal" if planned_lines else "idle",
+        has_critical_risk=has_critical,
     )
