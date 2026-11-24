@@ -22,9 +22,11 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from fsip_common.logging import configure_logging, get_logger
 from prometheus_client import Counter, Gauge, make_asgi_app
 from pydantic import BaseModel, Field
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.buffer import WriteBuffer
-from app.db.models import Decision, DecisionLine
+from app.db.models import Decision, DecisionLine, SimRun
 from app.db.repo import insert_forecasts
 from app.db.session import get_sessionmaker, run_migrations
 from app.decision.constraints import PlanLine, check_line
@@ -179,7 +181,21 @@ async def lifespan(app: FastAPI):
             if current_store.sim_run_id is not None and write_buffer:
                 rows = fb.to_db_rows(current_store.sim_run_id, current_store.sim_time)
                 if rows:
-                    write_buffer.enqueue(insert_forecasts, forecasts=rows)
+                    async def _persist_forecasts_op(session: AsyncSession) -> None:
+                        run_id = await session.scalar(
+                            select(SimRun.id).where(SimRun.id == current_store.sim_run_id)
+                        )
+                        if not run_id:
+                            log.warning(
+                                "forecast.skipped_uncommitted_run",
+                                sim_run_id=current_store.sim_run_id,
+                            )
+                            return
+                        for r in rows:
+                            r["sim_run_id"] = run_id
+                        await insert_forecasts(session, forecasts=rows)
+
+                    write_buffer.submit(_persist_forecasts_op, kind="forecast")
 
             # 4. Record new forecasts in monitor for future verification
             if forecast_monitor:

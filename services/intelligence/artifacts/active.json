@@ -1,7 +1,7 @@
 {
   "name": "seasonal",
   "version": "builtin",
-  "activated_at": "2026-11-24T05:57:17.028452+00:00",
+  "activated_at": "2026-11-24T06:36:00.663708+00:00",
   "metrics": {
     "mae": 4.64,
     "mape": 0.0553,

@@ -60,6 +60,8 @@ services:
     image: fsip/intelligence:${APP_VERSION:-dev}
     container_name: fsip-intelligence
     ports: ["${INTEL_HOST_PORT:-8200}:8200"]
+    volumes:
+      - model-artifacts:/app/artifacts
     deploy:
       resources: {limits: {cpus: "1.0", memory: 768M}}
 
@@ -133,5 +135,6 @@ services:
 volumes:
   pgdata: {}
   redisdata: {}
+  model-artifacts: {}
   promdata: {}
   grafanadata: {}

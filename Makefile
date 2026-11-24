@@ -3,7 +3,7 @@ COMPOSE := docker compose
 PY := .venv/bin/python
 SERVICES := engine intelligence api
 
-.PHONY: help venv up obs-up down down-v ps logs smoke test test-common lint fixtures fe-test fe-build
+.PHONY: help venv up obs-up down down-v ps logs smoke test test-common lint fixtures fe-test fe-build seed-data train
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?##' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-12s %s\n", $$1, $$2}'
@@ -46,6 +46,12 @@ lint:
 
 fixtures: ## capture simulator fixtures (RESETS the simulator)
 	bash scripts/capture_fixtures.sh
+
+seed-data: ## generate demand dataset from offline simulator runs
+	$(PY) services/intelligence/training/generate_dataset.py
+
+train: ## train seasonal, LightGBM, and benchmark models on generated dataset
+	$(PY) services/intelligence/training/train.py
 
 fe-test:
 	cd frontend && npm ci && npm test
