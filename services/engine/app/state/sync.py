@@ -21,6 +21,7 @@ from fsip_common.logging import get_logger
 from fsip_common.models import Instance
 from prometheus_client import REGISTRY, Counter, Gauge, Histogram
 
+from app.alerts.manager import AlertManager, generate_risk_alert_specs
 from app.db.buffer import WriteBuffer
 from app.risk.stockout import assess
 from app.sim.client import SimClient, SimInvalidPayload
@@ -71,6 +72,7 @@ class SyncLoop:
         poll_interval: float = 1.0,
         write_buffer: WriteBuffer | None = None,
         publisher: Publisher | None = None,
+        alert_manager: AlertManager | None = None,
     ) -> None:
         self.client = client
         self.store = store
@@ -78,6 +80,7 @@ class SyncLoop:
         self.poll_interval = poll_interval
         self.write_buffer = write_buffer
         self.publisher = publisher
+        self.alert_manager = alert_manager
         self.persistence: StatePersistence | None = (
             StatePersistence(write_buffer) if write_buffer is not None else None
         )
@@ -286,6 +289,21 @@ class SyncLoop:
                 }
         except Exception as exc:
             log.error("risk.assessment_failed", error=str(exc), exc_info=True)
+            depot_projections = {}
+
+        # Evaluate risk-originated alerts and clear check
+        if self.alert_manager is not None:
+            try:
+                specs, active_fps = generate_risk_alert_specs(
+                    store=self.store,
+                    station_risks=self.store.risk_results,
+                    depot_projections=depot_projections,
+                )
+                for spec in specs:
+                    await self.alert_manager.raise_(spec)
+                await self.alert_manager.clear_check(active_fps, current_tick=self.store.tick)
+            except Exception as exc:
+                log.error("alerts.evaluation_failed", error=str(exc), exc_info=True)
 
         # Asynchronously enqueue persistence via WriteBuffer
         if self.persistence is not None:

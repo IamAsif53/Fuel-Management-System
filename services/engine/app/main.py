@@ -126,6 +126,20 @@ async def lifespan(app: FastAPI):
     publisher = getattr(app.state, "publisher", None) or Publisher(redis_url=s.redis_url)
     app.state.publisher = publisher
 
+    # Initialize AlertManager and IncidentManager
+    from app.alerts.manager import AlertManager, IncidentManager
+    alert_manager = getattr(app.state, "alert_manager", None) or AlertManager(
+        session_factory=sessionmaker,
+        redis_client=publisher._get_client(),
+    )
+    app.state.alert_manager = alert_manager
+
+    incident_manager = getattr(app.state, "incident_manager", None) or IncidentManager(
+        session_factory=sessionmaker,
+        redis_client=publisher._get_client(),
+    )
+    app.state.incident_manager = incident_manager
+
     # Initialize SyncLoop and SSEListener
     sync_loop = getattr(app.state, "sync_loop", None) or SyncLoop(
         client=client,
@@ -133,6 +147,7 @@ async def lifespan(app: FastAPI):
         poll_interval=s.engine_poll_interval_sec,
         write_buffer=write_buffer,
         publisher=publisher,
+        alert_manager=alert_manager,
     )
     sse_listener = getattr(app.state, "sse_listener", None) or SSEListener(
         base_url=s.sim_base_url,
