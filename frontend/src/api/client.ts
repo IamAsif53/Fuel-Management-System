@@ -209,11 +209,18 @@ function anySignal(signals: AbortSignal[]): AbortSignal {
 
 // ---------------------------------------------------------------- Decision & Control API Helpers
 import type {
+  Alert,
+  AlertsResponse,
   AuditResponse,
+  CoverResponse,
   Decision,
   DecisionsResponse,
+  ForecastSeries,
   Fuel,
+  Incident,
+  IncidentsResponse,
   RecommendationsResponse,
+  RiskResponse,
 } from "./types";
 
 export async function fetchRecommendations(simRunId?: number): Promise<Decision[]> {
@@ -323,4 +330,70 @@ export async function fetchAuditLogs(params?: {
   if (params?.offset !== undefined) sp.set("offset", String(params.offset));
   const query = sp.toString() ? `?${sp.toString()}` : "";
   return api<AuditResponse>(`/audit${query}`);
+}
+
+// ---------------------------------------------------------------- Risk, Alerts, Forecast, Cover, Incidents API Helpers
+
+export async function fetchRisk(params?: {
+  region_id?: string;
+  fuel?: string;
+  min_level?: string;
+}): Promise<RiskResponse> {
+  const sp = new URLSearchParams();
+  if (params?.region_id) sp.set("region_id", params.region_id);
+  if (params?.fuel) sp.set("fuel", params.fuel);
+  if (params?.min_level) sp.set("min_level", params.min_level);
+  const query = sp.toString() ? `?${sp.toString()}` : "";
+  return api<RiskResponse>(`/risk${query}`);
+}
+
+export async function fetchAlerts(params?: {
+  status?: string;
+  category?: string;
+  severity?: string;
+  limit?: number;
+}): Promise<AlertsResponse> {
+  const sp = new URLSearchParams();
+  if (params?.status) sp.set("status", params.status);
+  if (params?.category) sp.set("category", params.category);
+  if (params?.severity) sp.set("severity", params.severity);
+  if (params?.limit !== undefined) sp.set("limit", String(params.limit));
+  const query = sp.toString() ? `?${sp.toString()}` : "";
+  return api<AlertsResponse>(`/alerts${query}`);
+}
+
+export async function acknowledgeAlert(id: number): Promise<Alert> {
+  return api<Alert>(`/alerts/${id}/ack`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
+export async function fetchForecast(params: {
+  station_id: string;
+  fuel: string;
+  horizon?: number;
+  history?: number;
+}): Promise<ForecastSeries> {
+  const sp = new URLSearchParams();
+  sp.set("station_id", params.station_id);
+  sp.set("fuel", params.fuel);
+  if (params.horizon !== undefined) sp.set("horizon", String(params.horizon));
+  if (params.history !== undefined) sp.set("history", String(params.history));
+  return api<ForecastSeries>(`/forecast?${sp.toString()}`);
+}
+
+export async function fetchCover(): Promise<CoverResponse> {
+  return api<CoverResponse>("/cover");
+}
+
+export async function fetchIncidents(params?: {
+  status?: string;
+  limit?: number;
+}): Promise<IncidentsResponse> {
+  const sp = new URLSearchParams();
+  if (params?.status) sp.set("status", params.status);
+  if (params?.limit !== undefined) sp.set("limit", String(params.limit));
+  const query = sp.toString() ? `?${sp.toString()}` : "";
+  return api<IncidentsResponse>(`/incidents${query}`);
 }

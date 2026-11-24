@@ -334,3 +334,98 @@ export interface DepotDetailResponse {
   history: StationHistoryEntry[];
   projection: unknown[];
 }
+
+export interface RiskRow {
+  station_id: string;
+  station_name?: string;
+  region_id?: string;
+  fuel_type: Fuel;
+  risk_level: RiskLevel;
+  hours_to_stockout: number;
+  stockout_prob: number;
+  inventory: number;
+  drivers: string[];
+}
+
+export interface RiskResponse {
+  tick: number;
+  rows: RiskRow[];
+}
+
+export interface Alert {
+  id: number;
+  sim_run_id?: number | null;
+  fingerprint: string;
+  category: string;
+  severity: Severity;
+  title: string;
+  message?: string | null;
+  entity_type?: string | null;
+  entity_id?: string | null;
+  fuel_type?: Fuel | null;
+  status: "OPEN" | "ACKNOWLEDGED" | "RESOLVED";
+  opened_tick?: number | null;
+  resolved_tick?: number | null;
+  opened_at: string;
+  resolved_at?: string | null;
+  acknowledged_by?: string | null;
+  data?: Record<string, unknown> | null;
+  related_decision_id?: number | null;
+}
+
+export interface AlertsResponse {
+  items: Alert[];
+  total: number;
+}
+
+export interface CoverMetric {
+  available: number;
+  demand_96: number;
+  cover_days: number;
+}
+
+export interface CoverResponse {
+  network: Record<Fuel, CoverMetric>;
+  regions: Record<string, Record<Fuel, CoverMetric>>;
+  supply_ends_tick: number;
+  scarcity: Record<Fuel, boolean>;
+}
+
+export interface ForecastPoint {
+  tick: number;
+  p10: number;
+  p50: number;
+  p90: number;
+}
+
+export interface ForecastHistoryPoint {
+  tick: number;
+  demand: number;
+}
+
+export interface ForecastSeries {
+  station_id: string;
+  fuel_type: Fuel;
+  model: string;
+  is_fallback: boolean;
+  history: ForecastHistoryPoint[];
+  points: ForecastPoint[];
+  coverage_80: number;
+}
+
+export interface Incident {
+  id: number;
+  kind?: string | null;
+  component?: string | null;
+  status: string;
+  started_at?: string | null;
+  mitigated_at?: string | null;
+  resolved_at?: string | null;
+  summary?: string | null;
+  timeline?: unknown[];
+  created_at: string;
+}
+
+export interface IncidentsResponse {
+  items: Incident[];
+}

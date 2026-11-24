@@ -1,9 +1,12 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useLiveState } from "@/hooks/useLiveState";
-import type { DepotView, StationView } from "@/api/types";
+import type { CoverResponse, DepotView, StationView } from "@/api/types";
+import { fetchCover } from "@/api/client";
 import { KpiGrid } from "@/components/overview/KpiGrid";
 import { NetworkGraph } from "@/components/overview/NetworkGraph";
 import { InventorySummary } from "@/components/overview/InventorySummary";
+import { RiskHeatmap } from "@/components/overview/RiskHeatmap";
+import { FuelBudgetCard } from "@/components/overview/FuelBudgetCard";
 import { EntityDrawer } from "@/components/overview/EntityDrawer";
 import { LoadingSkeleton } from "@/components/LoadingSkeleton";
 import { ErrorState } from "@/components/ErrorState";
@@ -11,6 +14,21 @@ import { ErrorState } from "@/components/ErrorState";
 export default function Overview() {
   const { state, error, refetch, isLoading } = useLiveState();
   const [selectedEntity, setSelectedEntity] = useState<DepotView | StationView | null>(null);
+  const [cover, setCover] = useState<CoverResponse | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    fetchCover()
+      .then((data) => {
+        if (mounted) setCover(data);
+      })
+      .catch(() => {
+        // Fallback gracefully
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [state?.tick]);
 
   if (isLoading && !state) {
     return (
@@ -47,7 +65,23 @@ export default function Overview() {
         />
       </section>
 
-      {/* 3. Compact Inventory Summary Table */}
+      {/* 3. Fuel Budget Card (F-COVER) */}
+      <section aria-label="Network Fuel Budget">
+        <FuelBudgetCard cover={cover} currentTick={state?.tick || 0} />
+      </section>
+
+      {/* 4. Risk Heatmap */}
+      <section aria-label="Risk Heatmap">
+        <RiskHeatmap
+          stations={state?.stations || []}
+          onSelectStation={(id) => {
+            const st = (state?.stations || []).find((s) => s.id === id);
+            if (st) setSelectedEntity(st);
+          }}
+        />
+      </section>
+
+      {/* 5. Compact Inventory Summary Table */}
       <section aria-label="Inventory Summary">
         <InventorySummary
           state={state}
@@ -55,7 +89,7 @@ export default function Overview() {
         />
       </section>
 
-      {/* 4. Entity Detail Drawer */}
+      {/* 6. Entity Detail Drawer */}
       <EntityDrawer
         entity={selectedEntity}
         onClose={() => setSelectedEntity(null)}

@@ -5,6 +5,8 @@ import Network from "@/pages/Network";
 import SystemHealth from "@/pages/SystemHealth";
 import Recommendations from "@/pages/Recommendations";
 import Decisions from "@/pages/Decisions";
+import RiskPage from "@/pages/Risk";
+import AlertsPage from "@/pages/Alerts";
 import { PlaceholderPage } from "@/pages/PlaceholderPage";
 
 export default function App() {
@@ -19,30 +21,13 @@ export default function App() {
         <Route path="/network" element={<Network />} />
         <Route path="/health" element={<SystemHealth />} />
 
-        {/* Future Phase Placeholders */}
-        <Route
-          path="/risk"
-          element={
-            <PlaceholderPage
-              title="Risk Engine"
-              phase={6}
-              description="Real-time multi-horizon stockout probability heatmap, survival curves, and causal driver attribution."
-            />
-          }
-        />
+        {/* Phase 06 Pages */}
+        <Route path="/risk" element={<RiskPage />} />
+        <Route path="/alerts" element={<AlertsPage />} />
+
         {/* Phase 04 Pages */}
         <Route path="/recommendations" element={<Recommendations />} />
         <Route path="/decisions" element={<Decisions />} />
-        <Route
-          path="/alerts"
-          element={
-            <PlaceholderPage
-              title="Alerts & Incidents"
-              phase={6}
-              description="Fingerprinted anomaly alerts, severity classification, and active mitigation workflows."
-            />
-          }
-        />
         <Route
           path="/whatif"
           element={
