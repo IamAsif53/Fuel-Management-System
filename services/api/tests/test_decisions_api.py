@@ -325,3 +325,35 @@ async def test_get_audit_logs():
                 assert data["items"][0]["action"] == "DECISION_APPROVED"
         finally:
             app.dependency_overrides.pop(get_session, None)
+
+
+@pytest.mark.asyncio
+async def test_whatif_endpoints(auth_headers):
+    """Verify both /api/whatif and alias /api/decisions/what-if forward to engine."""
+    mock_response = {
+        "tick": 100,
+        "scenarios": [
+            {"name": "do_nothing", "unmet": 0.0, "overflow": 0.0, "min_station_sl": 1.0, "stations": []},
+            {"name": "custom", "unmet": 0.0, "overflow": 0.0, "min_station_sl": 1.0, "stations": []},
+        ],
+        "disclaimer": "Projection by our model; not executed.",
+    }
+
+    with patch("app.routers.decisions._call_engine", new_callable=AsyncMock) as mock_call:
+        mock_call.return_value = mock_response
+
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            payload = {"horizon_ticks": 48, "lines": [], "events": []}
+
+            # 1. Canonical endpoint per 21_API_CONTRACTS.md §2.4
+            res_canon = await client.post("/api/whatif", headers=auth_headers, json=payload)
+            assert res_canon.status_code == 200
+            assert res_canon.json()["disclaimer"] == "Projection by our model; not executed."
+            assert mock_call.await_args[1]["path"] == "/internal/whatif"
+
+            # 2. Compatibility alias endpoint
+            res_alias = await client.post("/api/decisions/what-if", headers=auth_headers, json=payload)
+            assert res_alias.status_code == 200
+            assert res_alias.json()["disclaimer"] == "Projection by our model; not executed."
+

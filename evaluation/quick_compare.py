@@ -169,7 +169,7 @@ class SimRunner:
         for ev in events:
             self.req("/admin/events", "POST", ev)
 
-        optimizer = OptimizerPolicy(time_limit=2)
+        optimizer = OptimizerPolicy(time_limit=5)
 
         solve_latencies_ms: list[float] = []
         submission_failures = 0

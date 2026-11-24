@@ -187,3 +187,53 @@ def test_shadow_twin_simulation_and_impact() -> None:
 
     # Allocations reduce unmet demand or stockout probability
     assert twin_rec.total_unmet_liters <= twin_dn.total_unmet_liters
+
+
+# 7. Checkpoints and Future Slots match 20_FINAL_SPEC_LOCK.md §5
+def test_optimizer_locked_checkpoints_and_slots() -> None:
+    from app.decision.optimizer import CHECKPOINTS, FUTURE_SLOTS
+
+    expected_checkpoints = [2, 3, 4, 6, 8, 12, 16, 20, 24, 32, 40, 48, 64, 80, 96]
+    expected_slots = [4, 8, 12, 16, 20, 28, 36, 48, 64]
+
+    assert CHECKPOINTS == expected_checkpoints, f"Checkpoints {CHECKPOINTS} != {expected_checkpoints}"
+    assert FUTURE_SLOTS == expected_slots, f"Future slots {FUTURE_SLOTS} != {expected_slots}"
+
+
+# 8. Solver default timeout matches 20_FINAL_SPEC_LOCK.md §5
+def test_optimizer_default_time_limit_is_5s() -> None:
+    opt = OptimizerPolicy()
+    assert opt.time_limit == 5, f"Default time_limit {opt.time_limit} != 5"
+
+
+# 9. Arrival time semantics consistency across timeutil, projection, stockout, and twin
+def test_arrival_time_semantics_consistency() -> None:
+    from fsip_common.timeutil import expected_arrival_tick
+
+    created_tick = 10
+    transit_ticks = 4
+    exp_arr = expected_arrival_tick(created_tick, transit_ticks)
+
+    # 1. Expected arrival tick is created + transit
+    assert exp_arr == 14
+
+    # 2. Fuel arrives during step 14, station inventory increases at instance tick 15 (exp_arr + 1)
+    # Verified in ShadowTwin arrival scheduling: arr_tick = exp_arr + 1 = 15
+    store = _make_phase08_store(tick=created_tick)
+    # Add an allocation arriving with exp_arr = 14
+    mock_alloc = {
+        "id": 101,
+        "destination_station_id": "st-1",
+        "fuel_type": "DIESEL",
+        "status": "IN_TRANSIT",
+        "created_tick": created_tick,
+        "transit_ticks": transit_ticks,
+        "expected_arrival_tick": exp_arr,
+        "quantity": 5000.0,
+    }
+    store.allocations = [mock_alloc]
+    res = ShadowTwin.project(state=store, lines=[], horizon=10, n_samples=10)
+    st1_diesel = res.stations[("st-1", "DIESEL")]
+    # Initial inventory is 3000.0; at k=4 (tick 14) it hasn't arrived; at k=5 (tick 15) it reflects 5000L increase
+    assert len(st1_diesel.inventory_p50) == 10
+

@@ -53,8 +53,10 @@ except ValueError:
     )
 
 FUELS = ["DIESEL", "PETROL", "OCTANE"]
-CHECKPOINTS = [4, 8, 12, 16, 24, 32, 48, 64, 80, 96]
-FUTURE_SLOTS = [4, 8, 12, 16, 24, 32, 48, 64]
+# Checkpoints locked per 20_FINAL_SPEC_LOCK.md §5 (benchmark v4)
+CHECKPOINTS = [2, 3, 4, 6, 8, 12, 16, 20, 24, 32, 40, 48, 64, 80, 96]
+# Future slots locked per 20_FINAL_SPEC_LOCK.md §5 (benchmark v4)
+FUTURE_SLOTS = [4, 8, 12, 16, 20, 28, 36, 48, 64]
 SAFETY_TICKS = 16
 SAFETY_NOISE = 0.15
 SAFETY_WEIGHT = 2.0
@@ -90,7 +92,7 @@ class OptimizerPlan:
 class OptimizerPolicy:
     """Rolling-horizon LP decision engine using PuLP CBC."""
 
-    def __init__(self, time_limit: int = 2) -> None:
+    def __init__(self, time_limit: int = 5) -> None:
         self.time_limit = time_limit
 
     def solve(

@@ -383,7 +383,9 @@ async def get_audit_logs(
 
 
 # ---------------------------------------------------------------- What-if Endpoint
+# Canonical path per 21_API_CONTRACTS.md §2.4 is /api/whatif; alias /api/decisions/what-if preserved for compatibility
 @router.post("/whatif")
+@router.post("/decisions/what-if")
 async def post_whatif(
     req: dict[str, Any],
     request: Request,
