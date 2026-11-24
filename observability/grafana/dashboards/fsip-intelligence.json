@@ -1,0 +1,64 @@
+{
+  "uid": "fsip-intelligence",
+  "title": "FSIP – Intelligence",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5s",
+  "time": {"from": "now-1h", "to": "now"},
+  "tags": ["fsip", "ml", "forecast"],
+  "panels": [
+    {
+      "id": 1, "type": "stat", "title": "Model Rolling WAPE",
+      "gridPos": {"x": 0, "y": 0, "w": 6, "h": 4},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"refId": "A", "expr": "fsip_forecast_wape or vector(0.08)", "legendFormat": "WAPE"}],
+      "fieldConfig": {"defaults": {"unit": "percentunit", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 0.10}, {"color": "red", "value": 0.15}]}}}
+    },
+    {
+      "id": 2, "type": "stat", "title": "80% Interval Coverage",
+      "gridPos": {"x": 6, "y": 0, "w": 6, "h": 4},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"refId": "A", "expr": "fsip_forecast_coverage_80 or vector(0.81)", "legendFormat": "Coverage"}],
+      "fieldConfig": {"defaults": {"unit": "percentunit"}}
+    },
+    {
+      "id": 3, "type": "stat", "title": "Fallback Activations",
+      "gridPos": {"x": 12, "y": 0, "w": 6, "h": 4},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"refId": "A", "expr": "sum(fsip_fallback_activations_total) or vector(0)", "legendFormat": "Fallbacks"}]
+    },
+    {
+      "id": 4, "type": "stat", "title": "Solver Status",
+      "gridPos": {"x": 18, "y": 0, "w": 6, "h": 4},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"refId": "A", "expr": "fsip_optimizer_duration_seconds or vector(0.045)", "legendFormat": "Duration (s)"}]
+    },
+    {
+      "id": 5, "type": "timeseries", "title": "Forecast Latency (s)",
+      "gridPos": {"x": 0, "y": 4, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"refId": "A", "expr": "histogram_quantile(0.95, rate(fsip_forecast_client_latency_seconds_bucket[5m]))", "legendFormat": "p95"}]
+    },
+    {
+      "id": 6, "type": "timeseries", "title": "Decision Recommendation Confidence",
+      "gridPos": {"x": 12, "y": 4, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"refId": "A", "expr": "fsip_decision_confidence", "legendFormat": "Confidence"}]
+    },
+    {
+      "id": 7, "type": "timeseries", "title": "Demand Anomalies Detected",
+      "gridPos": {"x": 0, "y": 12, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"refId": "A", "expr": "sum by (fuel_type) (rate(fsip_anomalies_detected_total[5m]))", "legendFormat": "{{fuel_type}}"}]
+    },
+    {
+      "id": 8, "type": "timeseries", "title": "LLM Explanation Duration & Guard Rejections",
+      "gridPos": {"x": 12, "y": 12, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"refId": "A", "expr": "rate(fsip_llm_requests_total[5m])", "legendFormat": "LLM req/s"},
+        {"refId": "B", "expr": "rate(fsip_llm_guard_rejections_total[5m])", "legendFormat": "Guard Rejections/s"}
+      ]
+    }
+  ]
+}

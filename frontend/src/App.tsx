@@ -8,6 +8,7 @@ import Decisions from "@/pages/Decisions";
 import RiskPage from "@/pages/Risk";
 import AlertsPage from "@/pages/Alerts";
 import WhatIfPage from "@/pages/WhatIf";
+import AssistantPage from "@/pages/Assistant";
 import { PlaceholderPage } from "@/pages/PlaceholderPage";
 
 export default function App() {
@@ -30,16 +31,7 @@ export default function App() {
         <Route path="/recommendations" element={<Recommendations />} />
         <Route path="/decisions" element={<Decisions />} />
         <Route path="/whatif" element={<WhatIfPage />} />
-        <Route
-          path="/assistant"
-          element={
-            <PlaceholderPage
-              title="AI Operations Assistant"
-              phase={9}
-              description="Grounded natural language operations copilot for querying live network state and drafting shift summaries."
-            />
-          }
-        />
+        <Route path="/assistant" element={<AssistantPage />} />
         <Route
           path="/control"
           element={

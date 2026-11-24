@@ -168,6 +168,14 @@ export interface SystemStatus {
     current: number;
     budget_remaining: number;
   }[];
+  incidents?: {
+    id: number;
+    kind?: string;
+    component?: string;
+    status: string;
+    started_at?: string;
+    summary?: string;
+  }[];
 }
 
 export interface WorldStateMetrics {
@@ -459,4 +467,74 @@ export interface WhatIfResponse {
   scenarios: WhatIfScenario[];
   disclaimer: string;
 }
+
+export interface WhyAtRiskItem {
+  signal: string;
+  value: string | number;
+  detail: string;
+}
+
+export interface ExpectedImpact {
+  stockout_prob_before: number;
+  stockout_prob_after: number;
+  unmet_before?: number;
+  unmet_after?: number;
+}
+
+export interface AlternativeItem {
+  name: string;
+  stockout_prob_after?: number;
+  why_not?: string;
+}
+
+export interface Explanation {
+  headline: string;
+  why_at_risk: WhyAtRiskItem[];
+  constraints: string[];
+  expected_impact: ExpectedImpact;
+  confidence: number;
+  confidence_factors: Record<string, number>;
+  alternatives: AlternativeItem[];
+  policy: string;
+  forecast_model: string;
+  degraded: boolean;
+  sources?: Array<{ type: string; id: string }>;
+}
+
+export interface AssistantSource {
+  type: string;
+  id: string;
+}
+
+export interface AssistantQueryRequest {
+  question: string;
+}
+
+export interface AssistantResponse {
+  answer: string;
+  engine: "llm" | "rules";
+  sources: AssistantSource[];
+  generated_at: string;
+}
+
+export interface SummaryStats {
+  window_ticks: number;
+  service_level: number;
+  unmet_liters: number;
+  total_dispatched_liters: number;
+  decisions_count: number;
+  autopilot_count: number;
+  manual_count: number;
+  alerts_opened: number;
+  alerts_resolved: number;
+  incidents_count: number;
+  active_policy: string;
+}
+
+export interface SummaryResponse {
+  text: string;
+  engine: "llm" | "template";
+  stats: SummaryStats;
+}
+
 

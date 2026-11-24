@@ -1,0 +1,47 @@
+{
+  "uid": "fsip-logs-incidents",
+  "title": "FSIP – Logs & Incidents",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5s",
+  "time": {"from": "now-1h", "to": "now"},
+  "tags": ["fsip", "logs", "incidents"],
+  "panels": [
+    {
+      "id": 1, "type": "stat", "title": "Open Incidents",
+      "gridPos": {"x": 0, "y": 0, "w": 6, "h": 4},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"refId": "A", "expr": "sum(fsip_incidents_open) or vector(0)", "legendFormat": "Open"}]
+    },
+    {
+      "id": 2, "type": "stat", "title": "Total Alerts Open",
+      "gridPos": {"x": 6, "y": 0, "w": 6, "h": 4},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"refId": "A", "expr": "sum(fsip_alerts_open)", "legendFormat": "Alerts"}]
+    },
+    {
+      "id": 3, "type": "stat", "title": "Engine Restarts",
+      "gridPos": {"x": 12, "y": 0, "w": 6, "h": 4},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"refId": "A", "expr": "sum(fsip_loop_restarts_total) or vector(0)", "legendFormat": "Restarts"}]
+    },
+    {
+      "id": 4, "type": "stat", "title": "Log Error Rate (events/s)",
+      "gridPos": {"x": 18, "y": 0, "w": 6, "h": 4},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"refId": "A", "expr": "sum(rate(fsip_sim_errors_total[1m]))", "legendFormat": "Errors/s"}]
+    },
+    {
+      "id": 5, "type": "logs", "title": "Engine Decision & Synchronization Logs",
+      "gridPos": {"x": 0, "y": 4, "w": 24, "h": 12},
+      "datasource": {"type": "loki", "uid": "loki"},
+      "targets": [{"refId": "A", "expr": "{service=\"engine\"} |= \"decision\""}]
+    },
+    {
+      "id": 6, "type": "logs", "title": "System Errors & Circuit Breaker Logs",
+      "gridPos": {"x": 0, "y": 16, "w": 24, "h": 10},
+      "datasource": {"type": "loki", "uid": "loki"},
+      "targets": [{"refId": "A", "expr": "{service=~\"engine|api|intelligence\"} |= \"error\""}]
+    }
+  ]
+}

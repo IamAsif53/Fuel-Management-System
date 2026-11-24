@@ -20,6 +20,7 @@ import { formatNumber } from "@/lib/format";
 import { LoadingSkeleton } from "@/components/LoadingSkeleton";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
+import { ExplainPanel } from "@/components/ExplainPanel";
 
 export default function Decisions() {
   const { state } = useLiveState();
@@ -374,6 +375,9 @@ export default function Decisions() {
                       </tbody>
                     </table>
                   </div>
+
+                  {/* Structured Explanation Panel */}
+                  <ExplainPanel decision={dec} isExpanded={true} />
                 </div>
               )}
             </div>

@@ -1,0 +1,6 @@
+Shift Summary (Window: {{ window_ticks or 96 }} ticks):
+Overall fuel service level: {{ ((service_level or 1.0) * 100) | round(2) }}%.
+Total unmet demand: {{ (unmet_liters or 0) | round | int }} L.
+Total volume dispatched: {{ (total_dispatched_liters or 0) | round | int }} L across {{ decisions_count or 0 }} decision(s) ({{ autopilot_count or 0 }} autopilot, {{ manual_count or 0 }} manual).
+Alerts: {{ alerts_opened or 0 }} opened, {{ alerts_resolved or 0 }} resolved.
+Incidents: {{ incidents_count or 0 }} total. Active policy: {{ policy or 'optimizer' }}.

@@ -1,0 +1,8 @@
+Incident {{ id or '' }} [{{ component or 'system' }}]: Status {{ (status or 'open') | upper }}. Detected at {{ detected_at or 'unknown' }}. Trigger: {{ trigger_event or 'anomaly' }}.
+{%- if timeline and timeline | length > 0 %}
+ Timeline:
+{%- for step in timeline %}
+ - {{ step.at }}: {{ step.event }}
+{%- endfor %}
+{%- endif %}
+{%- if resolved_at %} Resolved at {{ resolved_at }} (Duration: {{ (duration_seconds or 0) | round(1) }} s).{% else %} Active incident.{% endif %}

@@ -421,3 +421,20 @@ export async function executeWhatIf(body: {
   });
 }
 
+export async function askAssistant(
+  question: string
+): Promise<import("./types").AssistantResponse> {
+  return api<import("./types").AssistantResponse>("/assistant/ask", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question }),
+  });
+}
+
+export async function fetchSummary(
+  window_ticks: number = 96
+): Promise<import("./types").SummaryResponse> {
+  return api<import("./types").SummaryResponse>(`/summary?window_ticks=${window_ticks}`);
+}
+
+

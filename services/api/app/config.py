@@ -19,6 +19,12 @@ class ApiSettings(BaseServiceSettings):
     redis_tick_key: str = "fsip:state:tick"
     redis_health_key: str = "fsip:health"
 
+    anthropic_api_key: str | None = None
+    llm_model: str = "claude-haiku-5-5"
+    llm_timeout_sec: float = 8.0
+    breakglass_dir: str = "/data/breakglass"
+    internal_alertmanager_token: str = "change-me-internal"
+
 
 @lru_cache
 def get_settings() -> ApiSettings:

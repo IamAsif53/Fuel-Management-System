@@ -1,0 +1,65 @@
+{
+  "uid": "fsip-operations-overview",
+  "title": "FSIP – Operations Overview",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5s",
+  "time": {"from": "now-1h", "to": "now"},
+  "tags": ["fsip", "operations"],
+  "panels": [
+    {
+      "id": 1, "type": "stat", "title": "Service Level",
+      "gridPos": {"x": 0, "y": 0, "w": 6, "h": 4},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"refId": "A", "expr": "fsip_service_level * 100", "legendFormat": "%"}],
+      "fieldConfig": {"defaults": {"unit": "percent", "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "yellow", "value": 97}, {"color": "green", "value": 99}]}}}
+    },
+    {
+      "id": 2, "type": "stat", "title": "Unmet Demand (Liters)",
+      "gridPos": {"x": 6, "y": 0, "w": 6, "h": 4},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"refId": "A", "expr": "fsip_unmet_liters_total", "legendFormat": "Liters"}],
+      "fieldConfig": {"defaults": {"unit": "litres"}}
+    },
+    {
+      "id": 3, "type": "stat", "title": "Open Critical Alerts",
+      "gridPos": {"x": 12, "y": 0, "w": 6, "h": 4},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"refId": "A", "expr": "sum(fsip_alerts_open{severity=\"CRITICAL\"}) or vector(0)", "legendFormat": "Critical"}]
+    },
+    {
+      "id": 4, "type": "stat", "title": "In-Flight Fuel Volume",
+      "gridPos": {"x": 18, "y": 0, "w": 6, "h": 4},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"refId": "A", "expr": "sum(fsip_inflight_liters)", "legendFormat": "In-Flight L"}],
+      "fieldConfig": {"defaults": {"unit": "litres"}}
+    },
+    {
+      "id": 5, "type": "timeseries", "title": "Station Inventory (Liters)",
+      "gridPos": {"x": 0, "y": 4, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"refId": "A", "expr": "sum by (station, fuel) (fsip_station_inventory_liters)", "legendFormat": "{{station}} - {{fuel}}"}]
+    },
+    {
+      "id": 6, "type": "timeseries", "title": "Depot Bulk Inventory (Liters)",
+      "gridPos": {"x": 12, "y": 4, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"refId": "A", "expr": "sum by (depot, fuel) (fsip_depot_inventory_liters)", "legendFormat": "{{depot}} - {{fuel}}"}]
+    },
+    {
+      "id": 7, "type": "timeseries", "title": "Stockout Risk Probabilities",
+      "gridPos": {"x": 0, "y": 12, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"refId": "A", "expr": "fsip_stockout_prob", "legendFormat": "{{station}} - {{fuel}}"}]
+    },
+    {
+      "id": 8, "type": "timeseries", "title": "Decisions & Dispatches / Hour",
+      "gridPos": {"x": 12, "y": 12, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"refId": "A", "expr": "sum(rate(fsip_decision_approvals_total[5m])) * 3600", "legendFormat": "Approved/h"},
+        {"refId": "B", "expr": "sum(rate(fsip_decision_rejections_total[5m])) * 3600", "legendFormat": "Rejected/h"}
+      ]
+    }
+  ]
+}

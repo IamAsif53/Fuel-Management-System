@@ -243,7 +243,14 @@ async def lifespan(app: FastAPI):
         poll_interval=s.engine_poll_interval_sec,
     )
 
-    # Perform initial synchronization
+    # Perform initial synchronization and startup allocation reconciliation
+    try:
+        reconciled_count = await tracker.reconcile_on_startup(client)
+        if reconciled_count > 0:
+            log.info("engine.startup_reconciliation_ok", reconciled=reconciled_count)
+    except Exception as exc:
+        log.warning("engine.startup_reconciliation_failed", error=str(exc))
+
     try:
         await sync_loop.full_sync()
         log.info("engine.initial_sync_ok", tick=store.tick)
@@ -376,6 +383,7 @@ class ApproveDecisionRequest(BaseModel):
     selected_line_ids: list[int] | None = None
     modified_quantities: dict[int, float] | None = None
     operator: str = "operator"
+    reviewed_driver: bool | None = None
 
 
 class RejectDecisionRequest(BaseModel):
@@ -415,6 +423,7 @@ async def approve_decision(decision_id: int, req: ApproveDecisionRequest):
             selected_line_ids=req.selected_line_ids,
             modified_quantities=req.modified_quantities,
             current_state=getattr(app.state, "store", None),
+            reviewed_driver=req.reviewed_driver,
         )
     except DecisionNotFoundError as exc:
         raise HTTPException(status_code=404, detail={"code": "DECISION_NOT_FOUND", "message": str(exc)}) from exc

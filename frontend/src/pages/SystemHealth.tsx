@@ -368,6 +368,46 @@ export default function SystemHealth() {
         </div>
       </div>
 
+      {/* Incidents Table */}
+      {data?.incidents && data.incidents.length > 0 && (
+        <div className="rounded-lg border border-panel-border bg-panel p-5 shadow-panel space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-ink">Active & Recent Incidents</h3>
+            <span className="font-mono text-xs text-ink-muted">{data.incidents.length} recorded</span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-panel-border/60 text-ink-muted">
+                  <th className="pb-2 font-medium">ID</th>
+                  <th className="pb-2 font-medium">Component</th>
+                  <th className="pb-2 font-medium">Kind</th>
+                  <th className="pb-2 font-medium">Status</th>
+                  <th className="pb-2 font-medium">Summary</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-panel-border/30">
+                {data.incidents.map((inc) => (
+                  <tr key={inc.id} className="text-ink">
+                    <td className="py-2 font-mono text-ink-muted">#{inc.id}</td>
+                    <td className="py-2 font-semibold text-accent">{inc.component || "platform"}</td>
+                    <td className="py-2 font-mono">{inc.kind || "DEPENDENCY_DOWN"}</td>
+                    <td className="py-2">
+                      <span className={`rounded px-2 py-0.5 font-mono text-[10px] font-bold ${
+                        inc.status === "OPEN" ? "bg-red-500/20 text-red-400 border border-red-500/40" : "bg-emerald-500/20 text-emerald-400"
+                      }`}>
+                        {inc.status}
+                      </span>
+                    </td>
+                    <td className="py-2 text-ink-muted">{inc.summary || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* External Observability & Version Footer */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between rounded-lg border border-panel-border/60 bg-surface/30 px-5 py-4 text-xs text-ink-muted">
         <div>

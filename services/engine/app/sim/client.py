@@ -177,6 +177,8 @@ class SimClient:
         self.initial_backoff_sec = initial_backoff_sec
         self.max_backoff_sec = max_backoff_sec
         self._sleep_fn = sleep_fn
+        self._read_semaphore = asyncio.Semaphore(8)
+        self._write_semaphore = asyncio.Semaphore(2)
 
         if http_client is not None:
             self.http = http_client
@@ -222,8 +224,11 @@ class SimClient:
 
             t0 = time.perf_counter()
             resp: httpx.Response | None = None
+            is_write = method.upper() in ("POST", "PUT", "DELETE", "PATCH")
+            sem = self._write_semaphore if is_write else self._read_semaphore
             try:
-                resp = await self.http.request(method, path, json=json, params=params)
+                async with sem:
+                    resp = await self.http.request(method, path, json=json, params=params)
                 latency_sec = time.perf_counter() - t0
                 latency_ms = latency_sec * 1000.0
 

@@ -1,10 +1,11 @@
 """Decision, recommendation, engine control, and audit API endpoints."""
 from __future__ import annotations
 
+import os
 from typing import Annotated, Any
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -154,10 +155,38 @@ async def approve_decision(
     """Approve a decision recommendation, forward to engine, and record audit log."""
     actor = user.get("actor") or user.get("sub") or "operator"
 
+    # F-TRUST Cognitive Forcing check (12_ADVANCED_FEATURES.md / Phase 09 §4.5)
+    existing = await fetch_decision_by_id(session, decision_id=decision_id)
+    if existing:
+        lines = existing.get("lines") or []
+        conf = existing.get("confidence")
+        conf_val = float(conf) if conf is not None else 1.0
+        is_deg = bool(existing.get("degraded", False))
+        max_q = 0.0
+        for ln in lines:
+            lid = str(ln.get("id"))
+            q = float(ln.get("quantity", 0.0))
+            if req.quantities and lid in req.quantities:
+                q = float(req.quantities[lid])
+            max_q = max(max_q, q)
+        if (max_q > 5000.0 or conf_val < 0.7 or is_deg) and not req.reviewed_driver:
+            msg = (
+                "Cognitive forcing review required: you must expand Why and review "
+                "the main risk driver before approving this recommendation."
+            )
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "code": "REVIEW_REQUIRED",
+                    "message": msg,
+                },
+            )
+
     engine_payload: dict[str, Any] = {
         "operator": actor,
         "selected_line_ids": req.line_ids,
         "modified_quantities": {int(k): float(v) for k, v in req.quantities.items()} if req.quantities else None,
+        "reviewed_driver": req.reviewed_driver,
     }
 
     await _call_engine(
@@ -399,3 +428,67 @@ async def post_whatif(
         path="/internal/whatif",
         json_data=req,
     )
+
+
+# ---------------------------------------------------------------- Break-glass Endpoints (Phase 10: F-BREAKGLASS)
+@router.get("/breakglass/plan.csv")
+async def get_breakglass_plan_csv(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    settings: Annotated[ApiSettings, Depends(get_settings)],
+) -> Response:
+    """Retrieve raw CSV emergency dispatch plan for break-glass operations."""
+    csv_file = os.path.join(settings.breakglass_dir, "latest.csv")
+    if os.path.exists(csv_file):
+        try:
+            with open(csv_file, encoding="utf-8") as f:
+                content = f.read()
+            return Response(
+                content=content,
+                media_type="text/csv",
+                headers={"Content-Disposition": 'attachment; filename="latest.csv"'},
+            )
+        except Exception:
+            pass
+
+    # Fallback to DB query for latest decision
+    items, _ = await fetch_decisions(session=session, limit=1)
+    lines: list[str] = ["depot,station,route,fuel,quantity,reason,generated_tick"]
+    if items:
+        latest = items[0]
+        cur_tick = latest.get("tick", 0)
+        for ln in latest.get("lines", []):
+            d = ln.get("source_depot_id", "")
+            s = ln.get("destination_station_id", "")
+            r = ln.get("route_id", "")
+            f = ln.get("fuel_type", "")
+            q = ln.get("quantity", 0.0)
+            reason = ln.get("reason", "")
+            lines.append(f"{d},{s},{r},{f},{q},{reason},{cur_tick}")
+
+    csv_data = "\n".join(lines) + "\n"
+    return Response(
+        content=csv_data,
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="latest.csv"'},
+    )
+
+
+@router.get("/breakglass/plan.html")
+async def get_breakglass_plan_html(
+    settings: Annotated[ApiSettings, Depends(get_settings)],
+) -> Response:
+    """Retrieve static HTML emergency dispatch plan for break-glass operations."""
+    html_file = os.path.join(settings.breakglass_dir, "latest.html")
+    if os.path.exists(html_file):
+        try:
+            with open(html_file, encoding="utf-8") as f:
+                content = f.read()
+            return Response(content=content, media_type="text/html")
+        except Exception:
+            pass
+
+    fallback_html = (
+        "<html><body><h2>FSIP Break-Glass Plan</h2><p>No static emergency plan generated yet.</p></body></html>"
+    )
+    return Response(content=fallback_html, media_type="text/html")
+

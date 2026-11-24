@@ -1,0 +1,72 @@
+groups:
+  - name: fsip-slo-recording-rules
+    rules:
+      # SLO 1: API Availability (Target 99.5%)
+      - record: job:http_requests:rate5m
+        expr: sum(rate(http_requests_total[5m]))
+
+      - record: job:http_errors:rate5m
+        expr: sum(rate(http_requests_total{status=~"5.."}[5m]))
+
+      - record: job:slo_api_availability:ratio5m
+        expr: 1.0 - (sum(rate(http_requests_total{status=~"5.."}[5m])) / clamp_min(sum(rate(http_requests_total[5m])), 1e-9))
+
+      - record: job:slo_api_availability:ratio1h
+        expr: 1.0 - (sum(rate(http_requests_total{status=~"5.."}[1h])) / clamp_min(sum(rate(http_requests_total[1h])), 1e-9))
+
+      # SLO 2: API Latency p95 (< 200ms)
+      - record: job:slo_api_latency:p95_5m
+        expr: histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{service="api"}[5m])))
+
+      # SLO 3: Decision Freshness (Target 99%)
+      - record: job:slo_decision_freshness:ratio5m
+        expr: clamp_max(1.0 - (fsip_ticks_behind / 100.0), 1.0)
+
+      # SLO 4: Fuel Service Level (Target >= 99%)
+      - record: job:slo_fuel_service_level:ratio5m
+        expr: fsip_service_level
+
+  - name: fsip-slo-burn-rate-alerts
+    rules:
+      # API Availability Fast Burn (14.4x burn rate = 7.2% errors over 5m and 1h)
+      - alert: ApiAvailabilityFastBurn
+        expr: |
+          (1.0 - job:slo_api_availability:ratio5m > (14.4 * (1.0 - 0.995)))
+          and
+          (1.0 - job:slo_api_availability:ratio1h > (14.4 * (1.0 - 0.995)))
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "API Availability SLO Fast Burn Rate (14.4x)"
+          description: "API availability error budget burning rapidly (14.4x rate). Will exhaust 2% budget in 1 hour."
+
+      # API Availability Slow Burn (6x burn rate = 3.0% errors over 30m and 6h)
+      - alert: ApiAvailabilitySlowBurn
+        expr: (1.0 - job:slo_api_availability:ratio5m > (6.0 * (1.0 - 0.995)))
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "API Availability SLO Slow Burn Rate (6x)"
+          description: "API availability error budget burning steadily (6x rate). Will exhaust 5% budget in 6 hours."
+
+      # API Latency SLO Alert (p95 > 200ms for 5m)
+      - alert: ApiLatencySloBreach
+        expr: job:slo_api_latency:p95_5m > 0.20
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "API Latency SLO Breach (p95 > 200ms)"
+          description: "API p95 latency is {{ $value }}s, breaching the 200ms target for 5 minutes."
+
+      # Fuel Service Level SLO Breach (< 99% for 5m)
+      - alert: FuelServiceLevelSloBreach
+        expr: job:slo_fuel_service_level:ratio5m < 0.99
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Fuel Service Level SLO Breach (< 99%)"
+          description: "Network service level dropped to {{ $value }}, breaching the 99% platform target."

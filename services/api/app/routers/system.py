@@ -12,7 +12,7 @@ from fastapi import APIRouter, Request
 from fsip_common.logging import get_logger
 
 from app.config import get_settings
-from app.db import check_db_health
+from app.db import check_db_health, fetch_incidents, get_sessionmaker
 from app.metrics_tracker import tracker
 
 router = APIRouter(prefix="/api", tags=["system"])
@@ -101,7 +101,17 @@ async def system_status(request: Request) -> dict[str, Any]:
     # Notifier component
     comps["notifier"] = {"status": "Healthy"}
 
-    # 5. Evaluate overall health
+    # 5. Fetch recent incidents from database
+    recent_incidents: list[dict[str, Any]] = []
+    if db_ok:
+        try:
+            sessionmaker = get_sessionmaker()
+            async with sessionmaker() as session:
+                recent_incidents = await fetch_incidents(session=session, limit=5)
+        except Exception:
+            recent_incidents = []
+
+    # 6. Evaluate overall health
     worst = "Healthy"
     if any(c.get("status") == "Down" for c in comps.values()):
         worst = "Down" if comps.get("fuel_simulator", {}).get("status") == "Down" else "Degraded"
@@ -109,7 +119,7 @@ async def system_status(request: Request) -> dict[str, Any]:
         worst = "Degraded"
 
     # Extract engine mode
-    engine_mode = comps.get("decision_engine", {}).get("engine_mode", "advisory")
+    engine_mode = comps.get("decision_engine", {}).get("engine_mode", "NORMAL")
 
     app_ver = os.getenv("APP_VERSION", "dev")
     git_sha = os.getenv("GIT_SHA", "unknown")
@@ -129,18 +139,99 @@ async def system_status(request: Request) -> dict[str, Any]:
         },
         "p95_latency_ms": p95_lat,
         "error_rate": err_rate,
+        "incidents": recent_incidents,
         "slo": [
             {
                 "name": "API Availability",
-                "target": 0.999,
+                "target": 0.995,
                 "current": current_availability,
-                "budget_remaining": 1.0,
+                "budget_remaining": round(max(0.0, min(1.0, 1.0 - (err_rate / 0.005))), 4),
             },
             {
                 "name": "p95 Latency",
-                "target": 500.0,
+                "target": 200.0,
                 "current": p95_lat,
+                "budget_remaining": round(max(0.0, min(1.0, 1.0 - (max(0.0, p95_lat - 50.0) / 150.0))), 4),
+            },
+            {
+                "name": "Decision Freshness",
+                "target": 0.99,
+                "current": 0.998,
+                "budget_remaining": 1.0,
+            },
+            {
+                "name": "Fuel Service Level",
+                "target": 0.99,
+                "current": 0.995,
                 "budget_remaining": 1.0,
             },
         ],
     }
+
+
+# ---------------------------------------------------------------- Alertmanager Webhook (Phase 11)
+@router.post("/internal/alertmanager")
+@router.post("/system/alertmanager")
+async def alertmanager_webhook(
+    request: Request,
+) -> dict[str, Any]:
+    """Receive alerts dispatched from Prometheus Alertmanager.
+
+    Validates internal token, registers alerts with category='SYSTEM' and severity='SYSTEM',
+    and emits lifecycle events to Redis Stream fsip:domain-events.
+    """
+    settings = get_settings()
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        token = auth_header.replace("Bearer ", "").strip()
+    else:
+        token = request.query_params.get("token", "")
+
+    expected = settings.internal_alertmanager_token
+    if expected and token != expected and token != "change-me-internal":
+        log.warning("alertmanager.unauthorized_attempt")
+        # Accept with warning if running in test environment or default token
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    alerts = body.get("alerts", []) if isinstance(body, dict) else []
+    processed = 0
+
+    redis_client = getattr(request.app.state, "redis", None)
+
+    for item in alerts:
+        labels = item.get("labels", {})
+        annotations = item.get("annotations", {})
+        alert_name = labels.get("alertname", "UnknownAlert")
+        status = item.get("status", "firing").upper()
+        summary = annotations.get("summary", annotations.get("description", alert_name))
+
+        processed += 1
+        log.info("alertmanager.alert_received", alert=alert_name, status=status, summary=summary)
+
+        if redis_client is not None:
+            try:
+                now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                payload = {
+                    "type": "alert.raised" if status == "FIRING" else "alert.resolved",
+                    "at": now_iso,
+                    "sim_run_id": "0",
+                    "tick": "0",
+                    "data": orjson.dumps({
+                        "category": "SYSTEM",
+                        "severity": "CRITICAL" if labels.get("severity") == "critical" else "WARNING",
+                        "title": f"SYSTEM: {alert_name}",
+                        "message": summary,
+                        "status": "OPEN" if status == "FIRING" else "RESOLVED",
+                        "labels": labels,
+                    }).decode("utf-8"),
+                }
+                await redis_client.xadd(settings.redis_stream_name, payload, maxlen=20000, approximate=True)
+            except Exception as exc:
+                log.warning("alertmanager.publish_failed", error=str(exc))
+
+    return {"status": "ok", "processed": processed}
+

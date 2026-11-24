@@ -15,9 +15,9 @@ Format for notes: `- [x] 1.3 SimClient done. Note: <deviation or measured result
 | 06 | DONE | Tasks 6.1–6.9 complete (Monte Carlo N=300 stockout evaluation with p95 8.8–13.9 ms, deterministic risk projections, 8 alert categories, Alert/Incident lifecycle with 2-clean-cycle auto-resolution, /api/risk, /api/alerts, /api/forecast, /api/cover, Risk Heatmap & F-COVER fuel budget card UI, 280 engine tests, 37 api tests, 46 frontend tests passing) | Full Phase 06 implementation & verification complete |
 | 07 | DONE | Tasks 7.1–7.8 complete (DemandAnomalyDetector point z-score + CUSUM k=0.5 h=5.0, event correlation INFO/WARNING, F-RECON StationBalanceTracker & InventoryAnomalyDetector, AllocationReconciliationTracker, SupplyDelayDetector, DisruptionDetector with pre-emptive alerts, BottleneckDetector, RegionalRiskDetector, DataQualityDetector, GET /api/reports/reconciliation, UI alert category filters & incident timeline, 288 engine tests passing, 46 frontend vitest tests passing) | Full Phase 07 implementation & verification complete |
 | 08 | DONE | Tasks 8.1–8.10 complete & cross-phase audited (297 engine unit tests, 1 live twin calibration test, 38 api tests, 107 common tests, 46 frontend vitest tests passing; Ruff clean; LP CBC optimizer with locked checkpoints [2..96] and future slots [4..64], calibrated ShadowTwin MAE 0.27%, what-if simulation, runtime policy switching) | Full Phase 08 implementation, verification, and cross-phase compliance audit complete |
-| 09 | TODO | | |
-| 10 | TODO | | |
-| 11 | TODO | | |
+| 09 | DONE | Tasks 9.1–9.8 complete (Structured explanations 05 §7.1, Jinja2 templates, numeric hallucination guard, grounded assistant POST /api/assistant/ask, GET /api/summary, F-TRUST cognitive forcing 422 gate, ExplainPanel in Recommendations/Decisions, full Assistant page, 8 engine acceptance tests, 4 api tests, 51 frontend tests passing) | Phase 09 Explanations, Narratives & Grounded Ops Assistant complete & verified |
+| 10 | DONE | Tasks 10.1–10.10 complete (Resilience modes NORMAL/DEGRADED/SAFE_HOLD/NO_FEASIBLE_ROUTES with 2-clean-cycle hysteresis, SimClient & Forecast bulkheads, chaos-proxy on :8001, chaos matrix F1–F18 executed, F-BREAKGLASS atomic CSV/HTML emitter every 4 ticks, startup reconciliation via idempotency keys, 305 engine tests passing) | Phase 10 Resilience Hardening & Chaos Drills complete & verified |
+| 11 | DONE | Tasks 11.1–11.9 complete (Prometheus metrics & scrape configs, 4 F-SLOs with multi-window burn rate alerts, 9 core platform alerts, Alertmanager webhook to API & Redis, 4 Grafana dashboards in folder FSIP, Promtail/Loki log shipping, System Health UI with SLO budgets & incidents table) | Phase 11 Production Observability & Monitoring Stack complete & verified |
 | 12 | TODO | | |
 | 13 | TODO | | |
 | 14 | TODO | | |
@@ -92,11 +92,35 @@ Deadline: **Thu 2026-11-26**. Feature freeze: Wed 2026-11-25 18:00.
 - [x] 8.9 Quick compare evaluation script evaluation/quick_compare.py: baseline 48 ticks produced 100.00% overall SL, 0 unmet, 0 overflow, 100% min SL, p95 solver 197.5 ms
 - [x] 8.10 Acceptance test suite test_phase08_acceptance.py: 6/6 tests passed in 2.26s
 ### Phase 09
-- [ ] 9.1  - [ ] 9.2  - [ ] 9.3  - [ ] 9.4  - [ ] 9.5  - [ ] 9.6  - [ ] 9.7  - [ ] 9.8
+- [x] 9.1 Structured explanations schema implemented matching 05 §7.1 (headline, why_at_risk, binding_constraints, expected_impact, confidence_factors, alternatives, sources)
+- [x] 9.2 Jinja2 deterministic narrative templates (decision_narrative.j2, alert_narrative.j2, incident_summary.j2, shift_summary.j2)
+- [x] 9.3 Recursive numeric hallucination guard check_numbers_grounded() with precision tolerance and metrics
+- [x] 9.4 Optional Anthropic LLM adapter with circuit breaker and grounded rules assistant fallback
+- [x] 9.5 Ops Assistant API routes POST /api/assistant/ask and GET /api/summary
+- [x] 9.6 F-TRUST cognitive forcing review gating in DecisionEngine and decisions API (reviewed_driver flag)
+- [x] 9.7 Frontend ExplainPanel component in Recommendations & Decisions; dedicated Assistant page (/assistant)
+- [x] 9.8 Human-AI teaming metrics and acceptance tests in test_phase09_acceptance.py passed (8/8)
 ### Phase 10
-- [ ] 10.1  - [ ] 10.2  - [ ] 10.3  - [ ] 10.4  - [ ] 10.5  - [ ] 10.6  - [ ] 10.7  - [ ] 10.8  - [ ] 10.9  - [ ] 10.10
+- [x] 10.1 EngineModeManager implemented managing NORMAL, DEGRADED, SAFE_HOLD, and NO_FEASIBLE_ROUTES with 2-clean-cycle hysteresis
+- [x] 10.2 Bulkhead concurrency isolation: SimClient read (8) & write (2) semaphores; ForecastClient (4) semaphore
+- [x] 10.3 Chaos proxy on port 8001 implementing /chaos/malform and /chaos/clear
+- [x] 10.4 Chaos drill runner scripts/chaos/chaos_runner.py executing failure matrix F1–F18
+- [x] 10.5 F-BREAKGLASS writer emitting atomic latest.csv and standalone styled latest.html every 4 ticks into /data/breakglass
+- [x] 10.6 API endpoints GET /api/breakglass/plan.csv and GET /api/breakglass/plan.html implemented
+- [x] 10.7 AllocationOutcomeTracker.reconcile_on_startup() preventing duplicate dispatches on engine crash/restart
+- [x] 10.8 Stale data handling, intelligence fallback integration, and database/redis disconnect resilience verified
+- [x] 10.9 Docker compose volume breakglass-data provisioned across engine, api, and frontend
+- [x] 10.10 Resilience verification report generated in docs/evidence/resilience.md; 305 engine unit tests passing
 ### Phase 11
-- [ ] 11.1  - [ ] 11.2  - [ ] 11.3  - [ ] 11.4  - [ ] 11.5  - [ ] 11.6  - [ ] 11.7  - [ ] 11.8  - [ ] 11.9
+- [x] 11.1 Prometheus configuration updated with scrape jobs for engine:8100, intelligence:8200, api:8080, cadvisor:8080, node-exporter:9100
+- [x] 11.2 Alert rules defined in observability/prometheus/alerts.yml (9 core platform alerts)
+- [x] 11.3 4 platform Service Level Objectives (F-SLO) with Prometheus recording rules and multi-window fast/slow burn rate alerts
+- [x] 11.4 Prometheus Alertmanager configured with webhook to http://api:8080/api/internal/alertmanager
+- [x] 11.5 API webhook receiver in services/api/app/routers/system.py recording SYSTEM alerts and publishing to Redis Stream
+- [x] 11.6 Grafana datasources provisioned for Prometheus and Loki
+- [x] 11.7 4 Grafana dashboards created in folder FSIP (Operations Overview, Service Health, Intelligence, Logs & Incidents)
+- [x] 11.8 Promtail and Loki structured JSON container log aggregation
+- [x] 11.9 System Health UI updated with live incidents table and SLO budget gauges; docs/evidence/observability.md generated
 ### Phase 12
 - [ ] 12.1  - [ ] 12.2  - [ ] 12.3  - [ ] 12.4  - [ ] 12.5  - [ ] 12.6  - [ ] 12.7
 ### Phase 13

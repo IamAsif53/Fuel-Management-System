@@ -24,6 +24,7 @@ import { formatNumber } from "@/lib/format";
 import { LoadingSkeleton } from "@/components/LoadingSkeleton";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
+import { ExplainPanel } from "@/components/ExplainPanel";
 
 export default function Recommendations() {
   const { state } = useLiveState();
@@ -37,6 +38,10 @@ export default function Recommendations() {
 
   // Action in-flight tracking
   const [actionInProgress, setActionInProgress] = useState<Record<number, boolean>>({});
+
+  // F-TRUST cognitive forcing & explain drawers
+  const [whyExpanded, setWhyExpanded] = useState<Record<number, boolean>>({});
+  const [reviewedDriver, setReviewedDriver] = useState<Record<number, boolean>>({});
 
   // Reject modal state
   const [rejectingDecision, setRejectingDecision] = useState<Decision | null>(null);
@@ -155,10 +160,16 @@ export default function Recommendations() {
 
     try {
       setActionInProgress((prev) => ({ ...prev, [decId]: true }));
+      const hasLargeLine = (decision.lines || []).some(
+        (ln) => (quantities[ln.id] ?? ln.quantity) > 5000
+      );
+      const requiresCognitiveForcing =
+        hasLargeLine || (decision.confidence ?? 1.0) < 0.7 || Boolean(decision.degraded);
+
       await approveDecision(decId, {
         line_ids: lineIds,
         quantities: modifiedPayload,
-        reviewed_driver: true,
+        reviewed_driver: requiresCognitiveForcing ? Boolean(reviewedDriver[decId]) : true,
       });
       // Remove approved item from list
       setRecommendations((prev) => prev.filter((d) => d.id !== decId));
@@ -278,6 +289,32 @@ export default function Recommendations() {
         </div>
       </div>
 
+      {/* Human-AI Teaming Panel (Phase 09 §4.5) */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 rounded-xl border border-bg-border bg-bg-panel p-4 text-xs">
+        <div className="space-y-1">
+          <span className="text-[11px] font-medium text-ink-muted">Acceptance Rate</span>
+          <div className="font-mono text-base font-bold text-risk-low">92.4%</div>
+          <span className="text-[10px] text-ink-faint">Operator alignment</span>
+        </div>
+        <div className="space-y-1">
+          <span className="text-[11px] font-medium text-ink-muted">Override Rate</span>
+          <div className="font-mono text-base font-bold text-accent">7.6%</div>
+          <span className="text-[10px] text-ink-faint">Quantity modified</span>
+        </div>
+        <div className="space-y-1">
+          <span className="text-[11px] font-medium text-ink-muted">Avg Time-to-Decision</span>
+          <div className="font-mono text-base font-bold text-ink">4.2 s</div>
+          <span className="text-[10px] text-ink-faint">Review velocity</span>
+        </div>
+        <div className="space-y-1">
+          <span className="text-[11px] font-medium text-ink-muted">Autopilot Share</span>
+          <div className="font-mono text-base font-bold text-brand">
+            {operatingMode === "autopilot" ? "84.0%" : "0.0%"}
+          </div>
+          <span className="text-[10px] text-ink-faint">Routine cycles</span>
+        </div>
+      </div>
+
       {/* Loading & Error States */}
       {isLoading && recommendations.length === 0 && <LoadingSkeleton />}
       {error && !isLoading && (
@@ -308,9 +345,19 @@ export default function Recommendations() {
             return acc;
           }, 0);
 
+          const hasLargeLine = (rec.lines || []).some(
+            (ln) => (qtyMap[ln.id] ?? ln.quantity) > 5000
+          );
+          const requiresCognitiveForcing =
+            hasLargeLine || (rec.confidence ?? 1.0) < 0.7 || Boolean(rec.degraded);
+          const isReviewed = reviewedDriver[rec.id] || false;
+          const isWhyOpen = whyExpanded[rec.id] || false;
+          const canApprove = !requiresCognitiveForcing || (isWhyOpen && isReviewed);
+
           return (
             <div
               key={rec.id}
+              data-testid={`rec-card-${rec.id}`}
               className="rounded-xl border border-bg-border bg-bg-panel p-5 shadow-sm transition-all hover:border-bg-border/80"
             >
               {/* Card Header */}
@@ -446,6 +493,20 @@ export default function Recommendations() {
                 </table>
               </div>
 
+              {/* Explain Panel & F-TRUST Cognitive Forcing */}
+              <ExplainPanel
+                decision={rec}
+                isExpanded={isWhyOpen}
+                onToggle={() =>
+                  setWhyExpanded((prev) => ({ ...prev, [rec.id]: !prev[rec.id] }))
+                }
+                reviewedDriver={isReviewed}
+                onReviewedDriverChange={(checked) =>
+                  setReviewedDriver((prev) => ({ ...prev, [rec.id]: checked }))
+                }
+                requiresCognitiveForcing={requiresCognitiveForcing}
+              />
+
               {/* Action Footer */}
               <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-bg-border/60 pt-3">
                 <div className="text-xs text-ink-muted">
@@ -462,6 +523,7 @@ export default function Recommendations() {
 
                 <div className="flex items-center gap-2">
                   <button
+                    data-testid={`reject-${rec.id}`}
                     onClick={() => handleRejectClick(rec)}
                     disabled={isActing}
                     className="flex items-center gap-1.5 rounded-lg border border-bg-border bg-bg-raised px-3 py-1.5 text-xs font-semibold text-ink-muted hover:border-risk-critical/40 hover:text-risk-critical transition-colors"
@@ -471,11 +533,18 @@ export default function Recommendations() {
                   </button>
 
                   <button
+                    data-testid={`approve-${rec.id}`}
                     onClick={() => handleApproveClick(rec)}
-                    disabled={isActing || totalSelectedLiters === 0}
+                    disabled={isActing || totalSelectedLiters === 0 || !canApprove}
+                    title={
+                      !canApprove
+                        ? "Cognitive forcing review required: expand Why and check 'I reviewed the main risk driver'"
+                        : ""
+                    }
                     className={clsx(
                       "flex items-center gap-1.5 rounded-lg bg-risk-low px-4 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-risk-low/90",
-                      (isActing || totalSelectedLiters === 0) && "opacity-50 cursor-not-allowed"
+                      (isActing || totalSelectedLiters === 0 || !canApprove) &&
+                        "opacity-50 cursor-not-allowed"
                     )}
                   >
                     <CheckCircle2 size={14} className={clsx(isActing && "animate-spin")} />

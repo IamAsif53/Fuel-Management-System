@@ -78,6 +78,8 @@ services:
       # intelligence is a SOFT dependency on purpose: the engine must start and run without it (fallback forecaster)
     deploy:
       resources: {limits: {cpus: "1.0", memory: 512M}}
+    volumes:
+      - breakglass-data:/data/breakglass
 
   api:
     <<: *py-service
@@ -90,6 +92,8 @@ services:
       redis: {condition: service_healthy}
     deploy:
       resources: {limits: {cpus: "0.5", memory: 256M}}
+    volumes:
+      - breakglass-data:/data/breakglass
 
   frontend:
     build: {context: ./frontend}
@@ -98,11 +102,26 @@ services:
     restart: unless-stopped
     ports: ["${FE_HOST_PORT:-3000}:80"]
     depends_on: [api]
+    volumes:
+      - breakglass-data:/data/breakglass
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1/"]
       interval: 10s
       timeout: 3s
       retries: 10
+
+  # ---------------- chaos proxy (profile: chaos) ----------------
+  chaos-proxy:
+    build: {context: ./chaos-proxy}
+    image: fsip/chaos-proxy:${APP_VERSION:-dev}
+    container_name: fsip-chaos-proxy
+    profiles: ["chaos"]
+    restart: unless-stopped
+    ports: ["${CHAOS_HOST_PORT:-8001}:8001"]
+    environment:
+      SIMULATOR_URL: http://simulator:8000
+    depends_on:
+      simulator: {condition: service_healthy}
 
   # ---------------- observability (profile: obs) ----------------
   prometheus:
@@ -132,9 +151,58 @@ services:
     ports: ["${GRAFANA_HOST_PORT:-13001}:3000"]
     depends_on: [prometheus]
 
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: fsip-alertmanager
+    profiles: ["obs"]
+    restart: unless-stopped
+    volumes:
+      - ./observability/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    ports: ["${ALERTMANAGER_HOST_PORT:-9093}:9093"]
+
+  loki:
+    image: grafana/loki:3.2.1
+    container_name: fsip-loki
+    profiles: ["obs"]
+    restart: unless-stopped
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - ./observability/loki/loki-config.yml:/etc/loki/local-config.yaml:ro
+    ports: ["${LOKI_HOST_PORT:-3100}:3100"]
+
+  promtail:
+    image: grafana/promtail:3.2.1
+    container_name: fsip-promtail
+    profiles: ["obs"]
+    restart: unless-stopped
+    volumes:
+      - ./observability/promtail/promtail-config.yml:/etc/promtail/config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command: -config.file=/etc/promtail/config.yml
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: fsip-cadvisor
+    profiles: ["obs"]
+    restart: unless-stopped
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    ports: ["${CADVISOR_HOST_PORT:-8081}:8080"]
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    container_name: fsip-node-exporter
+    profiles: ["obs"]
+    restart: unless-stopped
+    ports: ["${NODE_EXPORTER_HOST_PORT:-9100}:9100"]
+
 volumes:
   pgdata: {}
   redisdata: {}
   model-artifacts: {}
   promdata: {}
   grafanadata: {}
+  breakglass-data: {}

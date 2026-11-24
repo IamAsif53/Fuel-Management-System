@@ -23,6 +23,10 @@ class EngineSettings(BaseServiceSettings):
     safety_noise: float = 0.15
     safety_weight: float = 2.0
     scarcity_policy: str = "history_based"
+    anthropic_api_key: str | None = None
+    llm_model: str = "claude-haiku-5-5"
+    llm_timeout_sec: float = 8.0
+    breakglass_dir: str = "/data/breakglass"
 
 
 @lru_cache

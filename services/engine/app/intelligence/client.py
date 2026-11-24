@@ -9,6 +9,7 @@ Specifications:
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -141,6 +142,7 @@ class ForecastProvider:
         )
         self.fallback_model = fallback_model or SeasonalProfileModel(tick_minutes=15)
         self.drift_fallback: bool = False
+        self.semaphore = asyncio.Semaphore(4)
 
     def set_drift_fallback(self, enabled: bool) -> None:
         """Enable or disable forced fallback due to detected model drift."""
@@ -170,9 +172,10 @@ class ForecastProvider:
         payload = self._build_request_payload(store, cur_tick, tick_minutes, horizon)
 
         try:
-            with FORECAST_LATENCY.time():
-                async with httpx.AsyncClient(timeout=self.timeout_sec) as client:
-                    resp = await client.post(f"{self.base_url}/forecast", json=payload)
+            async with self.semaphore:
+                with FORECAST_LATENCY.time():
+                    async with httpx.AsyncClient(timeout=self.timeout_sec) as client:
+                        resp = await client.post(f"{self.base_url}/forecast", json=payload)
 
             if resp.status_code != 200:
                 raise RuntimeError(f"Intelligence service returned HTTP {resp.status_code}: {resp.text}")

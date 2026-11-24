@@ -336,3 +336,72 @@ class AllocationOutcomeTracker:
                 arrived=arrived_lines,
                 total=total_lines,
             )
+
+    async def reconcile_on_startup(self, sim_client: Any) -> int:
+        """Scan unfinalized allocations in database and reconcile against simulator.
+
+        Prevents duplicate dispatches after engine restart by reconciling in-flight
+        lines matching simulator allocations by idempotency_key or sim_allocation_id.
+        """
+        try:
+            alloc_res = await sim_client.allocations()
+            raw_allocs = alloc_res.data if hasattr(alloc_res, "data") else alloc_res
+            if not isinstance(raw_allocs, list):
+                return 0
+        except Exception as exc:
+            self._log.warning("reconcile_on_startup.sim_fetch_failed", error=str(exc))
+            return 0
+
+        alloc_by_key: dict[str, Any] = {}
+        alloc_by_id: dict[int, Any] = {}
+        for a in raw_allocs:
+            key = _get_field(a, "idempotency_key")
+            a_id = _get_field(a, "id")
+            if key:
+                alloc_by_key[str(key)] = a
+            if a_id is not None:
+                try:
+                    alloc_by_id[int(a_id)] = a
+                except (ValueError, TypeError):
+                    pass
+
+        reconciled = 0
+        async with self.session_factory() as session:
+            stmt = select(DecisionLine).where(
+                DecisionLine.status.in_(["SUBMITTED", "IN_TRANSIT", "PENDING"])
+            )
+            res = await session.execute(stmt)
+            lines = res.scalars().all()
+            if not lines:
+                return 0
+
+            for line in lines:
+                match = alloc_by_key.get(line.idempotency_key)
+                if not match and line.sim_allocation_id:
+                    match = alloc_by_id.get(line.sim_allocation_id)
+
+                if match:
+                    sim_status = str(_get_field(match, "status", "")).upper()
+                    sim_id = _get_field(match, "id")
+                    arr_tick = _get_field(match, "actual_arrival_tick")
+                    exp_arr = _get_field(match, "expected_arrival_tick")
+
+                    if sim_id and line.sim_allocation_id is None:
+                        line.sim_allocation_id = int(sim_id)
+                    if exp_arr is not None:
+                        line.expected_arrival_tick = int(exp_arr)
+
+                    if sim_status in ("IN_TRANSIT", "ARRIVED", "FAILED", "CANCELLED"):
+                        if line.status != sim_status:
+                            line.status = sim_status
+                            if sim_status == "ARRIVED" and arr_tick is not None:
+                                line.actual_arrival_tick = int(arr_tick)
+                                line.received_liters = float(_get_field(match, "quantity", line.quantity))
+                            reconciled += 1
+
+            if reconciled > 0:
+                await session.commit()
+                self._log.info("reconcile_on_startup.reconciled", count=reconciled)
+
+        return reconciled
+

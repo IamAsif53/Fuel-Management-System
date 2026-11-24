@@ -1,17 +1,85 @@
 groups:
-  - name: fsip-basic
+  - name: fsip-platform-alerts
     rules:
-      - alert: ContainerTargetDown
+      - alert: SimulatorDown
+        expr: fsip_breaker_state{name="simulator"} == 1
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Simulator circuit breaker is OPEN"
+          description: "Simulator calls failing; breaker tripped to OPEN; engine serving cached state."
+
+      - alert: HighErrorRate
+        expr: |
+          sum(rate(http_requests_total{status=~"5.."}[1m]))
+            / clamp_min(sum(rate(http_requests_total[1m])), 1e-9) > 0.05
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "API 5xx HTTP error ratio exceeds 5%"
+          description: "API server error rate has exceeded 5% over the past 1 minute."
+
+      - alert: HighLatencyP95
+        expr: histogram_quantile(0.95, sum by (le, service) (rate(http_request_duration_seconds_bucket[5m]))) > 0.5
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High p95 service latency (>500ms)"
+          description: "p95 HTTP response duration has exceeded 500ms for {{ $labels.service }}."
+
+      - alert: EngineFallingBehind
+        expr: fsip_ticks_behind > 10
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Decision engine falling behind simulator ticks"
+          description: "Engine processed tick is more than 10 ticks behind simulator tick."
+
+      - alert: PredictionFallbackActive
+        expr: increase(fsip_fallback_activations_total{component="forecast"}[2m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Forecast prediction fallback active"
+          description: "Intelligence service unavailable or timed out; engine using local seasonal fallback."
+
+      - alert: StaleData
+        expr: fsip_stale_data == 1
+        for: 30s
+        labels:
+          severity: warning
+        annotations:
+          summary: "Simulator data is stale"
+          description: "Simulator returned x-simulator-stale: true header; autopilot suspended."
+
+      - alert: ServiceLevelDrop
+        expr: fsip_service_level < 0.97
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Fuel service level dropped below 97%"
+          description: "Network overall service level is below 97% over the last 2 minutes."
+
+      - alert: StockoutRiskCritical
+        expr: max(fsip_stockout_prob) > 0.7
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Critical stockout probability (>70%) detected"
+          description: "At least one station-fuel series has a stockout probability exceeding 0.7."
+
+      - alert: ContainerDown
         expr: up == 0
         for: 30s
-        labels: {severity: critical}
-        annotations: {summary: "{{ $labels.job }} target down"}
-      - alert: ApiHighErrorRate
-        expr: |
-          sum(rate(http_requests_total{service="api",status=~"5.."}[1m]))
-            / clamp_min(sum(rate(http_requests_total{service="api"}[1m])), 1e-9) > 0.05
-        for: 1m
-        labels: {severity: warning}
-        annotations: {summary: "API 5xx ratio > 5%"}
-      # phase 11 adds: SimulatorDown, HighLatencyP95, EngineFallingBehind, PredictionFallbackActive, StaleData,
-      # ServiceLevelDrop, StockoutRiskCritical (06_RESILIENCE_AND_OBSERVABILITY.md §2.5)
+        labels:
+          severity: critical
+        annotations:
+          summary: "Service container down: {{ $labels.job }}"
+          description: "Scrape target {{ $labels.instance }} has been unreachable for > 30 seconds."

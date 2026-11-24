@@ -1,4 +1,5 @@
 """Routers package for FSIP API."""
+from .assistant import router as assistant_router
 from .decisions import router as decisions_router
 from .entities import router as entities_router
 from .risk_alerts import router as risk_alerts_router
@@ -7,6 +8,7 @@ from .stream import router as stream_router
 from .system import router as system_router
 
 __all__ = [
+    "assistant_router",
     "decisions_router",
     "entities_router",
     "risk_alerts_router",

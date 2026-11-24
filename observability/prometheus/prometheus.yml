@@ -2,17 +2,24 @@ global:
   scrape_interval: 5s
   evaluation_interval: 5s
 
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
 rule_files:
   - /etc/prometheus/alerts.yml
-  # - /etc/prometheus/slo.yml        # phase 11 (F-SLO)
+  - /etc/prometheus/slo_rules.yml
 
 scrape_configs:
   - job_name: engine
     metrics_path: /metrics/
     static_configs: [{targets: ["engine:8100"], labels: {service: engine}}]
+
   - job_name: intelligence
     metrics_path: /metrics/
     static_configs: [{targets: ["intelligence:8200"], labels: {service: intelligence}}]
+
   - job_name: api
     metrics_path: /metrics/
     dns_sd_configs:                  # discovers every scaled api replica
@@ -22,6 +29,14 @@ scrape_configs:
     relabel_configs:
       - target_label: service
         replacement: api
+
   - job_name: prometheus
     static_configs: [{targets: ["localhost:9090"]}]
-  # phase 11: cadvisor:8080, node-exporter:9100, notifier:8300
+
+  - job_name: cadvisor
+    scrape_interval: 10s
+    static_configs: [{targets: ["cadvisor:8080"], labels: {service: cadvisor}}]
+
+  - job_name: node-exporter
+    scrape_interval: 10s
+    static_configs: [{targets: ["node-exporter:9100"], labels: {service: node-exporter}}]

@@ -23,6 +23,7 @@ from fsip_common.models import Instance
 from prometheus_client import REGISTRY, Counter, Gauge, Histogram
 
 from app.alerts.manager import AlertManager, AlertSpec, generate_risk_alert_specs
+from app.breakglass import BreakglassWriter
 from app.db.buffer import WriteBuffer
 from app.detect.anomaly import DemandAnomalyDetector
 from app.detect.detectors import (
@@ -40,6 +41,7 @@ from app.detect.recon import (
 from app.risk.stockout import assess
 from app.sim.client import SimClient, SimInvalidPayload
 from app.sim.validation import validate_resource
+from app.state.mode import EngineModeManager
 from app.state.persistence import StatePersistence
 from app.state.publisher import Publisher
 from app.state.store import WorldState
@@ -115,6 +117,8 @@ class SyncLoop:
         self.bottleneck_detector = BottleneckDetector()
         self.regional_risk_detector = RegionalRiskDetector()
         self.data_quality_detector = DataQualityDetector()
+        self.mode_manager = EngineModeManager()
+        self.breakglass_writer = BreakglassWriter()
 
     def add_hook(self, hook: Callable[[WorldState], Awaitable[None]]) -> None:
         """Register a lifecycle hook to execute after each successful sync cycle."""
@@ -232,6 +236,15 @@ class SyncLoop:
             duration = time.perf_counter() - start_time
             if FSIP_CYCLE_DURATION_SECONDS is not None:
                 FSIP_CYCLE_DURATION_SECONDS.observe(duration)
+            breaker = getattr(self.client, "breaker", None)
+            is_open = (getattr(breaker, "state", "") == "OPEN") if breaker else False
+            open_dur = (time.monotonic() - getattr(breaker, "opened_at", 0.0)) if (breaker and is_open) else 0.0
+            self.mode_manager.evaluate(
+                self.store,
+                sim_breaker_open=is_open,
+                sim_breaker_open_duration=open_dur,
+                cycle_failed=True,
+            )
             log.error("sim.sync.failed", error=str(exc), tick=tick, exc_info=True)
             raise
 
@@ -568,6 +581,17 @@ class SyncLoop:
                 duration_ms=round(duration * 1000, 2),
             )
 
+        # Evaluate engine operating resilience mode (NORMAL, DEGRADED, SAFE_HOLD, NO_FEASIBLE_ROUTES)
+        breaker = getattr(self.client, "breaker", None)
+        is_open = (getattr(breaker, "state", "") == "OPEN") if breaker else False
+        open_dur = (time.monotonic() - getattr(breaker, "opened_at", 0.0)) if (breaker and is_open) else 0.0
+        self.mode_manager.evaluate(
+            self.store,
+            sim_breaker_open=is_open,
+            sim_breaker_open_duration=open_dur,
+            cycle_failed=any_resource_failed,
+        )
+
         # Run registered lifecycle hooks sequentially & isolated
         for idx, hook in enumerate(self.hooks):
             try:
@@ -580,6 +604,13 @@ class SyncLoop:
                     error=str(exc),
                     exc_info=True,
                 )
+
+        # F-BREAKGLASS: periodically write static emergency dispatch plan every 4 ticks
+        try:
+            cur_plan = getattr(self.store, "pending", [])
+            self.breakglass_writer.write(self.store, plan_lines=cur_plan)
+        except Exception as exc:
+            log.warning("sync.breakglass_failed", error=str(exc))
 
     async def request_cycle(self, tick: int) -> None:
         """Request execution of a sync cycle for the specified simulator tick.

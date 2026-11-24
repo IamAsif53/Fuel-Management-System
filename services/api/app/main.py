@@ -22,6 +22,7 @@ from app.db import check_db_health, close_db
 from app.metrics_tracker import tracker
 from app.middleware.ratelimit import RateLimitMiddleware
 from app.routers import (
+    assistant_router,
     decisions_router,
     entities_router,
     risk_alerts_router,
@@ -161,6 +162,7 @@ async def ready():
 
 
 # Include Routers
+app.include_router(assistant_router)
 app.include_router(decisions_router)
 app.include_router(risk_alerts_router)
 app.include_router(state_router)

@@ -1,35 +1,74 @@
 {
   "uid": "fsip-service-health",
-  "title": "FSIP – Service Health (starter)",
+  "title": "FSIP – Service Health",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "refresh": "5s",
   "time": {"from": "now-30m", "to": "now"},
-  "tags": ["fsip"],
+  "tags": ["fsip", "health"],
   "panels": [
     {
-      "id": 1, "type": "stat", "title": "Targets up",
-      "gridPos": {"x": 0, "y": 0, "w": 6, "h": 4},
+      "id": 1, "type": "stat", "title": "Targets Up",
+      "gridPos": {"x": 0, "y": 0, "w": 4, "h": 4},
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "targets": [{"refId": "A", "expr": "sum(up)", "legendFormat": "up"}]
     },
     {
-      "id": 2, "type": "timeseries", "title": "API request rate by route",
-      "gridPos": {"x": 6, "y": 0, "w": 18, "h": 8},
+      "id": 2, "type": "stat", "title": "Simulator Breaker",
+      "gridPos": {"x": 4, "y": 0, "w": 4, "h": 4},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"refId": "A", "expr": "fsip_breaker_state{name=\"simulator\"}", "legendFormat": "0=CLOSED, 1=OPEN, 2=HALF_OPEN"}]
+    },
+    {
+      "id": 3, "type": "stat", "title": "Engine Mode",
+      "gridPos": {"x": 8, "y": 0, "w": 4, "h": 4},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"refId": "A", "expr": "fsip_engine_mode == 1", "legendFormat": "{{mode}}"}]
+    },
+    {
+      "id": 4, "type": "stat", "title": "Ticks Behind",
+      "gridPos": {"x": 12, "y": 0, "w": 4, "h": 4},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"refId": "A", "expr": "fsip_ticks_behind", "legendFormat": "ticks"}]
+    },
+    {
+      "id": 5, "type": "stat", "title": "SSE Connected",
+      "gridPos": {"x": 16, "y": 0, "w": 4, "h": 4},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"refId": "A", "expr": "fsip_sse_connected", "legendFormat": "connected"}]
+    },
+    {
+      "id": 6, "type": "stat", "title": "Data Stale",
+      "gridPos": {"x": 20, "y": 0, "w": 4, "h": 4},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"refId": "A", "expr": "fsip_stale_data", "legendFormat": "stale"}]
+    },
+    {
+      "id": 7, "type": "timeseries", "title": "API Request Rate by Route",
+      "gridPos": {"x": 0, "y": 4, "w": 12, "h": 8},
       "datasource": {"type": "prometheus", "uid": "prometheus"},
       "targets": [{"refId": "A", "expr": "sum by (route) (rate(http_requests_total{service=\"api\"}[1m]))", "legendFormat": "{{route}}"}]
     },
     {
-      "id": 3, "type": "timeseries", "title": "API p95 latency (s)",
-      "gridPos": {"x": 0, "y": 8, "w": 12, "h": 8},
+      "id": 8, "type": "timeseries", "title": "API Latency p95 / p99 (s)",
+      "gridPos": {"x": 12, "y": 4, "w": 12, "h": 8},
       "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "targets": [{"refId": "A", "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{service=\"api\"}[5m])))", "legendFormat": "p95"}]
+      "targets": [
+        {"refId": "A", "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{service=\"api\"}[5m])))", "legendFormat": "p95"},
+        {"refId": "B", "expr": "histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket{service=\"api\"}[5m])))", "legendFormat": "p99"}
+      ]
     },
     {
-      "id": 4, "type": "timeseries", "title": "API 5xx ratio",
-      "gridPos": {"x": 12, "y": 8, "w": 12, "h": 8},
+      "id": 9, "type": "timeseries", "title": "Simulator Request Duration (p95)",
+      "gridPos": {"x": 0, "y": 12, "w": 12, "h": 8},
       "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "targets": [{"refId": "A", "expr": "sum(rate(http_requests_total{service=\"api\",status=~\"5..\"}[1m])) / clamp_min(sum(rate(http_requests_total{service=\"api\"}[1m])), 1e-9)", "legendFormat": "5xx"}]
+      "targets": [{"refId": "A", "expr": "histogram_quantile(0.95, sum by (le, endpoint) (rate(fsip_sim_request_duration_seconds_bucket[5m])))", "legendFormat": "{{endpoint}}"}]
+    },
+    {
+      "id": 10, "type": "timeseries", "title": "Simulator Errors by Endpoint",
+      "gridPos": {"x": 12, "y": 12, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"refId": "A", "expr": "sum by (endpoint, code) (rate(fsip_sim_errors_total[1m]))", "legendFormat": "{{endpoint}} - {{code}}"}]
     }
   ]
 }

@@ -13,6 +13,7 @@ Manages:
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -28,6 +29,8 @@ from app.decision.constraints import PlanLine, check_line
 from app.decision.heuristic import plan_heuristic
 from app.decision.optimizer import OptimizerPolicy
 from app.decision.twin import ShadowTwin
+from app.explain.explainer import build_explanation, generate_decision_narrative
+from app.explain.llm import FSIP_RECOMMENDATION_TIME_TO_DECISION, LLMExplainer
 
 if TYPE_CHECKING:
     from app.decision.executor import Executor
@@ -86,6 +89,11 @@ class DecisionEngine:
         self.optimizer = OptimizerPolicy()
         self.last_plan_tick: int = -1
         self._log = get_logger()
+        self.llm = LLMExplainer(
+            api_key=getattr(self.settings, "anthropic_api_key", None),
+            model=getattr(self.settings, "llm_model", "claude-haiku-5-5"),
+            timeout_sec=getattr(self.settings, "llm_timeout_sec", 8.0),
+        )
 
     async def on_cycle(
         self,
@@ -99,6 +107,12 @@ class DecisionEngine:
         Called on simulator synchronisation cycles.
         """
         cur_tick = getattr(store, "tick", 0)
+        engine_mode = getattr(store, "engine_mode", "NORMAL")
+        if engine_mode in ("SAFE_HOLD", "NO_FEASIBLE_ROUTES"):
+            self._log.info("decision.planning_paused", engine_mode=engine_mode, tick=cur_tick)
+            await self.expire_stale_decisions(cur_tick, store.sim_run_id)
+            return None
+
         interval = self.settings.engine_decision_interval_ticks
 
         if not force_plan and self.last_plan_tick >= 0 and (cur_tick - self.last_plan_tick) < interval:
@@ -206,12 +220,14 @@ class DecisionEngine:
         mode = getattr(store, "operating_mode", getattr(store, "engine_mode", self.settings.engine_mode)) or "advisory"
         is_autopilot = (str(mode).lower() == "autopilot")
 
+        resilience_mode = str(getattr(store, "engine_mode", "NORMAL")).upper()
         auto_eligible = (
             is_autopilot
             and confidence >= self.settings.auto_approve_min_confidence
             and all(line.quantity <= self.settings.auto_approve_max_liters for line in plan_lines)
             and not is_stale
             and not is_degraded
+            and resilience_mode not in ("DEGRADED", "SAFE_HOLD", "NO_FEASIBLE_ROUTES")
         )
 
         initial_status = "APPROVED" if auto_eligible else "PENDING_APPROVAL"
@@ -238,6 +254,23 @@ class DecisionEngine:
             # Supersede older PENDING_APPROVAL decisions for this run
             await self._supersede_older_decisions(session, store.sim_run_id, cur_tick)
 
+            # Build structured explanation and narrative matching 05 §7.1
+            decision_meta = {
+                "lines": plan_lines,
+                "tick": cur_tick,
+                "policy": policy_name,
+                "confidence": confidence,
+                "degraded": is_degraded or is_stale,
+            }
+            structured_explanation = build_explanation(
+                decision=decision_meta,
+                state=store,
+                risk=getattr(store, "risk", {}),
+                impact=impact_data,
+                plan_meta=explanation_payload,
+            )
+            initial_narrative = generate_decision_narrative(structured_explanation, tick=cur_tick)
+
             dec = Decision(
                 sim_run_id=store.sim_run_id,
                 tick=cur_tick,
@@ -253,7 +286,8 @@ class DecisionEngine:
                 confidence=confidence,
                 degraded=is_degraded or is_stale,
                 fallback_reason=fallback_reason or ("State degraded" if (is_degraded or is_stale) else None),
-                explanation=explanation_payload,
+                explanation=structured_explanation,
+                narrative=initial_narrative,
                 impact=impact_data,
                 approved_by=approved_by,
                 approved_at=approved_at,
@@ -319,11 +353,47 @@ class DecisionEngine:
             lines_count=len(db_lines),
         )
 
+        # 6b. Asynchronously enhance narrative with LLM if enabled (Phase 09 §4.3)
+        if getattr(self, "llm", None) and self.llm.enabled:
+            asyncio.create_task(
+                self._enhance_narrative_with_llm(dec.id, structured_explanation, cur_tick)
+            )
+
         # 7. If auto-approved, execute immediately
         if auto_eligible and self.executor is not None:
             await self.executor.execute(dec, db_lines)
 
         return dec
+
+    async def _enhance_narrative_with_llm(
+        self,
+        decision_id: int,
+        explanation: dict[str, Any],
+        tick: int,
+    ) -> None:
+        """Asynchronously update decision narrative if LLM generates a valid narrative."""
+        try:
+            new_narrative = await self.llm.explain_decision(explanation, tick=tick)
+            if not new_narrative:
+                return
+            async with self.session_factory() as session:
+                dec = await session.get(Decision, decision_id)
+                if dec and dec.narrative != new_narrative:
+                    dec.narrative = new_narrative
+                    await session.commit()
+                    if self.publisher is not None:
+                        await self.publisher.event(
+                            type="decision.narrative_updated",
+                            data={
+                                "decision_id": decision_id,
+                                "narrative": new_narrative,
+                            },
+                            sim_run_id=dec.sim_run_id,
+                            tick=tick,
+                        )
+                    self._log.info("decision.narrative_enhanced_with_llm", decision_id=decision_id)
+        except Exception as exc:
+            self._log.warning("decision.llm_narrative_failed", decision_id=decision_id, error=str(exc))
 
     async def _supersede_older_decisions(
         self,
@@ -404,6 +474,7 @@ class DecisionEngine:
         selected_line_ids: Sequence[int] | None = None,
         modified_quantities: dict[int, float] | None = None,
         current_state: WorldState | None = None,
+        reviewed_driver: bool | None = None,
     ) -> Decision:
         """Approve a pending decision, optionally selecting or modifying line quantities."""
         async with self.session_factory() as session:
@@ -481,12 +552,36 @@ class DecisionEngine:
 
                 approved_lines.append(line)
 
+            # F-TRUST Cognitive Forcing check (12_ADVANCED_FEATURES.md / Phase 09 §4.5):
+            max_qty = max((line.quantity for line in approved_lines), default=0.0)
+            conf = dec.confidence if dec.confidence is not None else 1.0
+            state_deg = bool(getattr(current_state, "degraded", False)) if current_state is not None else False
+            is_deg = bool(dec.degraded) or state_deg
+            requires_review = (max_qty > 5000.0) or (conf < 0.7) or is_deg
+
+            if requires_review and not reviewed_driver:
+                forcing_msg = (
+                    "Cognitive forcing review required: you must expand Why and review "
+                    "the main risk driver before approving this recommendation."
+                )
+                raise DecisionError(
+                    "REVIEW_REQUIRED",
+                    forcing_msg,
+                    status_code=422,
+                )
+
             dec.status = "APPROVED"
             dec.approved_by = actor
             dec.approved_at = datetime.now(UTC)
 
             await session.commit()
             await session.refresh(dec, ["lines"])
+
+        # Record recommendation time-to-decision metric
+        if dec.created_at:
+            elapsed = (datetime.now(UTC) - dec.created_at).total_seconds()
+            if FSIP_RECOMMENDATION_TIME_TO_DECISION and elapsed > 0:
+                FSIP_RECOMMENDATION_TIME_TO_DECISION.observe(elapsed)
 
         # Publish approval event
         if self.publisher is not None:
