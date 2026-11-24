@@ -75,6 +75,43 @@ try:
 except ValueError:
     FSIP_LOOP_RESTARTS = REGISTRY._names_to_collectors.get("fsip_loop_restarts_total")  # type: ignore[assignment]
 
+try:
+    FSIP_SERVICE_LEVEL = Gauge(
+        "fsip_service_level",
+        "Current platform fuel service level from simulator metrics",
+    )
+except ValueError:
+    FSIP_SERVICE_LEVEL = REGISTRY._names_to_collectors.get("fsip_service_level")  # type: ignore[assignment]
+
+try:
+    FSIP_UNMET_LITERS_TOTAL = Gauge(
+        "fsip_unmet_liters_total",
+        "Total cumulative unmet fuel demand in liters",
+    )
+except ValueError:
+    FSIP_UNMET_LITERS_TOTAL = REGISTRY._names_to_collectors.get("fsip_unmet_liters_total")  # type: ignore[assignment]
+
+try:
+    FSIP_ALLOCATION_FAILURES_TOTAL = Gauge(
+        "fsip_allocation_failures_total",
+        "Total allocation failures reported by simulator",
+    )
+except ValueError:
+    FSIP_ALLOCATION_FAILURES_TOTAL = REGISTRY._names_to_collectors.get(
+        "fsip_allocation_failures_total"
+    )  # type: ignore[assignment]
+
+try:
+    FSIP_STATION_INVENTORY = Gauge(
+        "fsip_station_inventory_liters",
+        "Current fuel inventory at each station in liters",
+        ["station", "fuel"],
+    )
+except ValueError:
+    FSIP_STATION_INVENTORY = REGISTRY._names_to_collectors.get(
+        "fsip_station_inventory_liters"
+    )  # type: ignore[assignment]
+
 
 # ---------------------------------------------------------------- SyncLoop
 class SyncLoop:
@@ -563,6 +600,21 @@ class SyncLoop:
         duration = time.perf_counter() - start_time
         if FSIP_CYCLE_DURATION_SECONDS is not None:
             FSIP_CYCLE_DURATION_SECONDS.observe(duration)
+
+        if self.store.metrics is not None:
+            if FSIP_SERVICE_LEVEL is not None:
+                FSIP_SERVICE_LEVEL.set(float(getattr(self.store.metrics, "service_level", 1.0)))
+            if FSIP_UNMET_LITERS_TOTAL is not None:
+                FSIP_UNMET_LITERS_TOTAL.set(float(getattr(self.store.metrics, "unmet_demand_liters", 0.0)))
+            if FSIP_ALLOCATION_FAILURES_TOTAL is not None:
+                FSIP_ALLOCATION_FAILURES_TOTAL.set(float(getattr(self.store.metrics, "allocation_failures", 0)))
+
+        if FSIP_STATION_INVENTORY is not None and self.store.stations:
+            for st in self.store.stations:
+                sid = getattr(st, "id", "")
+                inv = getattr(st, "inventory", {}) or {}
+                for fuel, liters in inv.items():
+                    FSIP_STATION_INVENTORY.labels(station=sid, fuel=str(fuel)).set(float(liters))
 
         if any_resource_failed:
             log.warning(

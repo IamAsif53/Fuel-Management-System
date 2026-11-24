@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import csv
 import os
+import tempfile
 from datetime import UTC, datetime
 from typing import Any
 
@@ -41,10 +42,13 @@ class BreakglassWriter:
             os.remove(test_file)
             return target_dir
         except Exception:
-            # Fallback to local /tmp or current directory breakglass
-            fallback = os.path.join(os.getcwd(), "breakglass_data")
-            os.makedirs(fallback, exist_ok=True)
-            return fallback
+            # Fallback to system temp directory
+            fallback = os.path.join(tempfile.gettempdir(), "breakglass_data")
+            try:
+                os.makedirs(fallback, exist_ok=True)
+                return fallback
+            except Exception:
+                return target_dir
 
     def write(
         self,
