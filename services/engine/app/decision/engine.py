@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.config import EngineSettings, get_settings
-from app.db.models import Decision, DecisionLine
+from app.db.models import Decision, DecisionLine, SimRun
 from app.decision.constraints import PlanLine, check_line
 from app.decision.heuristic import plan_heuristic
 
@@ -147,8 +147,8 @@ class DecisionEngine:
         expires_at_tick = cur_tick + 2
 
         # 4. Evaluate approval policy (Autopilot truth table)
-        mode = getattr(store, "engine_mode", self.settings.engine_mode) or "advisory"
-        is_autopilot = (mode.lower() == "autopilot")
+        mode = getattr(store, "operating_mode", getattr(store, "engine_mode", self.settings.engine_mode)) or "advisory"
+        is_autopilot = (str(mode).lower() == "autopilot")
 
         auto_eligible = (
             is_autopilot
@@ -164,6 +164,21 @@ class DecisionEngine:
 
         # 5. Persist decision and lines atomically
         async with self.session_factory() as session:
+            # Ensure simulation run row exists before inserting referencing decision
+            if store.sim_run_id is not None:
+                run_exists = await session.scalar(
+                    select(SimRun.id).where(SimRun.id == store.sim_run_id)
+                )
+                if not run_exists:
+                    self._log.warning(
+                        "decision.skipped_uncommitted_run",
+                        sim_run_id=store.sim_run_id,
+                        tick=cur_tick,
+                    )
+                    return None
+            else:
+                return None
+
             # Supersede older PENDING_APPROVAL decisions for this run
             await self._supersede_older_decisions(session, store.sim_run_id, cur_tick)
 
@@ -242,6 +257,11 @@ class DecisionEngine:
             status=dec.status,
             lines_count=len(db_lines),
         )
+
+        # 7. If auto-approved, execute immediately
+        if auto_eligible and self.executor is not None:
+            await self.executor.execute(dec, db_lines)
+
         return dec
 
     async def _supersede_older_decisions(
