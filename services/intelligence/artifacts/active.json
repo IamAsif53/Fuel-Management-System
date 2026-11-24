@@ -1,8 +1,7 @@
 {
   "name": "seasonal",
   "version": "builtin",
-  "activated_at": "2026-11-24T05:53:15.279043+00:00",
-  "selection_reason": "LightGBM improvement (-74.25%) did not meet the >2% improvement threshold over Seasonal baseline (0.0563 vs 0.0981); simpler model kept active.",
+  "activated_at": "2026-11-24T05:57:17.028452+00:00",
   "metrics": {
     "mae": 4.64,
     "mape": 0.0553,
