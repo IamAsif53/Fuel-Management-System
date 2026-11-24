@@ -140,11 +140,23 @@ class ForecastProvider:
             reset_timeout=15.0,
         )
         self.fallback_model = fallback_model or SeasonalProfileModel(tick_minutes=15)
+        self.drift_fallback: bool = False
+
+    def set_drift_fallback(self, enabled: bool) -> None:
+        """Enable or disable forced fallback due to detected model drift."""
+        self.drift_fallback = enabled
 
     async def get_forecast(self, store: WorldState, horizon: int = 48) -> ForecastBundle:
         """Retrieves forecasts from intelligence service or executes local seasonal fallback."""
         cur_tick = getattr(store, "tick", 0)
         tick_minutes = getattr(store, "tick_minutes", 15)
+
+        # Check model drift forced fallback
+        if self.drift_fallback:
+            log.warning("forecast.drift_fallback_active")
+            store.degraded_reasons.add("model_drift_fallback")
+            FALLBACK_ACTIVATIONS.labels(component="forecast").inc()
+            return self._execute_fallback(store, cur_tick, horizon)
 
         # Check circuit breaker
         if not self.breaker.allow():

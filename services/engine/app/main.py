@@ -38,7 +38,7 @@ from app.decision.engine import (
 )
 from app.decision.executor import Executor
 from app.decision.tracker import AllocationOutcomeTracker
-from app.intelligence.client import ForecastProvider
+from app.intelligence import ForecastProvider, ForecastQualityMonitor
 from app.sim.circuit import CircuitBreaker
 from app.sim.client import SimClient
 from app.sim.sse import SSEListener
@@ -160,15 +160,30 @@ async def lifespan(app: FastAPI):
         base_url=s.intelligence_url,
         timeout_sec=s.intelligence_timeout_sec,
     )
+    forecast_monitor = getattr(app.state, "forecast_monitor", None) or ForecastQualityMonitor(
+        session_factory=sessionmaker,
+        write_buffer=write_buffer,
+    )
 
     async def forecast_hook(current_store: WorldState) -> None:
         try:
+            # 1. Evaluate previous forecasts against newly realized demand
+            if forecast_monitor:
+                await forecast_monitor.evaluate_tick(current_store, forecast_provider)
+
+            # 2. Retrieve multi-horizon forecasts for upcoming ticks
             fb = await forecast_provider.get_forecast(current_store)
             current_store.forecast_bundle = fb
+
+            # 3. Persist forecast rows
             if current_store.sim_run_id is not None and write_buffer:
                 rows = fb.to_db_rows(current_store.sim_run_id, current_store.sim_time)
                 if rows:
                     write_buffer.enqueue(insert_forecasts, forecasts=rows)
+
+            # 4. Record new forecasts in monitor for future verification
+            if forecast_monitor:
+                forecast_monitor.record_forecast(fb)
         except Exception as exc:
             log.warning("engine.forecast_hook_failed", error=str(exc))
 
@@ -186,6 +201,7 @@ async def lifespan(app: FastAPI):
     app.state.decision_engine = decision_engine
     app.state.tracker = tracker
     app.state.forecast_provider = forecast_provider
+    app.state.forecast_monitor = forecast_monitor
 
     log.info(
         "engine.start",
