@@ -5,7 +5,8 @@
 **Status:** COMPLETE, VERIFIED & COMPLIANT  
 **Repository:** `https://github.com/IamAsif53/Fuel-Management-System`  
 **Branch:** `main`  
-**Latest Phase Commit:** `9c8627f` (`phase-05: update backtest benchmarks with calibrated coverage`)
+**Latest Phase Commit:** `0a31ac7` (`ci: add pyarrow to requirements-dev and filter integration tests in engine pytest`)  
+**GitHub Actions CI Status:** [Run #52 (Commit 0a31ac7) — SUCCESS (GREEN)](https://github.com/IamAsif53/Fuel-Management-System/actions/runs/45370704781)
 
 ---
 
@@ -134,6 +135,9 @@ When `fsip-intelligence` is healthy, engine sends requests via HTTP to `/forecas
 | `d14007f` | Compliance | `phase-05: calibrate seasonal residual quantiles and add ewma tests` |
 | `545e2ae` | Compliance | `phase-05: render exact prediction service fallback banner in frontend` |
 | `9c8627f` | Compliance | `phase-05: update backtest benchmarks with calibrated coverage` |
+| `847268e` | Compliance | `docs: finalize phase 05 compliance audit report` |
+| `ba804b7` | Documentation | `docs: update progress with calibrated backtest wape` |
+| `0a31ac7` | CI / Infrastructure | `ci: add pyarrow to requirements-dev and filter integration tests in engine pytest` |
 
 ---
 
