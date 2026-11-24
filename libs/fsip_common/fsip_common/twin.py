@@ -94,6 +94,11 @@ class TwinSimulationResult:
     min_station_service_level: float
 
 
+# Aliases for backward and engine compatibility
+TwinStationProjection = StationProjection
+TwinDepotProjection = DepotProjection
+
+
 class ShadowTwin:
     """Pure-Python, side-effect-free simulator of fuel distribution network."""
 
