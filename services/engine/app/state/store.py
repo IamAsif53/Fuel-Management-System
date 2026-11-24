@@ -122,6 +122,7 @@ class WorldState:
     policy: str = "optimizer"
 
     risk: dict[str | tuple[str, str], Any] = field(default_factory=dict)
+    risk_results: dict[Any, Any] = field(default_factory=dict)
     depot_risk: dict[tuple[str, str], Any] = field(default_factory=dict)
     pending: list[Any] = field(default_factory=list)
     bottleneck: dict[str, Any] | None = None

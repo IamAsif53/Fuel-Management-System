@@ -123,21 +123,23 @@ export interface AllocationView {
 
 export interface Alert {
   id: number;
+  sim_run_id?: number | null;
   fingerprint: string;
   category: string;
   severity: Severity;
-  status: "OPEN" | "ACKNOWLEDGED" | "RESOLVED";
   title: string;
-  message: string;
-  entity_type: string | null;
-  entity_id: string | null;
-  fuel_type: Fuel | null;
-  opened_tick: number;
-  resolved_tick: number | null;
+  message?: string | null;
+  entity_type?: string | null;
+  entity_id?: string | null;
+  fuel_type?: Fuel | null;
+  status: "OPEN" | "ACKNOWLEDGED" | "RESOLVED";
+  opened_tick?: number | null;
+  resolved_tick?: number | null;
   opened_at: string;
-  acknowledged_by: string | null;
-  related_decision_id: number | null;
-  data: Record<string, unknown>;
+  resolved_at?: string | null;
+  acknowledged_by?: string | null;
+  data?: Record<string, unknown> | null;
+  related_decision_id?: number | null;
 }
 
 export interface ComponentHealth {
@@ -352,27 +354,6 @@ export interface RiskResponse {
   rows: RiskRow[];
 }
 
-export interface Alert {
-  id: number;
-  sim_run_id?: number | null;
-  fingerprint: string;
-  category: string;
-  severity: Severity;
-  title: string;
-  message?: string | null;
-  entity_type?: string | null;
-  entity_id?: string | null;
-  fuel_type?: Fuel | null;
-  status: "OPEN" | "ACKNOWLEDGED" | "RESOLVED";
-  opened_tick?: number | null;
-  resolved_tick?: number | null;
-  opened_at: string;
-  resolved_at?: string | null;
-  acknowledged_by?: string | null;
-  data?: Record<string, unknown> | null;
-  related_decision_id?: number | null;
-}
-
 export interface AlertsResponse {
   items: Alert[];
   total: number;
@@ -429,3 +410,31 @@ export interface Incident {
 export interface IncidentsResponse {
   items: Incident[];
 }
+
+export interface ReconciliationLine {
+  line_id: number;
+  sent: number;
+  received: number;
+  loss: number;
+  loss_reason: string;
+  method: string;
+}
+
+export interface StationVariance {
+  station_id: string;
+  fuel_type: string;
+  variance_cusum: number;
+  alarm: boolean;
+}
+
+export interface ReconciliationReport {
+  lines: ReconciliationLine[];
+  totals: {
+    sent: number;
+    received: number;
+    loss: number;
+    loss_rate: number;
+  };
+  stations: StationVariance[];
+}
+

@@ -10,6 +10,7 @@ Features:
 - Lifecycle hooks: executes on_cycle hooks sequentially with failure isolation.
 - Prometheus observability: tracks fsip_cycle_duration_seconds and fsip_ticks_behind.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -21,8 +22,21 @@ from fsip_common.logging import get_logger
 from fsip_common.models import Instance
 from prometheus_client import REGISTRY, Counter, Gauge, Histogram
 
-from app.alerts.manager import AlertManager, generate_risk_alert_specs
+from app.alerts.manager import AlertManager, AlertSpec, generate_risk_alert_specs
 from app.db.buffer import WriteBuffer
+from app.detect.anomaly import DemandAnomalyDetector
+from app.detect.detectors import (
+    BottleneckDetector,
+    DataQualityDetector,
+    DisruptionDetector,
+    RegionalRiskDetector,
+    SupplyDelayDetector,
+)
+from app.detect.recon import (
+    AllocationReconciliationTracker,
+    DepotBalanceTracker,
+    StationBalanceTracker,
+)
 from app.risk.stockout import assess
 from app.sim.client import SimClient, SimInvalidPayload
 from app.sim.validation import validate_resource
@@ -81,15 +95,26 @@ class SyncLoop:
         self.write_buffer = write_buffer
         self.publisher = publisher
         self.alert_manager = alert_manager
-        self.persistence: StatePersistence | None = (
-            StatePersistence(write_buffer) if write_buffer is not None else None
-        )
+        self.persistence: StatePersistence | None = StatePersistence(write_buffer) if write_buffer is not None else None
 
         self.last_tick: int | None = store.tick if store.instance is not None else None
         self._is_running: bool = False
         self._pending_tick: int | None = None
         self._lock = asyncio.Lock()
         self._stop_event = asyncio.Event()
+
+        # Phase 07 Anomaly & Operational Detectors
+        self.demand_anomaly_detector = DemandAnomalyDetector()
+        self.station_balance_tracker = StationBalanceTracker()
+        self.depot_balance_tracker = DepotBalanceTracker()
+        self.reconciliation_tracker = AllocationReconciliationTracker(
+            session_factory=alert_manager.session_factory if alert_manager else None
+        )
+        self.supply_delay_detector = SupplyDelayDetector()
+        self.disruption_detector = DisruptionDetector()
+        self.bottleneck_detector = BottleneckDetector()
+        self.regional_risk_detector = RegionalRiskDetector()
+        self.data_quality_detector = DataQualityDetector()
 
     def add_hook(self, hook: Callable[[WorldState], Awaitable[None]]) -> None:
         """Register a lifecycle hook to execute after each successful sync cycle."""
@@ -129,6 +154,13 @@ class SyncLoop:
         self.store.reset(new_sim_run_id=new_run)
         self.last_tick = new_tick
 
+        self.demand_anomaly_detector.reset(new_run)
+        self.station_balance_tracker.reset()
+        self.depot_balance_tracker.reset()
+        self.reconciliation_tracker.reset()
+        self.bottleneck_detector.reset()
+        self.data_quality_detector.reset()
+
     async def on_notice(self, payload: dict[str, Any]) -> None:
         """Handle simulator.notice SSE event payloads (e.g. simulation reset)."""
         msg = str(payload.get("message", "")).lower()
@@ -136,7 +168,6 @@ class SyncLoop:
             log.info("sync.notice.reset_detected", message=payload.get("message"))
             self.on_reset(new_tick=0)
             await self.full_sync()
-
 
     def _calc_demand_limit(self, target_tick: int | None) -> int:
         """Calculate dynamic demand history retrieval limit according to formula:
@@ -299,6 +330,201 @@ class SyncLoop:
                     station_risks=self.store.risk_results,
                     depot_projections=depot_projections,
                 )
+
+                # 1. Supply delay detector
+                delay_specs = self.supply_delay_detector.detect(self.store)
+                for s in delay_specs:
+                    specs.append(s)
+                    active_fps.add(s.fingerprint)
+
+                # 2. Disruption detector (active & scheduled)
+                disr_specs = self.disruption_detector.detect(self.store)
+                for s in disr_specs:
+                    specs.append(s)
+                    active_fps.add(s.fingerprint)
+
+                # 3. Bottleneck detector
+                btl_specs = self.bottleneck_detector.detect(self.store)
+                for s in btl_specs:
+                    specs.append(s)
+                    active_fps.add(s.fingerprint)
+
+                # 4. Regional risk detector
+                reg_specs = self.regional_risk_detector.detect(self.store)
+                for s in reg_specs:
+                    specs.append(s)
+                    active_fps.add(s.fingerprint)
+
+                # 5. Data quality detector
+                dq_specs, is_degraded = self.data_quality_detector.detect(self.store)
+                for s in dq_specs:
+                    specs.append(s)
+                    active_fps.add(s.fingerprint)
+                if is_degraded:
+                    self.store.degraded_reasons.add("invalid_simulator_data")
+                else:
+                    self.store.degraded_reasons.discard("invalid_simulator_data")
+
+                # 6. Demand anomaly detector & Station balance / variance
+                stations = getattr(self.store, "stations", {}) or {}
+                st_items = stations.values() if isinstance(stations, dict) else stations
+                current_tick = getattr(self.store, "tick", 0)
+
+                for st in st_items:
+                    st_id = getattr(st, "id", None) or (st.get("id") if isinstance(st, dict) else None)
+                    if not st_id:
+                        continue
+                    inv_map = getattr(st, "inventory", {}) if hasattr(st, "inventory") else st.get("inventory", {})
+                    cap_map = getattr(st, "capacity", {}) if hasattr(st, "capacity") else st.get("capacity", {})
+                    region_id = getattr(st, "region_id", None) or (
+                        st.get("region_id") if isinstance(st, dict) else None
+                    )
+
+                    if isinstance(inv_map, dict):
+                        for f_type, cur_inv in inv_map.items():
+                            cap = float(cap_map.get(f_type, 10000.0)) if isinstance(cap_map, dict) else 10000.0
+
+                            # Get demand history for tick
+                            served_vol = 0.0
+                            demand_vol = 0.0
+                            demand_history = getattr(self.store, "demand", {}).get((st_id, f_type), [])
+                            for d_row in demand_history:
+                                d_tick = getattr(d_row, "tick", -1) if hasattr(d_row, "tick") else d_row.get("tick", -1)
+                                if d_tick == current_tick:
+                                    served_vol += (
+                                        getattr(d_row, "served_liters", 0.0)
+                                        if hasattr(d_row, "served_liters")
+                                        else d_row.get("served_liters", 0.0)
+                                    )
+                                    demand_vol += (
+                                        getattr(d_row, "demand_liters", 0.0)
+                                        if hasattr(d_row, "demand_liters")
+                                        else d_row.get("demand_liters", 0.0)
+                                    )
+
+                            # Demand anomaly
+                            if demand_vol > 0:
+                                anom = self.demand_anomaly_detector.update(
+                                    station_id=st_id,
+                                    fuel_type=f_type,
+                                    tick=current_tick,
+                                    actual_demand=demand_vol,
+                                    region_id=region_id,
+                                    events=getattr(self.store, "events", []),
+                                )
+                                if anom is not None:
+                                    a_spec = AlertSpec(
+                                        fingerprint=anom.fingerprint,
+                                        category="DEMAND_ANOMALY",
+                                        severity=anom.severity,
+                                        title=f"Demand Anomaly at {st_id}",
+                                        message=anom.message,
+                                        entity_type="station",
+                                        entity_id=st_id,
+                                        fuel_type=f_type,
+                                        opened_tick=current_tick,
+                                        data={
+                                            "actual": anom.actual_demand,
+                                            "p50": anom.expected_p50,
+                                            "z": anom.z_score,
+                                            "cusum": anom.cusum_val,
+                                            "is_explained": anom.is_explained,
+                                            "event_id": anom.explaining_event_id,
+                                        },
+                                    )
+                                    specs.append(a_spec)
+                                    active_fps.add(a_spec.fingerprint)
+
+                            # Station balance & variance
+                            arrivals_vol = 0.0
+                            for alloc in getattr(self.store, "allocations", []) or []:
+                                dst = getattr(alloc, "destination_station_id", "") or (
+                                    alloc.get("destination_station_id") if isinstance(alloc, dict) else ""
+                                )
+                                f = getattr(alloc, "fuel_type", "") or (
+                                    alloc.get("fuel_type") if isinstance(alloc, dict) else ""
+                                )
+                                c_tick = (
+                                    getattr(alloc, "created_tick", 0)
+                                    if hasattr(alloc, "created_tick")
+                                    else alloc.get("created_tick", 0)
+                                )
+                                t_ticks = (
+                                    getattr(alloc, "transit_ticks", 0)
+                                    if hasattr(alloc, "transit_ticks")
+                                    else alloc.get("transit_ticks", 0)
+                                )
+                                if dst == st_id and f == f_type and (c_tick + t_ticks == current_tick):
+                                    q = (
+                                        getattr(alloc, "quantity", 0.0)
+                                        if hasattr(alloc, "quantity")
+                                        else alloc.get("quantity", 0.0)
+                                    )
+                                    arrivals_vol += float(q)
+
+                            inv_anom_spec, inv_var_spec = self.station_balance_tracker.update(
+                                station_id=st_id,
+                                fuel_type=f_type,
+                                current_inventory=float(cur_inv),
+                                capacity=cap,
+                                arrivals_liters=arrivals_vol,
+                                served_liters=served_vol,
+                                tick=current_tick,
+                            )
+                            if inv_anom_spec:
+                                specs.append(inv_anom_spec)
+                                active_fps.add(inv_anom_spec.fingerprint)
+                            if inv_var_spec:
+                                specs.append(inv_var_spec)
+                                active_fps.add(inv_var_spec.fingerprint)
+
+                # 7. Reconcile completed allocations
+                for alloc in getattr(self.store, "allocations", []) or []:
+                    status = str(
+                        getattr(alloc, "status", "") or (alloc.get("status") if isinstance(alloc, dict) else "")
+                    ).upper()
+                    if status in ("ARRIVED", "DELIVERED", "FAILED", "CANCELLED", "REJECTED"):
+                        alloc_id = getattr(alloc, "id", None) or (alloc.get("id") if isinstance(alloc, dict) else None)
+                        if alloc_id and alloc_id not in self.reconciliation_tracker.processed_allocation_ids:
+                            sent_q = float(
+                                getattr(alloc, "quantity", 0.0)
+                                if hasattr(alloc, "quantity")
+                                else alloc.get("quantity", 0.0)
+                            )
+                            st_dest = getattr(alloc, "destination_station_id", "") or (
+                                alloc.get("destination_station_id") if isinstance(alloc, dict) else ""
+                            )
+                            f_type = getattr(alloc, "fuel_type", "") or (
+                                alloc.get("fuel_type") if isinstance(alloc, dict) else ""
+                            )
+                            st_obj = stations.get(st_dest) if isinstance(stations, dict) else None
+                            st_cap = 10000.0
+                            st_cur_inv = 5000.0
+                            if st_obj:
+                                caps = (
+                                    getattr(st_obj, "capacity", {})
+                                    if hasattr(st_obj, "capacity")
+                                    else st_obj.get("capacity", {})
+                                )
+                                invs = (
+                                    getattr(st_obj, "inventory", {})
+                                    if hasattr(st_obj, "inventory")
+                                    else st_obj.get("inventory", {})
+                                )
+                                if isinstance(caps, dict):
+                                    st_cap = float(caps.get(f_type, 10000.0))
+                                if isinstance(invs, dict):
+                                    st_cur_inv = float(invs.get(f_type, 5000.0))
+
+                            await self.reconciliation_tracker.record_allocation(
+                                line_id=int(alloc_id),
+                                sent=sent_q,
+                                status=status,
+                                station_capacity=st_cap,
+                                station_inventory_before_arrival=st_cur_inv,
+                                tick=current_tick,
+                            )
+
                 for spec in specs:
                     await self.alert_manager.raise_(spec)
                 await self.alert_manager.clear_check(active_fps, current_tick=self.store.tick)

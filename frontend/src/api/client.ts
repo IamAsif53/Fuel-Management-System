@@ -217,7 +217,6 @@ import type {
   DecisionsResponse,
   ForecastSeries,
   Fuel,
-  Incident,
   IncidentsResponse,
   RecommendationsResponse,
   RiskResponse,
@@ -397,3 +396,15 @@ export async function fetchIncidents(params?: {
   const query = sp.toString() ? `?${sp.toString()}` : "";
   return api<IncidentsResponse>(`/incidents${query}`);
 }
+
+export async function fetchReconciliationReport(params?: {
+  from_tick?: number;
+  to_tick?: number;
+}): Promise<import("./types").ReconciliationReport> {
+  const sp = new URLSearchParams();
+  if (params?.from_tick !== undefined) sp.set("from_tick", String(params.from_tick));
+  if (params?.to_tick !== undefined) sp.set("to_tick", String(params.to_tick));
+  const query = sp.toString() ? `?${sp.toString()}` : "";
+  return api<import("./types").ReconciliationReport>(`/reports/reconciliation${query}`);
+}
+

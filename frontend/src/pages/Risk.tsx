@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { fetchRisk } from "@/api/client";
-import type { Fuel, RiskLevel, RiskRow } from "@/api/types";
+import type { RiskLevel, RiskRow } from "@/api/types";
 import { FUELS } from "@/api/types";
 import { useLiveState } from "@/hooks/useLiveState";
 import { LoadingSkeleton } from "@/components/LoadingSkeleton";

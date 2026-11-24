@@ -3,6 +3,7 @@
 Provides async SQLAlchemy sessions and database query helpers for snapshot fallback
 and entity history retrieval.
 """
+
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
@@ -611,4 +612,76 @@ async def fetch_forecast_series(
         "history": hist_points,
         "points": forecast_points,
         "coverage_80": 0.80,
+    }
+
+
+async def fetch_reconciliation_report(
+    session: AsyncSession,
+    from_tick: int | None = None,
+    to_tick: int | None = None,
+) -> dict[str, Any]:
+    """Fetch allocation reconciliation report and loss accounting (F-RECON)."""
+    query = """
+        SELECT
+            ar.decision_line_id,
+            ar.sent,
+            ar.received,
+            ar.loss,
+            ar.loss_reason,
+            ar.method,
+            dl.tick
+        FROM allocation_reconciliation ar
+        LEFT JOIN decision_lines dl ON dl.id = ar.decision_line_id
+        WHERE 1=1
+    """
+    params: dict[str, Any] = {}
+    if from_tick is not None:
+        query += " AND dl.tick >= :from_tick"
+        params["from_tick"] = from_tick
+    if to_tick is not None:
+        query += " AND dl.tick <= :to_tick"
+        params["to_tick"] = to_tick
+    query += " ORDER BY ar.decision_line_id DESC LIMIT 500"
+
+    try:
+        result = await session.execute(text(query), params)
+        rows = result.mappings().all()
+    except Exception as exc:
+        log.warning("db.fetch_reconciliation_report_failed", error=str(exc))
+        rows = []
+
+    lines = []
+    total_sent = 0.0
+    total_received = 0.0
+    total_loss = 0.0
+
+    for r in rows:
+        sent = float(r["sent"] or 0.0)
+        received = float(r["received"] or 0.0)
+        loss = float(r["loss"] or 0.0)
+        total_sent += sent
+        total_received += received
+        total_loss += loss
+        lines.append(
+            {
+                "line_id": r["decision_line_id"],
+                "sent": sent,
+                "received": received,
+                "loss": loss,
+                "loss_reason": r["loss_reason"] or "NONE",
+                "method": r["method"] or "audit",
+            }
+        )
+
+    loss_rate = round((total_loss / max(1.0, total_sent)) * 100, 2)
+
+    return {
+        "lines": lines,
+        "totals": {
+            "sent": total_sent,
+            "received": total_received,
+            "loss": total_loss,
+            "loss_rate": loss_rate,
+        },
+        "stations": [],
     }

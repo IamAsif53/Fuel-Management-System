@@ -2,6 +2,7 @@
 
 Implements Task 6.7 per 21_API_CONTRACTS.md and 12_ADVANCED_FEATURES.md.
 """
+
 from __future__ import annotations
 
 from typing import Annotated, Any
@@ -16,6 +17,7 @@ from app.db import (
     fetch_alerts,
     fetch_forecast_series,
     fetch_incidents,
+    fetch_reconciliation_report,
     get_session,
 )
 from app.services.state_service import get_current_state
@@ -65,17 +67,19 @@ async def get_risk(
             prob = float(r_info.get("stockout_prob") or 0.0)
             drivers = r_info.get("drivers", [])
 
-            rows.append({
-                "station_id": st.get("id"),
-                "station_name": st.get("name"),
-                "region_id": st_region,
-                "fuel_type": f_type,
-                "risk_level": lvl,
-                "hours_to_stockout": hours,
-                "stockout_prob": prob,
-                "inventory": float(inventory_map.get(f_type, 0.0)),
-                "drivers": drivers,
-            })
+            rows.append(
+                {
+                    "station_id": st.get("id"),
+                    "station_name": st.get("name"),
+                    "region_id": st_region,
+                    "fuel_type": f_type,
+                    "risk_level": lvl,
+                    "hours_to_stockout": hours,
+                    "stockout_prob": prob,
+                    "inventory": float(inventory_map.get(f_type, 0.0)),
+                    "drivers": drivers,
+                }
+            )
 
     # Sort CRITICAL -> LOW (ascending order integer), then hours ascending
     rows.sort(key=lambda x: (LEVEL_ORDER.get(x["risk_level"], 99), x["hours_to_stockout"]))
@@ -268,3 +272,14 @@ async def get_incidents(
     """Retrieve system and component incidents."""
     items = await fetch_incidents(session=session, status=status, limit=limit)
     return {"items": items}
+
+
+@router.get("/reports/reconciliation")
+async def get_reconciliation(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    from_tick: Annotated[int | None, Query()] = None,
+    to_tick: Annotated[int | None, Query()] = None,
+) -> Response:
+    """Retrieve allocation reconciliation and fuel loss report (F-RECON)."""
+    report = await fetch_reconciliation_report(session, from_tick=from_tick, to_tick=to_tick)
+    return JSONResponse(content=report)

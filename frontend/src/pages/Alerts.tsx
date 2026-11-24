@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { acknowledgeAlert, fetchAlerts, fetchIncidents } from "@/api/client";
 import type { Alert, Incident, Severity } from "@/api/types";
 import { useLiveState } from "@/hooks/useLiveState";
@@ -20,6 +20,7 @@ export default function AlertsPage() {
 
   const [activeTab, setActiveTab] = useState<"OPEN" | "ACKNOWLEDGED" | "ALL">("OPEN");
   const [severityFilter, setSeverityFilter] = useState<string>("");
+  const [categoryFilter, setCategoryFilter] = useState<string>("");
   const [ackingId, setAckingId] = useState<number | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -31,6 +32,7 @@ export default function AlertsPage() {
         fetchAlerts({
           status: activeTab,
           severity: severityFilter || undefined,
+          category: categoryFilter || undefined,
           limit: 100,
         }),
         fetchIncidents({ limit: 20 }),
@@ -46,7 +48,7 @@ export default function AlertsPage() {
 
   useEffect(() => {
     loadData();
-  }, [state?.tick, activeTab, severityFilter]);
+  }, [state?.tick, activeTab, severityFilter, categoryFilter]);
 
   const handleAck = async (id: number) => {
     setAckingId(id);
@@ -110,6 +112,7 @@ export default function AlertsPage() {
           </div>
 
           <select
+            data-testid="alert-severity-filter"
             value={severityFilter}
             onChange={(e) => setSeverityFilter(e.target.value)}
             className="rounded-md border border-border bg-background px-2.5 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
@@ -118,6 +121,27 @@ export default function AlertsPage() {
             <option value="CRITICAL">Critical</option>
             <option value="WARNING">Warning</option>
             <option value="INFO">Info</option>
+          </select>
+
+          <select
+            data-testid="alert-category-filter"
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            className="rounded-md border border-border bg-background px-2.5 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+          >
+            <option value="">All Categories</option>
+            <option value="DEMAND_ANOMALY">Demand Anomaly</option>
+            <option value="INVENTORY_ANOMALY">Inventory Anomaly</option>
+            <option value="INVENTORY_VARIANCE">Inventory Variance</option>
+            <option value="SUPPLY_DELAY">Supply Delay</option>
+            <option value="ROUTE_DISRUPTED">Route Disrupted</option>
+            <option value="STATION_OUTAGE">Station Outage</option>
+            <option value="BOTTLENECK">Bottleneck</option>
+            <option value="REGIONAL_RISK">Regional Risk</option>
+            <option value="DATA_QUALITY">Data Quality</option>
+            <option value="STOCKOUT_RISK">Stockout Risk</option>
+            <option value="DEPOT_DEPLETION_RISK">Depot Depletion</option>
+            <option value="DEPOT_OVERFLOW_RISK">Depot Overflow</option>
           </select>
         </div>
       </div>
@@ -130,13 +154,31 @@ export default function AlertsPage() {
             {incidents
               .filter((inc) => inc.status !== "RESOLVED")
               .map((inc) => (
-                <div key={inc.id} className="text-xs text-foreground flex items-center justify-between">
-                  <div>
-                    <span className="font-semibold">{inc.component}:</span> {inc.summary || inc.kind}
+                <div key={inc.id} className="rounded border border-amber-600/20 bg-background/50 p-2.5">
+                  <div className="flex items-center justify-between text-xs text-foreground">
+                    <div>
+                      <span className="font-semibold text-amber-300">{inc.component}:</span> {inc.summary || inc.kind}
+                    </div>
+                    <span className="rounded bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold text-amber-400">
+                      {inc.status}
+                    </span>
                   </div>
-                  <span className="rounded bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold text-amber-400">
-                    {inc.status}
-                  </span>
+                  {Array.isArray(inc.timeline) && inc.timeline.length > 0 && (
+                    <div className="mt-2 border-t border-border/40 pt-2 space-y-1">
+                      <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                        Incident Timeline
+                      </div>
+                      {inc.timeline.map((item: any, idx: number) => (
+                        <div key={idx} className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                          <span className="h-1 w-1 rounded-full bg-amber-400" />
+                          <span className="font-mono text-[10px] text-foreground/70">
+                            {item.timestamp ? new Date(item.timestamp).toLocaleTimeString() : `Step ${idx + 1}`}
+                          </span>
+                          <span>{item.action || item.note || item.message || JSON.stringify(item)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ))}
           </div>
