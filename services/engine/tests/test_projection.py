@@ -306,3 +306,91 @@ def test_project_world_state_with_forecast_bundle():
     p = projections[("st-1", "DIESEL")]
     assert p.demand_trajectory == [75.0] * 96
     assert p.inv_at_tick(1) == 425.0
+
+
+def test_station_projection_outage_served_zero():
+    """Verify that during station outage, served demand is 0 and inventory is preserved."""
+    proj = StationFuelProjection(
+        station_id="st-outage",
+        fuel_type="DIESEL",
+        current_tick=0,
+        current_inventory=500.0,
+        capacity=1000.0,
+        estimated_demand=50.0,
+        is_outage=True,
+        horizon_ticks=10,
+    )
+    # Even with positive estimated demand, inventory does not drop because demand served = 0
+    assert proj.inv_at_tick(5) == 500.0
+    assert proj.ticks_to_stockout is None
+
+
+def test_station_projection_overflow_calculated_separately():
+    """Verify that arrival overflow is tracked in overflow_trajectory while inv is capped."""
+    proj = StationFuelProjection(
+        station_id="st-overflow",
+        fuel_type="PETROL",
+        current_tick=0,
+        current_inventory=800.0,
+        capacity=1000.0,
+        estimated_demand=20.0,
+        inflight_shipments=[(0, 400.0)],  # Arrives during step 0 (expected_arrival_tick = 0)
+        horizon_ticks=5,
+    )
+    # Step 0 (t=0): demand 20 -> 780, arrivals 400 -> total 1180 -> capped to 1000, overflow 180 at tick 1
+    assert proj.inv_at_tick(1) == 1000.0
+    assert proj.overflow_at_tick(1) == 180.0
+
+
+def test_depot_projection_scheduled_and_delayed_supply():
+    """Verify depot inventory projection with scheduled supply arrivals and clipping waste."""
+    from app.risk.projection import DepotFuelProjection
+
+    proj = DepotFuelProjection(
+        depot_id="depot-central",
+        fuel_type="DIESEL",
+        current_tick=0,
+        current_inventory=40000.0,
+        capacity=50000.0,
+        supply_arrivals=[(1, 20000.0)],  # Arrives during step 1 (planned_tick = 1)
+        average_outflow_per_tick=500.0,
+        horizon_ticks=10,
+    )
+    # Step 0 (t=0): 40000 - 500 = 39500 (tick 1)
+    # Step 1 (t=1): 39500 - 500 + 20000 = 59000 -> clipped to 50000, waste = 9000 (tick 2)
+    assert proj.inv_at_tick(1) == 39500.0
+    assert proj.inv_at_tick(2) == 50000.0
+    assert proj.waste_at_tick(2) == 9000.0
+    assert proj.total_predicted_waste_liters == 9000.0
+    assert proj.hours_to_overflow == 0.25  # 1 tick = 15 mins = 0.25h
+
+
+def test_depot_projection_depletion_and_days_of_supply():
+    """Verify depot depletion calculation when outflow exceeds supply."""
+    from app.risk.projection import DepotFuelProjection
+
+    proj = DepotFuelProjection(
+        depot_id="depot-dry",
+        fuel_type="OCTANE",
+        current_tick=0,
+        current_inventory=1000.0,
+        capacity=50000.0,
+        supply_arrivals=[],
+        average_outflow_per_tick=250.0,
+        horizon_ticks=10,
+    )
+    # 1000 / 250 = 4 ticks to depletion (1 hour)
+    assert proj.ticks_to_depletion == 4
+    assert proj.hours_to_depletion == 1.0
+    # Daily outflow = 250 * 96 ticks = 24,000 L/day
+    # Days of supply = 1,000 / 24,000 = 0.04 days
+    assert proj.projected_days_of_supply == 0.04
+
+
+def test_canonical_arrival_helper_semantics():
+    """Verify expected_arrival_tick canonical helper matches simulator 1.0.0 semantics."""
+    from fsip_common.timeutil import expected_arrival_tick
+
+    assert expected_arrival_tick(0, 2) == 2
+    assert expected_arrival_tick(10, 3) == 13
+
