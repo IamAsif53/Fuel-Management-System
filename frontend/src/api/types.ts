@@ -438,3 +438,25 @@ export interface ReconciliationReport {
   stations: StationVariance[];
 }
 
+export interface WhatIfScenarioStation {
+  station_id: string;
+  fuel_type: string;
+  stockout_prob: number;
+  first_stockout_tick?: number | null;
+  inventory_p50: number[];
+}
+
+export interface WhatIfScenario {
+  name: string;
+  unmet: number;
+  overflow: number;
+  min_station_sl: number;
+  stations: WhatIfScenarioStation[];
+}
+
+export interface WhatIfResponse {
+  tick: number;
+  scenarios: WhatIfScenario[];
+  disclaimer: string;
+}
+

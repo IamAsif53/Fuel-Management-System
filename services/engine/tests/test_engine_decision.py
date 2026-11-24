@@ -118,6 +118,7 @@ def _make_dummy_state(
             self.tick = tick
             self.sim_run_id = sim_run_id
             self.engine_mode = mode
+            self.policy = "heuristic"
             self.stale = stale
             self.degraded = degraded
             self.stations = [DummyStation()]

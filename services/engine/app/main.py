@@ -17,6 +17,7 @@ import time
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fsip_common.logging import configure_logging, get_logger
@@ -630,3 +631,126 @@ async def manual_allocation(req: ManualAllocationRequest):
         "line_id": line.id,
         "execution_status": dec.status,
     }
+
+
+@app.post("/internal/policy", dependencies=[Depends(require_internal)])
+async def internal_policy(req: dict[str, Any]):
+    """Runtime policy switching endpoint per 21 §4 (Task 8.6)."""
+    policy = str(req.get("policy", "")).lower()
+    if policy not in ("heuristic", "optimizer"):
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "INVALID_POLICY", "message": "Policy must be heuristic or optimizer"},
+        )
+    store: WorldState = getattr(app.state, "store", None)
+    dec_engine: DecisionEngine = getattr(app.state, "decision_engine", None)
+    publisher: Publisher = getattr(app.state, "publisher", None)
+
+    if store:
+        store.policy = policy
+    if dec_engine:
+        dec_engine.settings.engine_policy = policy
+
+    if publisher and store:
+        await publisher.event(
+            type="engine.policy_changed",
+            data={"policy": policy},
+            sim_run_id=store.sim_run_id,
+            tick=store.tick,
+        )
+
+    scarcity_policy = req.get("scarcity_policy")
+    return {"policy": policy, "scarcity_policy": scarcity_policy}
+
+
+@app.post("/internal/whatif", dependencies=[Depends(require_internal)])
+async def internal_whatif(req: dict[str, Any]):
+    """Forward-looking scenario projection with ShadowTwin per 21 §4 (Task 8.7)."""
+    from app.decision.optimizer import OptimizerPolicy
+    from app.decision.twin import ShadowTwin
+
+    horizon = min(96, int(req.get("horizon_ticks", 48)))
+    raw_lines = req.get("lines", []) or []
+    events = req.get("events", []) or []
+
+    if len(raw_lines) > 20:
+        raise HTTPException(status_code=422, detail="Maximum 20 lines allowed for what-if simulation")
+    if len(events) > 5:
+        raise HTTPException(status_code=422, detail="Maximum 5 hypothetical events allowed")
+
+    store: WorldState = getattr(app.state, "store", None)
+    if not store:
+        raise HTTPException(status_code=503, detail="Store state unavailable")
+
+    current_tick = getattr(store, "tick", 0)
+
+    # Format hypothetical events
+    formatted_events = []
+    for ev in events:
+        st_offset = int(ev.get("start_offset", 0))
+        dur = int(ev.get("duration_ticks", 24))
+        formatted_events.append({
+            "type": ev.get("type", "demand_spike"),
+            "start_tick": current_tick + st_offset,
+            "end_tick": current_tick + st_offset + dur,
+            "parameters": ev.get("parameters", {}),
+        })
+
+    # Scenarios: do_nothing, recommended, custom
+    # 1. Do nothing
+    dn_res = ShadowTwin.project(
+        state=store,
+        lines=[],
+        hypothetical_events=formatted_events,
+        horizon=horizon,
+        n_samples=40,
+    )
+
+    # 2. Recommended (Optimizer Plan)
+    optimizer = OptimizerPolicy()
+    rec_plan = optimizer.solve(store)
+    rec_res = ShadowTwin.project(
+        state=store,
+        lines=rec_plan.lines,
+        hypothetical_events=formatted_events,
+        horizon=horizon,
+        n_samples=40,
+    )
+
+    # 3. Custom lines
+    custom_res = ShadowTwin.project(
+        state=store,
+        lines=raw_lines,
+        hypothetical_events=formatted_events,
+        horizon=horizon,
+        n_samples=40,
+    )
+
+    def _format_scenario(name: str, res: Any) -> dict[str, Any]:
+        stations_out = []
+        for (st_id, f_type), st_p in res.stations.items():
+            stations_out.append({
+                "station_id": st_id,
+                "fuel_type": f_type,
+                "stockout_prob": st_p.stockout_prob,
+                "first_stockout_tick": st_p.first_stockout_tick,
+                "inventory_p50": st_p.inventory_p50,
+            })
+        return {
+            "name": name,
+            "unmet": res.total_unmet_liters,
+            "overflow": res.total_overflow_liters,
+            "min_station_sl": res.min_station_service_level,
+            "stations": stations_out,
+        }
+
+    return {
+        "tick": current_tick,
+        "scenarios": [
+            _format_scenario("do_nothing", dn_res),
+            _format_scenario("recommended", rec_res),
+            _format_scenario("custom", custom_res),
+        ],
+        "disclaimer": "Projection by our model; not executed.",
+    }
+

@@ -7,6 +7,7 @@ import Recommendations from "@/pages/Recommendations";
 import Decisions from "@/pages/Decisions";
 import RiskPage from "@/pages/Risk";
 import AlertsPage from "@/pages/Alerts";
+import WhatIfPage from "@/pages/WhatIf";
 import { PlaceholderPage } from "@/pages/PlaceholderPage";
 
 export default function App() {
@@ -28,16 +29,7 @@ export default function App() {
         {/* Phase 04 Pages */}
         <Route path="/recommendations" element={<Recommendations />} />
         <Route path="/decisions" element={<Decisions />} />
-        <Route
-          path="/whatif"
-          element={
-            <PlaceholderPage
-              title="What-if Analysis"
-              phase={8}
-              description="Counterfactual digital twin simulation, multi-scenario impact comparison, and stress testing."
-            />
-          }
-        />
+        <Route path="/whatif" element={<WhatIfPage />} />
         <Route
           path="/assistant"
           element={

@@ -408,3 +408,16 @@ export async function fetchReconciliationReport(params?: {
   return api<import("./types").ReconciliationReport>(`/reports/reconciliation${query}`);
 }
 
+export async function executeWhatIf(body: {
+  horizon_ticks?: number;
+  lines?: Array<{ route_id: string; fuel_type: string; quantity: number }>;
+  events?: Array<{ type: string; start_offset: number; duration_ticks: number; parameters?: Record<string, unknown> }>;
+  compare?: string[];
+}): Promise<import("./types").WhatIfResponse> {
+  return api<import("./types").WhatIfResponse>("/whatif", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+

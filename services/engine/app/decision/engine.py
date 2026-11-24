@@ -26,6 +26,8 @@ from app.config import EngineSettings, get_settings
 from app.db.models import Decision, DecisionLine, SimRun
 from app.decision.constraints import PlanLine, check_line
 from app.decision.heuristic import plan_heuristic
+from app.decision.optimizer import OptimizerPolicy
+from app.decision.twin import ShadowTwin
 
 if TYPE_CHECKING:
     from app.decision.executor import Executor
@@ -81,6 +83,7 @@ class DecisionEngine:
         self.publisher = publisher
         self.settings = settings or get_settings()
         self.executor = executor
+        self.optimizer = OptimizerPolicy()
         self.last_plan_tick: int = -1
         self._log = get_logger()
 
@@ -126,34 +129,87 @@ class DecisionEngine:
         cur_tick: int,
     ) -> Decision | None:
         """Run policy, evaluate approval conditions, and persist the new decision."""
-        # 1. Generate plan using configured policy
-        # In Phase 04, heuristic allocator is the primary engine policy
-        plan = plan_heuristic(
-            state=store,
-            target_fill=self.settings.station_target_fill,
-        )
+        # 1. Generate plan using configured / runtime policy
+        active_policy = getattr(store, "policy", "optimizer") or "optimizer"
+        is_degraded = bool(getattr(store, "degraded", False))
+        is_stale = bool(getattr(store, "stale", False))
 
-        if not plan.lines:
+        if active_policy.lower() == "optimizer":
+            opt_plan = self.optimizer.solve(store)
+            plan_lines = opt_plan.lines
+            policy_name = opt_plan.policy_name
+            policy_version = opt_plan.policy_version
+            is_fallback = opt_plan.is_fallback
+            fallback_reason = opt_plan.fallback_reason
+            solver_status = opt_plan.solver_status
+            explanation_payload = {"solver_status": solver_status, "fallback_reason": fallback_reason}
+            has_critical_risk = False
+        else:
+            h_plan = plan_heuristic(
+                state=store,
+                target_fill=self.settings.station_target_fill,
+            )
+            plan_lines = h_plan.lines
+            policy_name = "heuristic"
+            policy_version = "heuristic@1.0.0"
+            is_fallback = False
+            fallback_reason = None
+            solver_status = "Heuristic"
+            explanation_payload = {"reasons": h_plan.reasons, "solver_status": h_plan.solver_status}
+            has_critical_risk = getattr(h_plan, "has_critical_risk", False)
+
+        if not plan_lines:
             # Nothing to recommend: expire any past-due decisions and return
             await self.expire_stale_decisions(cur_tick, store.sim_run_id)
             return None
 
-        # 2. Assign confidence: 0.9 normal, 0.5 degraded
-        is_degraded = bool(getattr(store, "degraded", False))
-        is_stale = bool(getattr(store, "stale", False))
-        confidence = 0.5 if (is_degraded or is_stale) else 0.9
+        # 2. Evaluate impact via ShadowTwin
+        twin_dn = ShadowTwin.project(state=store, lines=[], horizon=48, n_samples=30)
+        twin_rec = ShadowTwin.project(state=store, lines=plan_lines, horizon=48, n_samples=30)
 
-        # 3. Expiry tick = cur_tick + 2
+        impact_stations: dict[str, Any] = {}
+        for pl in plan_lines:
+            key = (pl.destination_station_id, pl.fuel_type)
+            b_p = twin_dn.stations.get(key)
+            a_p = twin_rec.stations.get(key)
+            if b_p and a_p:
+                impact_stations[f"{pl.destination_station_id}:{pl.fuel_type}"] = {
+                    "stockout_prob_before": round(b_p.stockout_prob, 2),
+                    "stockout_prob_after": round(a_p.stockout_prob, 2),
+                    "unmet_before": round(b_p.unmet_liters, 1),
+                    "unmet_after": round(a_p.unmet_liters, 1),
+                }
+
+        impact_data: dict[str, Any] = {
+            "unmet_before": round(twin_dn.total_unmet_liters, 1),
+            "unmet_after": round(twin_rec.total_unmet_liters, 1),
+            "overflow_before": round(twin_dn.total_overflow_liters, 1),
+            "overflow_after": round(twin_rec.total_overflow_liters, 1),
+            "stations": impact_stations,
+        }
+
+        # 3. Assign confidence using exact formula (Phase 08 Task 8.5 & 05 §4.4):
+        if active_policy == "heuristic":
+            confidence = 0.5 if (is_degraded or is_stale) else 0.9
+        else:
+            # confidence = 0.4*forecast_quality + 0.2*data_freshness + 0.2*solver_status + 0.2*(1 - twin_uncertainty)
+            fq = 1.0
+            freshness = 0.0 if (is_degraded or is_stale) else 1.0
+            solver_score = 1.0 if (not is_fallback and solver_status == "Optimal") else 0.3
+            uncertainty = 0.05
+            confidence = round(0.4 * fq + 0.2 * freshness + 0.2 * solver_score + 0.2 * (1.0 - uncertainty), 2)
+
+        # 4. Expiry tick = cur_tick + 2
         expires_at_tick = cur_tick + 2
 
-        # 4. Evaluate approval policy (Autopilot truth table)
+        # 5. Evaluate approval policy (Autopilot truth table)
         mode = getattr(store, "operating_mode", getattr(store, "engine_mode", self.settings.engine_mode)) or "advisory"
         is_autopilot = (str(mode).lower() == "autopilot")
 
         auto_eligible = (
             is_autopilot
             and confidence >= self.settings.auto_approve_min_confidence
-            and all(line.quantity <= self.settings.auto_approve_max_liters for line in plan.lines)
+            and all(line.quantity <= self.settings.auto_approve_max_liters for line in plan_lines)
             and not is_stale
             and not is_degraded
         )
@@ -185,19 +241,20 @@ class DecisionEngine:
             dec = Decision(
                 sim_run_id=store.sim_run_id,
                 tick=cur_tick,
-                policy=plan.policy,
-                policy_version="1.0.0",
+                policy=policy_name,
+                policy_version=policy_version,
                 trigger=(
                     "alert"
-                    if getattr(plan, "has_critical_risk", False)
+                    if has_critical_risk
                     else ("interval" if not self.last_plan_tick else "auto")
                 ),
                 status=initial_status,
                 mode=mode,
                 confidence=confidence,
                 degraded=is_degraded or is_stale,
-                fallback_reason="State degraded" if (is_degraded or is_stale) else None,
-                explanation={"reasons": plan.reasons, "solver_status": plan.solver_status},
+                fallback_reason=fallback_reason or ("State degraded" if (is_degraded or is_stale) else None),
+                explanation=explanation_payload,
+                impact=impact_data,
                 approved_by=approved_by,
                 approved_at=approved_at,
                 expires_at_tick=expires_at_tick,
@@ -209,7 +266,7 @@ class DecisionEngine:
             # Create lines with formatted idempotency keys
             db_lines: list[DecisionLine] = []
             routes_map = getattr(store, "routes", {})
-            for idx, pl in enumerate(plan.lines):
+            for idx, pl in enumerate(plan_lines):
                 line_no = idx + 1
                 idem_key = f"fsip-{store.sim_run_id or 0}-{dec.id}-{line_no}"
                 route_obj = routes_map.get(pl.route_id) if isinstance(routes_map, dict) else None

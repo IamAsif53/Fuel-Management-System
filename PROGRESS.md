@@ -14,7 +14,7 @@ Format for notes: `- [x] 1.3 SimClient done. Note: <deviation or measured result
 | 05 | DONE | Tasks 5.1–5.9 complete (Demand dataset, seasonal & LightGBM models, rolling backtest, intelligence API, engine client with fallback & circuit breaker, drift monitoring, inventory projection integration, acceptance drills passed) | Phase 05 forecasting pipeline delivered & live-verified |
 | 06 | DONE | Tasks 6.1–6.9 complete (Monte Carlo N=300 stockout evaluation with p95 8.8–13.9 ms, deterministic risk projections, 8 alert categories, Alert/Incident lifecycle with 2-clean-cycle auto-resolution, /api/risk, /api/alerts, /api/forecast, /api/cover, Risk Heatmap & F-COVER fuel budget card UI, 280 engine tests, 37 api tests, 46 frontend tests passing) | Full Phase 06 implementation & verification complete |
 | 07 | DONE | Tasks 7.1–7.8 complete (DemandAnomalyDetector point z-score + CUSUM k=0.5 h=5.0, event correlation INFO/WARNING, F-RECON StationBalanceTracker & InventoryAnomalyDetector, AllocationReconciliationTracker, SupplyDelayDetector, DisruptionDetector with pre-emptive alerts, BottleneckDetector, RegionalRiskDetector, DataQualityDetector, GET /api/reports/reconciliation, UI alert category filters & incident timeline, 288 engine tests passing, 46 frontend vitest tests passing) | Full Phase 07 implementation & verification complete |
-| 08 | IN PROGRESS | | |
+| 08 | DONE | Tasks 8.1–8.10 complete (294 engine tests passing [including 6 acceptance tests and live twin calibration], 37 api tests, 107 common tests, 46 frontend tests passing; Ruff clean; LP CBC optimizer with p95 197.5 ms, calibrated ShadowTwin MAE 0.27%, what-if simulation, runtime policy switching) | Full Phase 08 implementation & verification complete |
 | 09 | TODO | | |
 | 10 | TODO | | |
 | 11 | TODO | | |
@@ -50,8 +50,8 @@ Deadline: **Thu 2026-11-26**. Feature freeze: Wed 2026-11-25 18:00.
 | Baseline SL (heuristic, 288 ticks) | 1.0 (100%) | phase 04 |
 | Forecast WAPE (active model) | 5.63% (seasonal@builtin) / 9.02% (lgbm) | phase 05 |
 | Stockout alert lead time vs first stockout (tick 66) | 18 ticks (alert fired t=48, stockout t=66) | phase 06 |
-| Solver p95 | | phase 08 |
-| Twin calibration MAE | | phase 08 |
+| Solver p95 | 197.5 ms (CBC, H=96) | phase 08 |
+| Twin calibration MAE | 0.27% of capacity (34.1 L) | phase 08 |
 | Optimizer vs heuristic (combined crisis) | | phase 12 |
 | api p95 @200 VUs | | phase 14 |
 
@@ -81,7 +81,16 @@ Deadline: **Thu 2026-11-26**. Feature freeze: Wed 2026-11-25 18:00.
 - [x] 7.7 Frontend Alerts page updated with category filter and incident timeline visualization
 - [x] 7.8 8 acceptance tests in test_phase07_acceptance.py passed; full engine test suite 288 passed
 ### Phase 08
-- [ ] 8.1  - [ ] 8.2  - [ ] 8.3  - [ ] 8.4  - [ ] 8.5  - [ ] 8.6  - [ ] 8.7  - [ ] 8.8  - [ ] 8.9  - [ ] 8.10
+- [x] 8.1 ShadowTwin simulator side-effect-free forward simulation in libs/fsip_common/fsip_common/twin.py & services/engine/app/decision/twin.py
+- [x] 8.2 ShadowTwin live calibration test against simulator: MAE 0.27% of capacity (34.1 L) over 96 ticks, evidence in docs/evidence/twin_calibration.csv
+- [x] 8.3 LP formulation with PuLP CBC, safety buffer, departure-safe routing, pre-stock targets, and depot headroom push
+- [x] 8.4 Scarcity mode max-min fairness, overflow gap elimination, solver timeout/fallback to heuristic with metric fsip_fallback_activations_total
+- [x] 8.5 ShadowTwin impact evaluation (unmet, overflow, stockout prob before/after), decision confidence formula, policy versioning
+- [x] 8.6 DecisionEngine integration, policy switching POST /internal/policy, and audit logging
+- [x] 8.7 What-if simulation endpoint POST /api/decisions/what-if and engine /internal/whatif
+- [x] 8.8 Frontend What-If scenario workbench page (WhatIf.tsx) with candidate plan and overlay sliders
+- [x] 8.9 Quick compare evaluation script evaluation/quick_compare.py: baseline 48 ticks produced 100.00% overall SL, 0 unmet, 0 overflow, 100% min SL, p95 solver 197.5 ms
+- [x] 8.10 Acceptance test suite test_phase08_acceptance.py: 6/6 tests passed in 2.26s
 ### Phase 09
 - [ ] 9.1  - [ ] 9.2  - [ ] 9.3  - [ ] 9.4  - [ ] 9.5  - [ ] 9.6  - [ ] 9.7  - [ ] 9.8
 ### Phase 10

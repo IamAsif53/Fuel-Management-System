@@ -380,3 +380,20 @@ async def get_audit_logs(
         offset=offset,
     )
     return {"items": logs}
+
+
+# ---------------------------------------------------------------- What-if Endpoint
+@router.post("/whatif")
+async def post_whatif(
+    req: dict[str, Any],
+    request: Request,
+    settings: Annotated[ApiSettings, Depends(get_settings)],
+) -> dict[str, Any]:
+    """Execute what-if forward scenario simulations via ShadowTwin (Task 8.7)."""
+    return await _call_engine(
+        request=request,
+        settings=settings,
+        method="POST",
+        path="/internal/whatif",
+        json_data=req,
+    )
