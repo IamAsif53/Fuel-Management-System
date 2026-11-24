@@ -13,8 +13,8 @@ Format for notes: `- [x] 1.3 SimClient done. Note: <deviation or measured result
 | 04 | DONE | Tasks 4.1–4.11 complete + targeted verification passed (246 engine tests passing, heuristic decision engine, audit log, ledger hash-chaining, approval & override API, frontend decisions table & execution) | Phase 04 complete, verified, and operational |
 | 05 | DONE | Tasks 5.1–5.9 complete (Demand dataset, seasonal & LightGBM models, rolling backtest, intelligence API, engine client with fallback & circuit breaker, drift monitoring, inventory projection integration, acceptance drills passed) | Phase 05 forecasting pipeline delivered & live-verified |
 | 06 | DONE | Tasks 6.1–6.9 complete (Monte Carlo N=300 stockout evaluation with p95 8.8–13.9 ms, deterministic risk projections, 8 alert categories, Alert/Incident lifecycle with 2-clean-cycle auto-resolution, /api/risk, /api/alerts, /api/forecast, /api/cover, Risk Heatmap & F-COVER fuel budget card UI, 280 engine tests, 37 api tests, 46 frontend tests passing) | Full Phase 06 implementation & verification complete |
-| 07 | TODO | | |
-| 08 | TODO | | |
+| 07 | DONE | Tasks 7.1–7.8 complete (DemandAnomalyDetector point z-score + CUSUM k=0.5 h=5.0, event correlation INFO/WARNING, F-RECON StationBalanceTracker & InventoryAnomalyDetector, AllocationReconciliationTracker, SupplyDelayDetector, DisruptionDetector with pre-emptive alerts, BottleneckDetector, RegionalRiskDetector, DataQualityDetector, GET /api/reports/reconciliation, UI alert category filters & incident timeline, 288 engine tests passing, 46 frontend vitest tests passing) | Full Phase 07 implementation & verification complete |
+| 08 | IN PROGRESS | | |
 | 09 | TODO | | |
 | 10 | TODO | | |
 | 11 | TODO | | |
@@ -72,7 +72,14 @@ Deadline: **Thu 2026-11-26**. Feature freeze: Wed 2026-11-25 18:00.
 ### Phase 06
 - [x] 6.1  - [x] 6.2  - [x] 6.3  - [x] 6.4  - [x] 6.5  - [x] 6.6  - [x] 6.7  - [x] 6.8  - [x] 6.9
 ### Phase 07
-- [ ] 7.1  - [ ] 7.2  - [ ] 7.3  - [ ] 7.4  - [ ] 7.5  - [ ] 7.6  - [ ] 7.7  - [ ] 7.8
+- [x] 7.1 DemandAnomalyDetector implemented with point z-score |z|>3.0 and two-sided CUSUM k=0.5, h=5.0
+- [x] 7.2 Event correlation explain_anomaly() implemented: active demand_spike -> severity INFO, unexplained -> WARNING
+- [x] 7.3 InventoryAnomalyDetector & F-RECON StationBalanceTracker + AllocationReconciliationTracker with CUSUM k=25, h=300
+- [x] 7.4 SupplyDelayDetector, DisruptionDetector (with H=48 pre-emptive alert), BottleneckDetector, RegionalRiskDetector, DataQualityDetector
+- [x] 7.5 Detectors wired into SyncLoop lifecycle and state sync
+- [x] 7.6 GET /api/reports/reconciliation endpoint implemented matching 21_API_CONTRACTS §4
+- [x] 7.7 Frontend Alerts page updated with category filter and incident timeline visualization
+- [x] 7.8 8 acceptance tests in test_phase07_acceptance.py passed; full engine test suite 288 passed
 ### Phase 08
 - [ ] 8.1  - [ ] 8.2  - [ ] 8.3  - [ ] 8.4  - [ ] 8.5  - [ ] 8.6  - [ ] 8.7  - [ ] 8.8  - [ ] 8.9  - [ ] 8.10
 ### Phase 09
