@@ -273,6 +273,12 @@ def assess_station_fuel(
                 if 0 <= offset < HORIZON_TICKS:
                     arrivals[offset] += qty
 
+    d_mult = float(
+        getattr(station, "demand_multiplier", 1.0)
+        if hasattr(station, "demand_multiplier")
+        else (station.get("demand_multiplier", 1.0) if isinstance(station, dict) else 1.0) or 1.0
+    )
+
     # 3. Forecast distribution
     model_label = "seasonal@builtin"
     if forecast_bundle is not None:
@@ -288,12 +294,12 @@ def assess_station_fuel(
         )
         model_label = getattr(forecast_bundle, "forecaster_label", "seasonal@builtin")
 
-        fallback_d = estimate_demand(demand_history, capacity)
+        fallback_d = estimate_demand(demand_history, capacity, multiplier=d_mult)
         p50 = np.array(p50_list, dtype=float) if p50_list else np.full(HORIZON_TICKS, fallback_d)
         p10 = np.array(p10_list, dtype=float) if p10_list else p50 * 0.90
         p90 = np.array(p90_list, dtype=float) if p90_list else p50 * 1.10
     else:
-        est_d = estimate_demand(demand_history, capacity)
+        est_d = estimate_demand(demand_history, capacity, multiplier=d_mult)
         p50 = np.full(HORIZON_TICKS, est_d)
         p10 = p50 * 0.90
         p90 = p50 * 1.10
@@ -425,8 +431,13 @@ def assess(
     routes = store.routes if hasattr(store, "routes") else []
     depots = store.depots if hasattr(store, "depots") else []
     supply_arrivals = store.supply if hasattr(store, "supply") else []
-    all_inflight = store.inflight() if hasattr(store, "inflight") else []
-    demand_map = store.demand() if hasattr(store, "demand") else {}
+    all_inflight = (
+        store.inflight()
+        if hasattr(store, "inflight") and callable(store.inflight)
+        else (getattr(store, "inflight", []) or [])
+    )
+    demand_attr = getattr(store, "demand", {})
+    demand_map = demand_attr() if callable(demand_attr) else (demand_attr or {})
     events = store.events if hasattr(store, "events") else []
     fb = forecast_bundle or getattr(store, "forecast_bundle", None)
 
@@ -434,8 +445,12 @@ def assess(
     depot_projections: dict[tuple[str, str], DepotFuelProjection] = {}
     depot_station_map: dict[str, set[str]] = {}
     for r in routes:
-        d_id = r.origin_depot_id if hasattr(r, "origin_depot_id") else r.get("origin_depot_id")
-        s_id = r.destination_station_id if hasattr(r, "destination_station_id") else r.get("destination_station_id")
+        if isinstance(r, dict):
+            d_id = r.get("source_depot_id") or r.get("origin_depot_id")
+            s_id = r.get("destination_station_id")
+        else:
+            d_id = getattr(r, "source_depot_id", None) or getattr(r, "origin_depot_id", None)
+            s_id = getattr(r, "destination_station_id", None)
         if d_id and s_id:
             depot_station_map.setdefault(d_id, set()).add(s_id)
 

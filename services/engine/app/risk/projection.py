@@ -30,14 +30,17 @@ __all__ = [
 def estimate_demand(
     history: Sequence[DemandObservation | float | int] | None,
     capacity: float,
+    multiplier: float = 1.0,
 ) -> float:
     """Estimate per-tick demand for a (station, fuel) pair.
 
     Rules:
     1. If history is available, take the mean of up to the last 8 observations.
     2. If no history is available, fallback to capacity * 0.004.
-    3. Cannot be negative.
+    3. Scaled by multiplier (e.g. station demand_multiplier or spike).
+    4. Cannot be negative.
     """
+    mult = max(0.0, float(multiplier))
     if history:
         # Take the last up to 8 rows
         last_8 = list(history)[-8:]
@@ -51,10 +54,10 @@ def estimate_demand(
                 values.append(float(item["demand_liters"]))
         if values:
             mean_val = sum(values) / len(values)
-            return max(0.0, float(mean_val))
+            return max(0.0, float(mean_val) * mult)
 
-    # Cold-start fallback: station_fuel_capacity * 0.004
-    return max(0.0, float(capacity) * 0.004)
+    # Cold-start fallback: station_fuel_capacity * 0.004 * multiplier
+    return max(0.0, float(capacity) * 0.004 * mult)
 
 
 @dataclass
@@ -226,7 +229,12 @@ def project_station_fuel(
         inventory = _extract_fuel_val(station.inventory, fuel_type)
 
     is_outage = (status == "OUTAGE")
-    est_demand = estimate_demand(demand_history, capacity)
+    d_mult = float(
+        getattr(station, "demand_multiplier", 1.0)
+        if hasattr(station, "demand_multiplier")
+        else (station.get("demand_multiplier", 1.0) if isinstance(station, dict) else 1.0) or 1.0
+    )
+    est_demand = estimate_demand(demand_history, capacity, multiplier=d_mult)
 
     # Extract p50 demand trajectory from forecast_bundle if not explicitly passed
     if demand_trajectory is None and forecast_bundle is not None:
