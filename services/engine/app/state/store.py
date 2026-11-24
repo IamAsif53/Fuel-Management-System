@@ -124,6 +124,8 @@ class WorldState:
     risk: dict[str | tuple[str, str], Any] = field(default_factory=dict)
     pending: list[Any] = field(default_factory=list)
     bottleneck: dict[str, Any] | None = None
+    forecaster_label: str = "seasonal@builtin"
+    forecast_bundle: Any = None
 
     # ---------------------------------------------------------------- Properties
     @property
@@ -555,14 +557,14 @@ class WorldState:
         system_view = {
             "simulator": "DOWN" if sim_down else "UP",
             "sse": "CONNECTED",
-            "intelligence": "UP",
+            "intelligence": "DOWN" if "prediction_service_down" in self.degraded_reasons else "UP",
             "db": "UP",
             "redis": "UP",
             "breakers": {
                 "simulator": "OPEN" if "simulator_breaker_open" in self.degraded_reasons else "CLOSED",
-                "intelligence": "CLOSED",
+                "intelligence": "OPEN" if "intelligence_breaker_open" in self.degraded_reasons else "CLOSED",
             },
-            "forecaster": "seasonal@builtin",
+            "forecaster": self.forecaster_label,
         }
 
         output: dict[str, Any] = {

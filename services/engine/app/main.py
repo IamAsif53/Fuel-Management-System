@@ -25,6 +25,7 @@ from pydantic import BaseModel, Field
 
 from app.db.buffer import WriteBuffer
 from app.db.models import Decision, DecisionLine
+from app.db.repo import insert_forecasts
 from app.db.session import get_sessionmaker, run_migrations
 from app.decision.constraints import PlanLine, check_line
 from app.decision.engine import (
@@ -37,6 +38,7 @@ from app.decision.engine import (
 )
 from app.decision.executor import Executor
 from app.decision.tracker import AllocationOutcomeTracker
+from app.intelligence.client import ForecastProvider
 from app.sim.circuit import CircuitBreaker
 from app.sim.client import SimClient
 from app.sim.sse import SSEListener
@@ -154,8 +156,24 @@ async def lifespan(app: FastAPI):
         session_factory=sessionmaker,
         publisher=publisher,
     )
+    forecast_provider = getattr(app.state, "forecast_provider", None) or ForecastProvider(
+        base_url=s.intelligence_url,
+        timeout_sec=s.intelligence_timeout_sec,
+    )
+
+    async def forecast_hook(current_store: WorldState) -> None:
+        try:
+            fb = await forecast_provider.get_forecast(current_store)
+            current_store.forecast_bundle = fb
+            if current_store.sim_run_id is not None and write_buffer:
+                rows = fb.to_db_rows(current_store.sim_run_id, current_store.sim_time)
+                if rows:
+                    write_buffer.enqueue(insert_forecasts, forecasts=rows)
+        except Exception as exc:
+            log.warning("engine.forecast_hook_failed", error=str(exc))
 
     # Register lifecycle hooks with sync loop
+    sync_loop.add_hook(forecast_hook)
     sync_loop.add_hook(tracker.track_cycle)
     sync_loop.add_hook(decision_engine.on_cycle)
 
@@ -167,6 +185,7 @@ async def lifespan(app: FastAPI):
     app.state.executor = executor
     app.state.decision_engine = decision_engine
     app.state.tracker = tracker
+    app.state.forecast_provider = forecast_provider
 
     log.info(
         "engine.start",
