@@ -10,8 +10,8 @@ Format for notes: `- [x] 1.3 SimClient done. Note: <deviation or measured result
 
 | 02 | DONE | Tasks 2.1–2.8 complete (324 tests passed across repo: 201 engine, 99 common, 23 api, 1 intel; Ruff clean; live TimescaleDB, Redis publisher, and API endpoints verified against Docker stack) | Phase 02 persistence, Redis snapshot, core API, and acceptance complete |
 | 03 | DONE | Tasks 3.1–3.8 complete + audit fixes verified (39 Vitest tests passing, Vite build clean, TypeScript strict clean, live Docker outage & recovery verified, overview & offline screenshots captured) | Phase 03 complete frontend foundation delivered & audit approved |
-| 04 | TODO | | |
-| 05 | TODO | | |
+| 04 | DONE | Tasks 4.1–4.11 complete + targeted verification passed (246 engine tests passing, heuristic decision engine, audit log, ledger hash-chaining, approval & override API, frontend decisions table & execution) | Phase 04 complete, verified, and operational |
+| 05 | DONE | Tasks 5.1–5.9 complete (Demand dataset, seasonal & LightGBM models, rolling backtest, intelligence API, engine client with fallback & circuit breaker, drift monitoring, inventory projection integration, acceptance drills passed) | Phase 05 forecasting pipeline delivered & live-verified |
 | 06 | TODO | | |
 | 07 | TODO | | |
 | 08 | TODO | | |
@@ -47,8 +47,8 @@ Deadline: **Thu 2026-11-26**. Feature freeze: Wed 2026-11-25 18:00.
 ## Key measured numbers (fill in as you go)
 | Metric | Value | Where measured |
 |---|---|---|
-| Baseline SL (heuristic, 288 ticks) | | phase 04 |
-| Forecast WAPE (active model) | | phase 05 |
+| Baseline SL (heuristic, 288 ticks) | 1.0 (100%) | phase 04 |
+| Forecast WAPE (active model) | 5.63% (seasonal@builtin) / 9.81% (lgbm) | phase 05 |
 | Stockout alert lead time vs first stockout (tick 66) | | phase 06 |
 | Solver p95 | | phase 08 |
 | Twin calibration MAE | | phase 08 |
@@ -68,7 +68,7 @@ Deadline: **Thu 2026-11-26**. Feature freeze: Wed 2026-11-25 18:00.
 ### Phase 04
 - [x] 4.1  - [x] 4.2  - [x] 4.3  - [x] 4.4  - [x] 4.5  - [x] 4.6  - [x] 4.7  - [x] 4.8  - [x] 4.9  - [x] 4.10  - [x] 4.11
 ### Phase 05
-- [ ] 5.1  - [ ] 5.2  - [ ] 5.3  - [ ] 5.4  - [ ] 5.5  - [ ] 5.6  - [ ] 5.7  - [ ] 5.8  - [ ] 5.9
+- [x] 5.1  - [x] 5.2  - [x] 5.3  - [x] 5.4  - [x] 5.5  - [x] 5.6  - [x] 5.7  - [x] 5.8  - [x] 5.9
 ### Phase 06
 - [ ] 6.1  - [ ] 6.2  - [ ] 6.3  - [ ] 6.4  - [ ] 6.5  - [ ] 6.6  - [ ] 6.7  - [ ] 6.8  - [ ] 6.9
 ### Phase 07
