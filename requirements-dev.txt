@@ -19,6 +19,7 @@ pandas==2.2.3
 scikit-learn==1.5.2
 lightgbm==4.5.0
 joblib==1.4.2
+pyarrow==18.1.0
 PuLP==2.9.0
 highspy==1.8.1
 Jinja2==3.1.4
