@@ -48,7 +48,7 @@ Deadline: **Thu 2026-11-26**. Feature freeze: Wed 2026-11-25 18:00.
 | Metric | Value | Where measured |
 |---|---|---|
 | Baseline SL (heuristic, 288 ticks) | 1.0 (100%) | phase 04 |
-| Forecast WAPE (active model) | 5.63% (seasonal@builtin) / 9.81% (lgbm) | phase 05 |
+| Forecast WAPE (active model) | 5.63% (seasonal@builtin) / 9.02% (lgbm) | phase 05 |
 | Stockout alert lead time vs first stockout (tick 66) | | phase 06 |
 | Solver p95 | | phase 08 |
 | Twin calibration MAE | | phase 08 |
