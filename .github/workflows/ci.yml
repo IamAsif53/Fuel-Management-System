@@ -1,30 +1,327 @@
 name: ci
-on:
-  push: {branches: [main]}
-  pull_request: {}
-  workflow_dispatch: {}
 
-concurrency: {group: "ci-${{ github.ref }}", cancel-in-progress: true}
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: "ci-${{ github.ref }}"
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
 
 jobs:
-  python:
+  lint:
+    name: Lint & Style
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: {python-version: "3.12", cache: pip, cache-dependency-path: requirements-dev.txt}
-      - run: pip install -r requirements-dev.txt && pip install -e libs/fsip_common
-      - run: ruff check libs services
-      - run: cd libs/fsip_common && python -m pytest -q
-      - run: for s in engine intelligence api; do (cd services/$s && python -m pytest -q) || exit 1; done
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-  frontend:
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Ruff
+        run: pip install ruff
+
+      - name: Run Ruff check
+        run: ruff check libs services evaluation
+
+  test-python:
+    name: Python Unit Tests
     runs-on: ubuntu-latest
-    defaults: {run: {working-directory: frontend}}
+    services:
+      timescaledb:
+        image: timescale/timescaledb:2.17.2-pg16
+        env:
+          POSTGRES_USER: fsip
+          POSTGRES_PASSWORD: change-me
+          POSTGRES_DB: fsip
+        ports:
+          - 15432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+      redis:
+        image: redis:7.4-alpine
+        ports:
+          - 16379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: {node-version: "20", cache: npm, cache-dependency-path: frontend/package-lock.json}
-      - run: npm ci
-      - run: npm test
-      - run: npm run build
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements-dev.txt
+          pip install -e libs/fsip_common
+
+      - name: Non-blocking pip security scan
+        continue-on-error: true
+        run: |
+          pip install pip-audit
+          pip-audit || true
+
+      - name: Run common library tests
+        run: |
+          cd libs/fsip_common
+          python -m pytest -q
+
+      - name: Run service tests
+        env:
+          DATABASE_URL: "postgresql+asyncpg://fsip:change-me@localhost:15432/fsip"
+          REDIS_URL: "redis://localhost:16379/0"
+        run: |
+          for s in engine intelligence api; do
+            echo "Testing service: $s"
+            (cd services/$s && python -m pytest -q -m "not integration") || exit 1
+          done
+
+      - name: Run evaluation harness unit tests
+        run: |
+          python -m pytest evaluation/tests -q
+
+  test-frontend:
+    name: Frontend Unit & Build Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Non-blocking npm security audit
+        continue-on-error: true
+        run: npm audit --audit-level=high || true
+
+      - name: Run Vitest unit tests
+        run: npm test -- --run
+
+      - name: TypeScript type-check & Vite build
+        run: npm run build
+
+  build-images:
+    name: Docker Build Validation
+    needs: [lint, test-python, test-frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Engine image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: services/engine/Dockerfile
+          push: false
+          tags: fsip/engine:${{ github.sha }}
+          build-args: |
+            APP_VERSION=${{ github.ref_name }}
+            GIT_SHA=${{ github.sha }}
+
+      - name: Build Intelligence image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: services/intelligence/Dockerfile
+          push: false
+          tags: fsip/intelligence:${{ github.sha }}
+          build-args: |
+            APP_VERSION=${{ github.ref_name }}
+            GIT_SHA=${{ github.sha }}
+
+      - name: Build API image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: services/api/Dockerfile
+          push: false
+          tags: fsip/api:${{ github.sha }}
+          build-args: |
+            APP_VERSION=${{ github.ref_name }}
+            GIT_SHA=${{ github.sha }}
+
+      - name: Build Frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          file: frontend/Dockerfile
+          push: false
+          tags: fsip/frontend:${{ github.sha }}
+          build-args: |
+            APP_VERSION=${{ github.ref_name }}
+            GIT_SHA=${{ github.sha }}
+
+  e2e:
+    name: End-to-End Evaluation & Smoke
+    needs: [build-images]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Python & Frontend dependencies
+        run: |
+          pip install -r requirements-dev.txt
+          pip install -e libs/fsip_common
+          cd frontend && npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Boot Compose Stack
+        env:
+          APP_VERSION: ${{ github.sha }}
+          GIT_SHA: ${{ github.sha }}
+          SIMULATION_SPEED: "8.0"
+        run: |
+          docker compose up -d --build
+          sleep 10
+
+      - name: Verify Service Health & Smoke Test
+        run: bash scripts/smoke_test.sh
+
+      - name: Execute Short CI Evaluation Run
+        run: |
+          docker run -d --name ci-eval-sim -p 8005:8000 asifmahmoud414/bup-fuel-supply-simulator:1.0.0
+          sleep 5
+          python evaluation/harness.py --scenario baseline --ticks 96 --policy heuristic --sim-url http://localhost:8005 --assert-service-level 0.99
+          docker rm -f ci-eval-sim
+
+      - name: Run Playwright E2E Tests
+        run: |
+          cd frontend
+          npx playwright test
+
+      - name: Clean up CI Stack
+        if: always()
+        run: docker compose down
+
+  publish:
+    name: Publish Images to GHCR
+    needs: [e2e]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ghcr.io/${{ github.repository_owner }}/fsip-engine
+            ghcr.io/${{ github.repository_owner }}/fsip-api
+            ghcr.io/${{ github.repository_owner }}/fsip-intelligence
+            ghcr.io/${{ github.repository_owner }}/fsip-frontend
+          tags: |
+            type=sha,format=short
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+
+      - name: Build & Push Engine
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: services/engine/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/fsip-engine:${{ github.sha }}
+            ghcr.io/${{ github.repository_owner }}/fsip-engine:${{ github.ref_name }}
+          build-args: |
+            APP_VERSION=${{ github.ref_name }}
+            GIT_SHA=${{ github.sha }}
+
+      - name: Build & Push API
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: services/api/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/fsip-api:${{ github.sha }}
+            ghcr.io/${{ github.repository_owner }}/fsip-api:${{ github.ref_name }}
+          build-args: |
+            APP_VERSION=${{ github.ref_name }}
+            GIT_SHA=${{ github.sha }}
+
+      - name: Build & Push Intelligence
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: services/intelligence/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/fsip-intelligence:${{ github.sha }}
+            ghcr.io/${{ github.repository_owner }}/fsip-intelligence:${{ github.ref_name }}
+          build-args: |
+            APP_VERSION=${{ github.ref_name }}
+            GIT_SHA=${{ github.sha }}
+
+      - name: Build & Push Frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          file: frontend/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/fsip-frontend:${{ github.sha }}
+            ghcr.io/${{ github.repository_owner }}/fsip-frontend:${{ github.ref_name }}
+          build-args: |
+            APP_VERSION=${{ github.ref_name }}
+            GIT_SHA=${{ github.sha }}

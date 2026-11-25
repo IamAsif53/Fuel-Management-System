@@ -18,8 +18,8 @@ Format for notes: `- [x] 1.3 SimClient done. Note: <deviation or measured result
 | 09 | DONE | Tasks 9.1–9.8 complete (Structured explanations 05 §7.1, Jinja2 templates, numeric hallucination guard, grounded assistant POST /api/assistant/ask, GET /api/summary, F-TRUST cognitive forcing 422 gate, ExplainPanel in Recommendations/Decisions, full Assistant page, 8 engine acceptance tests, 4 api tests, 51 frontend tests passing) | Phase 09 Explanations, Narratives & Grounded Ops Assistant complete & verified |
 | 10 | DONE | Tasks 10.1–10.10 complete (Resilience modes NORMAL/DEGRADED/SAFE_HOLD/NO_FEASIBLE_ROUTES with 2-clean-cycle hysteresis, SimClient & Forecast bulkheads, chaos-proxy on :8001, chaos matrix F1–F18 executed, F-BREAKGLASS atomic CSV/HTML emitter every 4 ticks, startup reconciliation via idempotency keys, 305 engine tests passing) | Phase 10 Resilience Hardening & Chaos Drills complete & verified |
 | 11 | DONE | Tasks 11.1–11.9 complete (Prometheus metrics & scrape configs, 4 F-SLOs with multi-window burn rate alerts, 9 core platform alerts, Alertmanager webhook to API & Redis, 4 Grafana dashboards in folder FSIP, Promtail/Loki log shipping, System Health UI with SLO budgets & incidents table) | Phase 11 Production Observability & Monitoring Stack complete & verified |
-| 12 | TODO | | |
-| 13 | TODO | | |
+| 12 | DONE | Tasks 12.1–12.7 complete (8 benchmark scenarios, Pydantic loader, CLI evaluation harness, full 24-run matrix evaluation across 3 policies, determinism verified, running vs stepping mode SL=1.0000, 4 Playwright E2E tests, 88% coverage in engine risk/decision/sim, docs/evidence/evaluation.md) | Phase 12 Evaluation Harness & Test Hardening complete & verified |
+| 13 | DONE | Tasks 13.1–13.7 complete (Pinned deploy/versions.env, hardened docker-compose.prod.yml without DB port exposures, automated scripts/deploy.sh with rollback trap, version stamping in UI/API, comprehensive .github/workflows/ci.yml with 6 jobs, Makefile release/rollback, docs/evidence/cicd.md) | Phase 13 CI/CD, Versioning & Production Release Hardening complete & verified |
 | 14 | TODO | | |
 | 15 | TODO | | |
 | 16 | OPTIONAL (T3) | | |
@@ -122,9 +122,21 @@ Deadline: **Thu 2026-11-26**. Feature freeze: Wed 2026-11-25 18:00.
 - [x] 11.8 Promtail and Loki structured JSON container log aggregation
 - [x] 11.9 System Health UI updated with live incidents table and SLO budget gauges; docs/evidence/observability.md generated
 ### Phase 12
-- [ ] 12.1  - [ ] 12.2  - [ ] 12.3  - [ ] 12.4  - [ ] 12.5  - [ ] 12.6  - [ ] 12.7
+- [x] 12.1 8 benchmark evaluation scenarios defined (baseline, baseline_long, demand_spike, supply_disruption, regional_blackout, combined_crisis, final_combined, surprise_combined) in evaluation/scenarios/
+- [x] 12.2 ScenarioLoader with Pydantic validation and unit tests (8/8 passed in test_scenario_loader.py)
+- [x] 12.3 Evaluation harness CLI supporting do_nothing, heuristic, and optimizer policies, audit overflow metrics, and TimescaleDB persistence
+- [x] 12.4 Simulation determinism verified with identical KPIs across seed runs (test_determinism passed)
+- [x] 12.5 Running-mode vs stepping-mode comparison executed (both SL=1.0000, 0 unmet, 0 failures)
+- [x] 12.6 Playwright E2E UI test suite implemented with 4 specs passing (dashboard, network, decisions, health)
+- [x] 12.7 Engine test coverage hardened to 88% across risk/, decision/, and sim/ modules (>= 70% threshold satisfied); full 24-run matrix evaluation documented in docs/evidence/evaluation.md
 ### Phase 13
-- [ ] 13.1  - [ ] 13.2  - [ ] 13.3  - [ ] 13.4  - [ ] 13.5  - [ ] 13.6  - [ ] 13.7
+- [x] 13.1 Pinned container image versions defined in deploy/versions.env (timescaledb, redis, prometheus, grafana, loki, promtail, alertmanager)
+- [x] 13.2 Production compose file docker-compose.prod.yml with no host DB/Redis port exposures, no bind mounts, and FSIP_DEMO_CONTROLS_ENABLED=false
+- [x] 13.3 Automated deploy script scripts/deploy.sh with concurrency locking, health checks, smoke tests, and automated rollback trap
+- [x] 13.4 Version stamping implemented in UI footer (data-testid="app-version-footer"), Docker build args, and GET /api/system/status
+- [x] 13.5 Smoke test script scripts/smoke_test.sh and Makefile targets (eval, release, rollback) verified
+- [x] 13.6 GitHub Actions CI workflow .github/workflows/ci.yml with 6 jobs (lint, test-python, test-frontend, build-images, e2e, publish)
+- [x] 13.7 Release documentation, PR template (.github/pull_request_template.md), and CI/CD evidence report in docs/evidence/cicd.md
 ### Phase 14
 - [ ] 14.1  - [ ] 14.2  - [ ] 14.3  - [ ] 14.4  - [ ] 14.5  - [ ] 14.6  - [ ] 14.7  - [ ] 14.8
 ### Phase 15

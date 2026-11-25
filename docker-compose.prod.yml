@@ -1,0 +1,48 @@
+# Production Compose Override for FSIP (Phase 13)
+# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file deploy/versions.env up -d
+
+services:
+  simulator:
+    image: ${SIMULATOR_IMAGE:-asifmahmoud414/bup-fuel-supply-simulator:1.0.0}
+    restart: unless-stopped
+
+  timescaledb:
+    image: timescale/timescaledb:2.17.2-pg16
+    ports: []  # Closed to host network in production; internal network only
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.4-alpine
+    ports: []  # Closed to host network in production; internal network only
+    restart: unless-stopped
+
+  intelligence:
+    image: ${INTELLIGENCE_IMAGE:-ghcr.io/iamasif53/fsip-intelligence:${APP_VERSION:-v1.0.0}}
+    build: !reset {}
+    restart: unless-stopped
+    environment:
+      APP_VERSION: ${APP_VERSION:-v1.0.0}
+      GIT_SHA: ${GIT_SHA:-unknown}
+
+  engine:
+    image: ${ENGINE_IMAGE:-ghcr.io/iamasif53/fsip-engine:${APP_VERSION:-v1.0.0}}
+    build: !reset {}
+    restart: unless-stopped
+    environment:
+      APP_VERSION: ${APP_VERSION:-v1.0.0}
+      GIT_SHA: ${GIT_SHA:-unknown}
+      FSIP_DEMO_CONTROLS_ENABLED: "false"
+
+  api:
+    image: ${API_IMAGE:-ghcr.io/iamasif53/fsip-api:${APP_VERSION:-v1.0.0}}
+    build: !reset {}
+    restart: unless-stopped
+    environment:
+      APP_VERSION: ${APP_VERSION:-v1.0.0}
+      GIT_SHA: ${GIT_SHA:-unknown}
+      FSIP_DEMO_CONTROLS_ENABLED: "false"
+
+  frontend:
+    image: ${FRONTEND_IMAGE:-ghcr.io/iamasif53/fsip-frontend:${APP_VERSION:-v1.0.0}}
+    build: !reset {}
+    restart: unless-stopped

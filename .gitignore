@@ -12,7 +12,10 @@ coverage/
 .coverage.*
 .hypothesis/
 loadtest/out/
-evaluation/reports/**/*.json
+evaluation/reports/
+frontend/playwright-report/
+frontend/test-results/
+extracted_phase12_13.txt
 services/intelligence/data/*.parquet
 *.egg-info/
 *.tsbuildinfo

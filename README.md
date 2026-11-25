@@ -191,6 +191,42 @@ docker compose --profile obs up -d
 
 ---
 
-## 8. License
+## 8. CI/CD, Deployment & Release Governance (Phase 13)
+
+### Automated Pipeline (`.github/workflows/ci.yml`)
+The FSIP platform is continuously validated via GitHub Actions across 6 automated stages:
+1. **Lint & Style:** Ruff code analysis across `libs/`, `services/`, and `evaluation/`.
+2. **Python Matrix Tests:** Pinned Python 3.12 running unit tests across all four packages (`libs/fsip_common`, `services/engine`, `services/intelligence`, `services/api`) backed by live ephemeral TimescaleDB and Redis service containers.
+3. **Frontend Tests:** Node 20 executing Vitest unit tests, TypeScript type checks, and production Vite compilation.
+4. **Container Image Build:** Docker Buildx builds immutable images stamped with `APP_VERSION` and `GIT_SHA`. The upstream simulator is strictly pulled from its pinned external repository and never modified or rebuilt.
+5. **E2E Smoke & Evaluation:** Boots the integrated compose stack, executes `scripts/smoke_test.sh`, runs Playwright E2E integration tests, and runs a baseline deterministic evaluation.
+6. **Publish to GHCR:** Authorized commits to `main` and semver release tags (`v*`) publish tagged images to GitHub Container Registry (`ghcr.io/iamasif53/fsip-*`).
+
+### Safe Production Deployment & Automated Rollback
+```bash
+# Deploy a verified version to production (using docker-compose.prod.yml override)
+bash scripts/deploy.sh v1.0.0
+
+# In case of deployment rollback:
+make rollback VERSION=v1.0.0
+```
+- **Production Hardening (`docker-compose.prod.yml`):**
+  - Database (`15432:5432`) and cache (`16379:6379`) host ports are closed to the host network (internal communication only).
+  - Source code volume binds are removed; runs strictly on immutable built images.
+  - Interactive demo controls and chaos proxies are disabled (`FSIP_DEMO_CONTROLS_ENABLED=false`).
+  - Automated rollback automatically triggers if service healthchecks or `smoke_test.sh` fail during deployment.
+
+### Branch Protection & Repository Governance
+To preserve system reliability and locked simulator contracts, repository administrators must configure GitHub branch protection rules for `main`:
+1. **Require status checks to pass before merging:**
+   - Require `Lint & Style`, `Python Unit Tests`, `Frontend Unit & Build Tests`, `Docker Build Validation`, and `End-to-End Evaluation & Smoke`.
+2. **Require branches to be up to date before merging.**
+3. **Require pull request reviews before merging.**
+4. **Strictly disallow force pushes and branch deletions.**
+5. **All pull requests must follow `.github/pull_request_template.md`.**
+
+---
+
+## 9. License
 
 This project is developed for the **BUP CSE FEST 2026 Hackathon** and is licensed under the MIT License.

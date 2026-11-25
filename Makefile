@@ -58,3 +58,23 @@ fe-test:
 
 fe-build:
 	cd frontend && npm ci && npm run build
+
+eval: ## run full evaluation matrix across all scenarios and policies
+	$(PY) evaluation/harness.py --scenario all --policy all --sim-url http://localhost:8005 --assert-service-level 0.90
+
+release: ## create new release tag (usage: make release VERSION=v1.0.0)
+	@if [ -z "$(VERSION)" ]; then echo "ERROR: VERSION is required (e.g. make release VERSION=v1.0.0)"; exit 1; fi
+	@echo "$(VERSION)" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+' >/dev/null || (echo "ERROR: VERSION must follow semver 'vX.Y.Z'"; exit 1)
+	@if [ -n "$$(git status --porcelain)" ]; then echo "ERROR: Working tree is not clean. Commit or stash changes before release."; exit 1; fi
+	@echo "Updating deploy/versions.env to $(VERSION)..."
+	@sed -i.bak "s/^APP_VERSION=.*/APP_VERSION=$(VERSION)/" deploy/versions.env && rm -f deploy/versions.env.bak
+	@git add deploy/versions.env
+	@git commit -m "release: $(VERSION)"
+	@git tag -a "$(VERSION)" -m "Release $(VERSION)"
+	@echo "Release $(VERSION) created successfully. Push with: git push origin main --tags"
+
+rollback: ## rollback deployment to specified version (usage: make rollback VERSION=v1.0.0)
+	@if [ -z "$(VERSION)" ]; then echo "ERROR: VERSION is required (e.g. make rollback VERSION=v1.0.0)"; exit 1; fi
+	bash scripts/deploy.sh "$(VERSION)"
+
+

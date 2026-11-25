@@ -37,6 +37,18 @@ export function AppLayout() {
 
       {/* Real-time Toast Notifications */}
       <ToastContainer />
+
+      {/* Release Version Footer (Phase 13) */}
+      <footer
+        data-testid="app-version-footer"
+        className="shrink-0 border-t border-bg-border bg-bg-panel px-4 py-1 text-center text-xs text-ink-muted select-none"
+      >
+        <span>FSIP {import.meta.env.VITE_APP_VERSION || "v1.0.0"}</span>
+        <span className="mx-2">·</span>
+        <span className="font-mono">
+          sha:{(import.meta.env.VITE_GIT_SHA || "local").slice(0, 7)}
+        </span>
+      </footer>
     </div>
   );
 }
