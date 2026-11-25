@@ -20,8 +20,8 @@ Format for notes: `- [x] 1.3 SimClient done. Note: <deviation or measured result
 | 11 | DONE | Tasks 11.1–11.9 complete (Prometheus metrics & scrape configs, 4 F-SLOs with multi-window burn rate alerts, 9 core platform alerts, Alertmanager webhook to API & Redis, 4 Grafana dashboards in folder FSIP, Promtail/Loki log shipping, System Health UI with SLO budgets & incidents table) | Phase 11 Production Observability & Monitoring Stack complete & verified |
 | 12 | DONE | Tasks 12.1–12.7 complete (8 benchmark scenarios, Pydantic loader, CLI evaluation harness, full 24-run matrix evaluation across 3 policies, determinism verified, running vs stepping mode SL=1.0000, 4 Playwright E2E tests, 88% coverage in engine risk/decision/sim, docs/evidence/evaluation.md) | Phase 12 Evaluation Harness & Test Hardening complete & verified |
 | 13 | DONE | Tasks 13.1–13.7 complete (Pinned deploy/versions.env, hardened docker-compose.prod.yml without DB port exposures, automated scripts/deploy.sh with rollback trap, version stamping in UI/API, comprehensive .github/workflows/ci.yml with 6 jobs, Makefile release/rollback, docs/evidence/cicd.md) | Phase 13 CI/CD, Versioning & Production Release Hardening complete & verified |
-| 14 | TODO | | |
-| 15 | TODO | | |
+| 14 | DONE | Tasks 14.1–14.8 complete (Dedicated loadtest/ suite using k6, baseline/ramp/sustained 200-VU tests, concurrent operator approval with reviewed_driver cognitive forcing, multi-tenant IP rotation, DB pool expansion to 40/40, memory TTL caching, p95 read 409ms, approval p95 190ms, 0.00% error rate across 33,730 requests, docs/evidence/loadtest-report.md) | Phase 14 Load Testing & Performance Benchmarking complete & verified |
+| 15 | DONE | Tasks 15.1–15.7 complete (docs/architecture.md detailing all 13 subsystems, high-res visual topology docs/architecture.png, step-by-step 15-minute docs/demo-runbook.md, master evidence index docs/evidence/index.md, cleanup and submission readiness) | Phase 15 Final Documentation, Topology Diagram & Demo Runbook complete & verified |
 | 16 | OPTIONAL (T3) | | |
 | 17 | TODO (T2) | | |
 | 18 | TODO (T2) | | |
@@ -138,9 +138,23 @@ Deadline: **Thu 2026-11-26**. Feature freeze: Wed 2026-11-25 18:00.
 - [x] 13.6 GitHub Actions CI workflow .github/workflows/ci.yml with 6 jobs (lint, test-python, test-frontend, build-images, e2e, publish)
 - [x] 13.7 Release documentation, PR template (.github/pull_request_template.md), and CI/CD evidence report in docs/evidence/cicd.md
 ### Phase 14
-- [ ] 14.1  - [ ] 14.2  - [ ] 14.3  - [ ] 14.4  - [ ] 14.5  - [ ] 14.6  - [ ] 14.7  - [ ] 14.8
+- [x] 14.1 Reusable k6 configuration and multi-VU scenarios implemented in loadtest/
+- [x] 14.2 High-concurrency read benchmark (dashboard_read.js) with 200 VUs across /api/state, /api/risk, /api/decisions
+- [x] 14.3 Concurrent operator approval benchmark (decision_flow.js) verifying atomic distributed mutex locking
+- [x] 14.4 Sudden 10x traffic surge and recovery benchmark (spike.js) to 200 VUs
+- [x] 14.5 Database pool optimization (pool_size=40, max_overflow=40) and state/decision TTL caching
+- [x] 14.6 Verification of cognitive forcing (reviewed_driver: true) under concurrent load
+- [x] 14.7 Simulation run isolation guard (SIM_RUN_MISMATCH 409) preventing stale dispatches
+- [x] 14.8 Benchmark execution report and metric documentation in docs/evidence/loadtest-report.md
+
 ### Phase 15
-- [ ] 15.1  - [ ] 15.2  - [ ] 15.3  - [ ] 15.4  - [ ] 15.5  - [ ] 15.6  - [ ] 15.7
+- [x] 15.1 Comprehensive system architecture document in docs/architecture.md covering 13 subsystems
+- [x] 15.2 Visual topology diagram in docs/architecture.png generated via scripts/generate_architecture_diagram.py
+- [x] 15.3 Step-by-step operational demo script in docs/demo-runbook.md for jury demonstration
+- [x] 15.4 Master evidence catalog in docs/evidence/index.md cross-linking all phases
+- [x] 15.5 Repository cleanup removing temporary and generated scratch artifacts
+- [x] 15.6 Submission metadata and documentation verification
+- [x] 15.7 Git commit history and phase traceability verified
 ### Phase 17 (T2)
 - [ ] 17.1  - [ ] 17.2  - [ ] 17.3  - [ ] 17.4  - [ ] 17.5  - [ ] 17.6  - [ ] 17.7  - [ ] 17.8  - [ ] 17.9
 ### Phase 18 (T2)
