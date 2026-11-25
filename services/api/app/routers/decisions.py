@@ -6,7 +6,6 @@ import time
 from typing import Annotated, Any
 
 import httpx
-import orjson
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession

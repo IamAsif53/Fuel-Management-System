@@ -12,7 +12,6 @@ from unittest.mock import AsyncMock, MagicMock
 import httpx
 import orjson
 import pytest
-from app.db import get_session
 from app.main import app
 
 

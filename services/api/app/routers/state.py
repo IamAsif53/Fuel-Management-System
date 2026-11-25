@@ -51,11 +51,14 @@ async def get_state_history_endpoint(
     """Retrieve historical WorldState snapshot for time-travel replay (Phase 17)."""
     snapshot = await fetch_snapshot_by_tick(session, tick=tick, sim_run_id=sim_run_id)
     if not snapshot:
+        msg = f"No historical snapshot found for tick {tick}"
+        if sim_run_id:
+            msg += f" and sim_run_id {sim_run_id}"
         raise HTTPException(
             status_code=404,
             detail={
                 "code": "SNAPSHOT_NOT_FOUND",
-                "message": f"No historical snapshot found for tick {tick}" + (f" and sim_run_id {sim_run_id}" if sim_run_id else ""),
+                "message": msg,
             },
         )
     headers = {

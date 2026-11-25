@@ -27,8 +27,12 @@ FUELS = ["DIESEL", "PETROL", "OCTANE"]
 
 
 class DemandSuppressionRequest(BaseModel):
-    reduction_pct: float = Field(..., ge=0.0, le=90.0, description="Percentage demand reduction (e.g., 20.0 for 20% cut)")
-    duration_ticks: int = Field(default=96, ge=1, le=384, description="Duration in ticks over which suppression applies (96 ticks = 24h)")
+    reduction_pct: float = Field(
+        ..., ge=0.0, le=90.0, description="Percentage demand reduction (e.g., 20.0 for 20% cut)"
+    )
+    duration_ticks: int = Field(
+        default=96, ge=1, le=384, description="Duration in ticks over which suppression applies (96 ticks = 24h)"
+    )
     fuel_type: str = Field(default="ALL", description="Target fuel type: DIESEL, PETROL, OCTANE, or ALL")
     station_id: str | None = Field(default=None, description="Optional specific target station ID")
     region_id: str | None = Field(default=None, description="Optional specific target region ID")
@@ -45,7 +49,6 @@ async def get_n1_contingency(
     state, tick, is_degraded, _ = await get_current_state(redis_client, session)
 
     depots = state.get("depots", [])
-    stations = state.get("stations", [])
     routes = state.get("routes", [])
     supply_upcoming = state.get("supply_upcoming", [])
 
@@ -69,7 +72,9 @@ async def get_n1_contingency(
 
             # Dependent routes & stations
             dependent_routes = [r for r in routes if r.get("source_depot_id") == depot_id]
-            affected_station_ids = list({r.get("destination_station_id") for r in dependent_routes if r.get("destination_station_id")})
+            affected_station_ids = list(
+                {r.get("destination_station_id") for r in dependent_routes if r.get("destination_station_id")}
+            )
 
             isolated_stations: list[str] = []
             for st_id in affected_station_ids:
@@ -93,7 +98,11 @@ async def get_n1_contingency(
                 "isolated_stations": isolated_stations,
                 "is_single_point_of_failure": is_spof,
                 "severity": "CRITICAL" if is_spof else ("HIGH" if total_depot_fuel > 50000 else "MEDIUM"),
-                "mitigation": "Activate secondary regional depot dispatches and reroute transport tankers." if not is_spof else "Declare SAFE_HOLD and dispatch emergency inter-depot transfers.",
+                "mitigation": (
+                    "Activate secondary regional depot dispatches and reroute transport tankers."
+                    if not is_spof
+                    else "Declare SAFE_HOLD and dispatch emergency inter-depot transfers."
+                ),
             })
 
     # 2. Route Outage Contingency (N-1 Route)
@@ -121,7 +130,11 @@ async def get_n1_contingency(
                 "alternative_routes_available": len(alt_routes),
                 "is_single_point_of_failure": is_spof,
                 "severity": "CRITICAL" if is_spof else "LOW",
-                "mitigation": "Traffic replanned via redundant parallel corridor." if not is_spof else "Station has no secondary corridor; triggers immediate PRESTOCK alert.",
+                "mitigation": (
+                    "Traffic replanned via redundant parallel corridor."
+                    if not is_spof
+                    else "Station has no secondary corridor; triggers immediate PRESTOCK alert."
+                ),
             })
 
     # 3. Supply Arrival Delay/Loss Contingency (N-1 Supply)
@@ -169,7 +182,10 @@ async def get_n1_contingency(
 async def get_conformal_prediction_intervals(
     request: Request,
     session: Annotated[AsyncSession, Depends(get_session)],
-    coverage: Annotated[float, Query(ge=0.50, le=0.99, description="Target statistical coverage level (e.g. 0.90 for 90%)")] = 0.90,
+    coverage: Annotated[
+        float,
+        Query(ge=0.50, le=0.99, description="Target statistical coverage level (e.g. 0.90 for 90%)"),
+    ] = 0.90,
     horizon_ticks: Annotated[int, Query(ge=4, le=96, description="Projection horizon in ticks")] = 24,
 ) -> Response:
     """Compute statistically valid conformal prediction intervals for station inventories."""

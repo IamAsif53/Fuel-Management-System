@@ -10,9 +10,7 @@ Verifies:
 from __future__ import annotations
 
 import copy
-import pytest
 
-from app.decision.constraints import check_plan
 from app.decision.optimizer import OptimizerPolicy
 from app.state.store import WorldState
 from fsip_common.models import Depot, Instance, Route, Station
@@ -157,7 +155,7 @@ def test_scarcity_decisions_are_deterministic() -> None:
     plan2 = opt2.solve(store2)
 
     assert len(plan1.lines) == len(plan2.lines)
-    for l1, l2 in zip(plan1.lines, plan2.lines):
+    for l1, l2 in zip(plan1.lines, plan2.lines, strict=False):
         assert l1.route_id == l2.route_id
         assert l1.fuel_type == l2.fuel_type
         assert abs(l1.quantity - l2.quantity) < 1e-4

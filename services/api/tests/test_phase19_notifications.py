@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 import httpx
 import pytest
 from app.main import app
-from app.services.notifier import NotificationService, get_notification_history
+from app.services.notifier import NotificationService
 
 
 @pytest.mark.asyncio

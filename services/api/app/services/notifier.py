@@ -6,11 +6,11 @@ for P1 critical incidents, stockout hazards, and resilience mode transitions.
 from __future__ import annotations
 
 import asyncio
+import os
+import smtplib
 from datetime import UTC, datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-import os
-import smtplib
 from typing import Any
 
 from fsip_common.logging import get_logger
@@ -106,14 +106,44 @@ Automated alert delivered by Fuel Supply Intelligence Platform.
 <html>
 <head>
   <style>
-    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background: #0b0f19; color: #f1f5f9; padding: 20px; }}
-    .card {{ background: #1e293b; border: 1px solid #dc2626; border-radius: 8px; padding: 20px; max-width: 600px; margin: 0 auto; }}
-    .badge {{ background: rgba(220, 38, 38, 0.2); border: 1px solid #dc2626; color: #f87171; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 12px; }}
+    body {{
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background: #0b0f19;
+      color: #f1f5f9;
+      padding: 20px;
+    }}
+    .card {{
+      background: #1e293b;
+      border: 1px solid #dc2626;
+      border-radius: 8px;
+      padding: 20px;
+      max-width: 600px;
+      margin: 0 auto;
+    }}
+    .badge {{
+      background: rgba(220, 38, 38, 0.2);
+      border: 1px solid #dc2626;
+      color: #f87171;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-weight: bold;
+      font-size: 12px;
+    }}
     .title {{ font-size: 18px; font-weight: bold; margin-top: 12px; margin-bottom: 8px; color: #ffffff; }}
     .meta {{ font-size: 12px; color: #94a3b8; margin-bottom: 16px; }}
     .section {{ margin-top: 14px; font-size: 13px; line-height: 1.5; }}
     .label {{ font-weight: 600; color: #cbd5e1; text-transform: uppercase; font-size: 11px; letter-spacing: 0.05em; }}
-    .btn {{ display: inline-block; background: #2563eb; color: #ffffff; padding: 8px 16px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 13px; margin-top: 18px; }}
+    .btn {{
+      display: inline-block;
+      background: #2563eb;
+      color: #ffffff;
+      padding: 8px 16px;
+      border-radius: 6px;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 13px;
+      margin-top: 18px;
+    }}
   </style>
 </head>
 <body>

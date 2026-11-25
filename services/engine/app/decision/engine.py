@@ -518,7 +518,10 @@ class DecisionEngine:
             if current_state and cur_sim_run_id and dec.sim_run_id != cur_sim_run_id:
                 raise DecisionError(
                     "SIM_RUN_MISMATCH",
-                    f"Decision {decision_id} belongs to past simulation run {dec.sim_run_id}, but active run is {cur_sim_run_id}",
+                    (
+                        f"Decision {decision_id} belongs to past simulation run {dec.sim_run_id}, "
+                        f"but active run is {cur_sim_run_id}"
+                    ),
                     status_code=409,
                 )
 

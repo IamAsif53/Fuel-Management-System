@@ -3,8 +3,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Body, Query, Response
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field
 
 from app.services.notifier import NotificationService, get_notification_history
@@ -36,7 +35,10 @@ async def trigger_test_notification(
         severity="CRITICAL",
         entity_id="dp-1",
         causal_driver="Bulk pipeline delivery delayed by 18 ticks; station demand surging 1.4x above nominal baseline.",
-        recommended_action="Execute emergency regional reallocation plan #4092 and throttle commercial sales to preserve hospital generator supply.",
+        recommended_action=(
+            "Execute emergency regional reallocation plan #4092 "
+            "and throttle commercial sales to preserve hospital generator supply."
+        ),
         tick=145,
         recipient=recipient,
     )
