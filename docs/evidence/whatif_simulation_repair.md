@@ -94,7 +94,7 @@ tests/test_whatif_repair.py::test_i_station_outage_impact_and_determinism PASSED
    Duration  20.46s
 ```
 
-### 3.4 Live Docker Stack HTTP Integration Verification (`evaluation/tests/test_live_whatif.py`)
+### 3.4 Live Docker Stack HTTP Integration Verification (`scripts/verify_live_whatif.py`)
 ```
 === Running Live What-If End-to-End Verification ===
 1. Baseline HTTP status: 200
