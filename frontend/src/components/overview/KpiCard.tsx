@@ -32,24 +32,36 @@ export function KpiCard({
   return (
     <div
       data-testid={testId || `kpi-${label.toLowerCase().replace(/\s+/g, "-")}`}
-      className="flex flex-col justify-between rounded-lg border border-bg-border bg-bg-panel p-4 transition hover:border-bg-border/80"
+      className="flex min-w-0 flex-col justify-between rounded-lg border border-bg-border bg-bg-panel p-3 sm:p-3.5 transition hover:border-bg-border/80 shadow-sm"
     >
-      <div className="mb-2 text-xs font-medium uppercase tracking-wider text-ink-muted">
+      <div
+        title={label}
+        className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted truncate"
+      >
         {label}
       </div>
-      <div className="flex items-baseline justify-between gap-2">
-        <div className={clsx("text-2xl font-semibold tabular-nums", toneColors[tone])}>
+      <div className="mt-2 flex flex-col gap-1.5 min-w-0">
+        <div
+          title={value}
+          className={clsx(
+            "text-xl sm:text-2xl font-bold tabular-nums whitespace-nowrap tracking-tight overflow-hidden text-ellipsis",
+            toneColors[tone]
+          )}
+        >
           {value}
         </div>
         {sub && (
-          <span
-            className={clsx(
-              "rounded border px-1.5 py-0.5 text-[11px] font-medium",
-              badgeColors[tone]
-            )}
-          >
-            {sub}
-          </span>
+          <div className="flex min-w-0">
+            <span
+              title={sub}
+              className={clsx(
+                "inline-block max-w-full truncate rounded border px-1.5 py-0.5 text-[10px] font-medium leading-tight whitespace-nowrap",
+                badgeColors[tone]
+              )}
+            >
+              {sub}
+            </span>
+          </div>
         )}
       </div>
     </div>

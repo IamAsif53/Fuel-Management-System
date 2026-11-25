@@ -74,7 +74,7 @@ export function KpiGrid({ state }: KpiGridProps) {
     : "neutral";
 
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
+    <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4 xl:grid-cols-8 xl:gap-3">
       <KpiCard
         label="Service Level"
         value={slVal}

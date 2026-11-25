@@ -72,10 +72,18 @@ function getWorstRisk(risk: Record<Fuel, { level: RiskLevel }> | undefined): Ris
   return "LOW";
 }
 
+function formatStationNodeName(name: string): string {
+  return name
+    .replace(/\s+Fuel\s+Station/i, " Stn")
+    .replace(/\s+Industrial\s+Station/i, " Ind.")
+    .replace(/\s+Terminal/i, " Term.")
+    .replace(/\s+Station/i, " Stn");
+}
+
 function computeCurve(p0: Point, p3: Point, isCrossRegion: boolean) {
-  const startX = p0.x + 75;
+  const startX = p0.x + 80;
   const startY = p0.y;
-  const endX = p3.x - 75;
+  const endX = p3.x - 80;
   const endY = p3.y;
 
   if (!isCrossRegion) {
@@ -351,12 +359,12 @@ export function NetworkGraph({ state, onSelectEntity }: NetworkGraphProps) {
                 <g
                   key={depot.id}
                   data-testid={`node-${depot.id}`}
-                  transform={`translate(${pos.x - 75}, ${pos.y - 28})`}
+                  transform={`translate(${pos.x - 82}, ${pos.y - 28})`}
                   onClick={() => onSelectEntity?.(depot)}
                   className="cursor-pointer group"
                 >
                   <rect
-                    width="150"
+                    width="164"
                     height="56"
                     rx="8"
                     fill="#17223A"
@@ -376,11 +384,22 @@ export function NetworkGraph({ state, onSelectEntity }: NetworkGraphProps) {
                     {depot.name}
                   </text>
 
+                  <rect
+                    x="116"
+                    y="6"
+                    width="40"
+                    height="14"
+                    rx="3"
+                    fill={isConstrained ? "#EAB30825" : "#22C55E20"}
+                    stroke={isConstrained ? "#EAB308" : "#22C55E"}
+                    strokeWidth="0.8"
+                  />
                   <text
-                    x="140"
-                    y="18"
-                    textAnchor="end"
-                    className="fill-ink-muted text-[10px] font-mono"
+                    x="136"
+                    y="16.5"
+                    textAnchor="middle"
+                    fill={isConstrained ? "#EAB308" : "#22C55E"}
+                    className="text-[9px] font-bold tracking-wider font-mono uppercase"
                   >
                     {depot.status}
                   </text>
@@ -390,8 +409,8 @@ export function NetworkGraph({ state, onSelectEntity }: NetworkGraphProps) {
                     const cap = depot.capacity?.[fuel] || 1;
                     const inv = depot.inventory?.[fuel] || 0;
                     const fillPct = Math.max(0, Math.min(1, inv / cap));
-                    const barWidth = 36;
-                    const barX = 10 + fIdx * 46;
+                    const barWidth = 42;
+                    const barX = 10 + fIdx * 50;
 
                     return (
                       <g key={fuel} transform={`translate(${barX}, 28)`}>
@@ -435,12 +454,12 @@ export function NetworkGraph({ state, onSelectEntity }: NetworkGraphProps) {
                 <g
                   key={station.id}
                   data-testid={`node-${station.id}`}
-                  transform={`translate(${pos.x - 75}, ${pos.y - 28})`}
+                  transform={`translate(${pos.x - 82}, ${pos.y - 28})`}
                   onClick={() => onSelectEntity?.(station)}
                   className="cursor-pointer group"
                 >
                   <rect
-                    width="150"
+                    width="164"
                     height="56"
                     rx="8"
                     fill="#17223A"
@@ -457,16 +476,26 @@ export function NetworkGraph({ state, onSelectEntity }: NetworkGraphProps) {
                     y="18"
                     className="fill-ink text-xs font-semibold tracking-tight"
                   >
-                    {station.name}
+                    {formatStationNodeName(station.name)}
                   </text>
 
                   {/* Risk Badge on Node */}
+                  <rect
+                    x="122"
+                    y="6"
+                    width="34"
+                    height="14"
+                    rx="3"
+                    fill={`${strokeColor}25`}
+                    stroke={strokeColor}
+                    strokeWidth="0.8"
+                  />
                   <text
-                    x="140"
-                    y="18"
-                    textAnchor="end"
+                    x="139"
+                    y="16.5"
+                    textAnchor="middle"
                     fill={strokeColor}
-                    className="text-[10px] font-semibold tracking-wider font-mono uppercase"
+                    className="text-[9px] font-bold tracking-wider font-mono uppercase"
                   >
                     {worstRisk}
                   </text>
@@ -475,8 +504,8 @@ export function NetworkGraph({ state, onSelectEntity }: NetworkGraphProps) {
                   {(["DIESEL", "PETROL", "OCTANE"] as Fuel[]).map((fuel, fIdx) => {
                     const fillPct = station.fill_pct?.[fuel] ?? 0;
                     const clampedFill = Math.max(0, Math.min(1, fillPct));
-                    const barWidth = 36;
-                    const barX = 10 + fIdx * 46;
+                    const barWidth = 42;
+                    const barX = 10 + fIdx * 50;
 
                     return (
                       <g key={fuel} transform={`translate(${barX}, 28)`}>
