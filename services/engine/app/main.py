@@ -682,6 +682,8 @@ async def internal_policy(req: dict[str, Any]):
 @app.post("/internal/whatif", dependencies=[Depends(require_internal)])
 async def internal_whatif(req: dict[str, Any]):
     """Forward-looking scenario projection with ShadowTwin per 21 §4 (Task 8.7)."""
+    import copy
+
     from app.decision.optimizer import OptimizerPolicy
     from app.decision.twin import ShadowTwin
 
@@ -699,6 +701,95 @@ async def internal_whatif(req: dict[str, Any]):
         raise HTTPException(status_code=503, detail="Store state unavailable")
 
     current_tick = getattr(store, "tick", 0)
+
+    # Resolve route and depot mappings for strict validation
+    routes_raw = getattr(store, "routes", []) or []
+    routes_dict = {
+        r.id: r for r in routes_raw
+    } if isinstance(routes_raw, list) else dict(routes_raw or {})
+
+    depots_raw = getattr(store, "depots", []) or []
+    depots_dict = {
+        d.id: d for d in depots_raw
+    } if isinstance(depots_raw, list) else dict(depots_raw or {})
+
+    # Validate candidate custom dispatch lines (reject invalid/infeasible, explain clearly)
+    validated_lines = []
+    for line in raw_lines:
+        r_id = str(line.get("route_id", "")).strip()
+        if not r_id or r_id not in routes_dict:
+            avail = sorted(routes_dict.keys())
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "INVALID_IDENTIFIER",
+                    "message": f"Route '{r_id}' does not exist. Available routes: {avail}",
+                },
+            )
+
+        f_type = str(line.get("fuel_type", "")).strip().upper()
+        if f_type not in ("DIESEL", "PETROL", "OCTANE"):
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "INVALID_FUEL_TYPE",
+                    "message": f"Invalid fuel type '{f_type}'. Supported fuels: DIESEL, PETROL, OCTANE",
+                },
+            )
+
+        try:
+            qty = float(line.get("quantity", 0.0))
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "INVALID_QUANTITY", "message": "Quantity must be a valid number"},
+            ) from exc
+
+        if qty <= 0.0:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "INVALID_QUANTITY",
+                    "message": f"Quantity must be strictly positive (> 0 L), got {qty}",
+                },
+            )
+
+        r_obj = routes_dict[r_id]
+        max_ship = float(getattr(r_obj, "max_shipment", 0.0) or (
+            r_obj.get("max_shipment", 0.0) if isinstance(r_obj, dict) else 0.0
+        ))
+        if max_ship > 0 and qty > max_ship:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "INFEASIBLE_DISPATCH",
+                    "message": f"Quantity {qty:g} L exceeds route '{r_id}' max shipment limit of {max_ship:g} L",
+                },
+            )
+
+        src_depot = str(getattr(r_obj, "source_depot_id", "") or (
+            r_obj.get("source_depot_id", "") if isinstance(r_obj, dict) else ""
+        ))
+        d_obj = depots_dict.get(src_depot)
+        inv_map = getattr(d_obj, "inventory", {}) if d_obj else {}
+        avail_inv = float(inv_map.get(f_type, 0.0)) if isinstance(inv_map, dict) else 0.0
+        if qty > avail_inv:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "INFEASIBLE_DISPATCH",
+                    "message": (
+                        f"Quantity {qty:g} L exceeds available {f_type} inventory at depot "
+                        f"'{src_depot}' ({avail_inv:g} L available)"
+                    ),
+                },
+            )
+
+        validated_lines.append({
+            "route_id": r_id,
+            "fuel_type": f_type,
+            "quantity": qty,
+        })
 
     # Format hypothetical events
     formatted_events = []
@@ -722,9 +813,11 @@ async def internal_whatif(req: dict[str, Any]):
         n_samples=40,
     )
 
-    # 2. Recommended (Optimizer Plan)
+    # 2. Recommended (Optimizer Plan on counterfactual context)
+    cf_store = copy.copy(store)
+    cf_store.events = list(getattr(store, "events", []) or []) + formatted_events
     optimizer = OptimizerPolicy()
-    rec_plan = optimizer.solve(store)
+    rec_plan = optimizer.solve(cf_store)
     rec_res = ShadowTwin.project(
         state=store,
         lines=rec_plan.lines,
@@ -736,7 +829,7 @@ async def internal_whatif(req: dict[str, Any]):
     # 3. Custom lines
     custom_res = ShadowTwin.project(
         state=store,
-        lines=raw_lines,
+        lines=validated_lines,
         hypothetical_events=formatted_events,
         horizon=horizon,
         n_samples=40,
@@ -745,12 +838,23 @@ async def internal_whatif(req: dict[str, Any]):
     def _format_scenario(name: str, res: Any) -> dict[str, Any]:
         stations_out = []
         for (st_id, f_type), st_p in res.stations.items():
+            init_inv = getattr(st_p, "initial_inventory", 0.0)
+            end_inv = getattr(st_p, "ending_inventory_p50", 0.0)
+            if not end_inv and st_p.inventory_p50:
+                end_inv = st_p.inventory_p50[-1]
+            delta = round(end_inv - init_inv, 1)
+
             stations_out.append({
                 "station_id": st_id,
                 "fuel_type": f_type,
                 "stockout_prob": st_p.stockout_prob,
                 "first_stockout_tick": st_p.first_stockout_tick,
                 "inventory_p50": st_p.inventory_p50,
+                "initial_inv": init_inv,
+                "ending_inv": end_inv,
+                "delta_liters": delta,
+                "unmet_liters": st_p.unmet_liters,
+                "overflow_liters": st_p.overflow_liters,
             })
         return {
             "name": name,

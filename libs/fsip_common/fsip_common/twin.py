@@ -68,6 +68,8 @@ class StationProjection:
     inventory_p10: list[float] = field(default_factory=list)
     inventory_p50: list[float] = field(default_factory=list)
     inventory_p90: list[float] = field(default_factory=list)
+    initial_inventory: float = 0.0
+    ending_inventory_p50: float = 0.0
 
 
 @dataclass
@@ -197,6 +199,28 @@ class ShadowTwin:
                             return True
             return False
 
+        # Helper to check depot constraint at tick
+        def is_depot_constrained(d_id: str, tick: int) -> bool:
+            d_obj = depots_dict.get(d_id)
+            if d_obj:
+                status = getattr(d_obj, "status", "") or (d_obj.get("status") if isinstance(d_obj, dict) else "")
+                if status.upper() == "CONSTRAINED":
+                    return True
+            for e in all_events:
+                if e.get("type") in ("depot_constraint", "depot_disruption"):
+                    st_tick = e.get("start_tick", 0)
+                    end_tk = e.get("end_tick", 999999)
+                    if st_tick <= tick <= end_tk:
+                        params = e.get("parameters", {})
+                        d_targets = params.get("depot_ids") or params.get("depot_id")
+                        if not d_targets:
+                            return True
+                        if isinstance(d_targets, list) and d_id in d_targets:
+                            return True
+                        if isinstance(d_targets, str) and d_id == d_targets:
+                            return True
+            return False
+
         # Helper to get demand multiplier from events
         def get_event_demand_multiplier(st_id: str, reg_id: str, f_type: str, tick: int) -> float:
             mult = 1.0
@@ -275,6 +299,10 @@ class ShadowTwin:
                 # Fuel lost at departure; never arrives
                 continue
 
+            # If depot is constrained at departure, self-imposed 50% capacity cap
+            if is_depot_constrained(src_depot, departs_at):
+                qty = qty * 0.5
+
             arr_tick = c_tick + transit + 1
             station_arrivals[(dst_station, f_type, arr_tick)] = (
                 station_arrivals.get((dst_station, f_type, arr_tick), 0.0) + qty
@@ -286,12 +314,16 @@ class ShadowTwin:
         total_demand_total = 0.0
         net_unmet = 0.0
         net_overflow = 0.0
+        station_sl_list: list[float] = []
 
         for s_id, st in stations_dict.items():
             cap_map = _val(st, "capacity", {}) or {}
             inv_map = _val(st, "inventory", {}) or {}
             reg_id = _val(st, "region_id", "")
             station_mult = float(_val(st, "demand_multiplier", 1.0))
+
+            st_served_total = 0.0
+            st_dem_total = 0.0
 
             for f_type in FUELS:
                 cap = float(cap_map.get(f_type, 10000.0)) if isinstance(cap_map, dict) else 10000.0
@@ -328,9 +360,6 @@ class ShadowTwin:
                     total_m = station_mult * ev_mult
                     dem_matrix[:, k] *= total_m
 
-                    if is_station_outage(s_id, sim_tick):
-                        dem_matrix[:, k] = 0.0
-
                 # Forward simulate trajectories: shape (N, H + 1)
                 inv_trajectories = np.zeros((n_samples, horizon + 1))
                 inv_trajectories[:, 0] = init_inv
@@ -352,11 +381,17 @@ class ShadowTwin:
 
                     # 2. Demand consumption
                     req_demand = dem_matrix[:, k]
-                    served = np.minimum(new_inv, req_demand)
-                    unmet = np.maximum(0.0, req_demand - new_inv)
-                    sample_unmet += unmet
-                    new_inv = np.maximum(0.0, new_inv - req_demand)
+                    if is_station_outage(s_id, sim_tick):
+                        # Station in OUTAGE: pumps closed, 0 demand served, ALL incoming customer demand is unmet!
+                        # Fuel cannot be dispensed, so inventory remains intact.
+                        served = np.zeros(n_samples)
+                        unmet = req_demand
+                    else:
+                        served = np.minimum(new_inv, req_demand)
+                        unmet = np.maximum(0.0, req_demand - new_inv)
+                        new_inv = np.maximum(0.0, new_inv - req_demand)
 
+                    sample_unmet += unmet
                     inv_trajectories[:, k + 1] = new_inv
 
                     hit_zero = (new_inv == 0.0)
@@ -364,12 +399,16 @@ class ShadowTwin:
                     if earliest_stockout_tick is None and np.median(new_inv) == 0.0:
                         earliest_stockout_tick = sim_tick
 
+                    st_served_total += float(np.sum(served))
+                    st_dem_total += float(np.sum(req_demand))
                     total_demand_served += float(np.sum(served))
                     total_demand_total += float(np.sum(req_demand))
 
                 p10_traj = np.percentile(inv_trajectories[:, 1:], 10, axis=0).tolist()
                 p50_traj = np.percentile(inv_trajectories[:, 1:], 50, axis=0).tolist()
                 p90_traj = np.percentile(inv_trajectories[:, 1:], 90, axis=0).tolist()
+
+                ending_p50 = float(p50_traj[-1]) if p50_traj else init_inv
 
                 st_proj = StationProjection(
                     station_id=s_id,
@@ -381,10 +420,15 @@ class ShadowTwin:
                     inventory_p10=[round(v, 1) for v in p10_traj],
                     inventory_p50=[round(v, 1) for v in p50_traj],
                     inventory_p90=[round(v, 1) for v in p90_traj],
+                    initial_inventory=round(init_inv, 1),
+                    ending_inventory_p50=round(ending_p50, 1),
                 )
                 station_results[(s_id, f_type)] = st_proj
                 net_unmet += st_proj.unmet_liters
                 net_overflow += st_proj.overflow_liters
+
+            st_sl = st_served_total / max(1.0, st_dem_total) if st_dem_total > 0 else 1.0
+            station_sl_list.append(st_sl)
 
         # 5. Simulate depots deterministically
         depot_results: dict[tuple[str, str], DepotProjection] = {}
@@ -409,8 +453,32 @@ class ShadowTwin:
                     sup_d = _val(sup, "depot_id", "")
                     sup_f = _val(sup, "fuel_type", "")
                     if sup_d == d_id and sup_f == f_type:
-                        p_tk = _val(sup, "planned_tick", 0)
+                        p_tk = int(_val(sup, "planned_tick", 0))
                         qty = float(_val(sup, "quantity", 0.0))
+
+                        # Apply hypothetical shipment_delay and supply_shortfall
+                        for e in all_events:
+                            ev_t = e.get("type")
+                            e_st = e.get("start_tick", 0)
+                            e_end = e.get("end_tick", 999999)
+                            params = e.get("parameters", {})
+                            d_targets = params.get("depot_ids") or params.get("depot_id")
+                            f_targets = params.get("fuel_types") or params.get("fuel_type")
+                            d_m = not d_targets or (
+                                d_id in d_targets if isinstance(d_targets, list) else d_id == d_targets
+                            )
+                            f_m = not f_targets or (
+                                f_type in f_targets if isinstance(f_targets, list) else f_type == f_targets
+                            )
+
+                            if d_m and f_m and e_st <= p_tk <= e_end:
+                                if ev_t == "shipment_delay":
+                                    delay = int(params.get("delay_ticks", 2))
+                                    p_tk += delay
+                                elif ev_t == "supply_shortfall":
+                                    factor = float(params.get("factor", 0.5))
+                                    qty *= factor
+
                         supply_by_tick[p_tk] = supply_by_tick.get(p_tk, 0.0) + qty
 
                 for k in range(horizon):
@@ -440,7 +508,7 @@ class ShadowTwin:
                 depot_results[(d_id, f_type)] = dp_proj
                 net_clipped += total_clipped
 
-        sl = total_demand_served / max(1.0, total_demand_total) if total_demand_total > 0 else 1.0
+        min_sl = min(station_sl_list) if station_sl_list else 1.0
 
         return TwinSimulationResult(
             horizon_ticks=horizon,
@@ -449,5 +517,5 @@ class ShadowTwin:
             total_unmet_liters=round(net_unmet, 1),
             total_overflow_liters=round(net_overflow, 1),
             total_clipped_liters=round(net_clipped, 1),
-            min_station_service_level=round(sl, 4),
+            min_station_service_level=round(min_sl, 4),
         )

@@ -452,6 +452,11 @@ export interface WhatIfScenarioStation {
   stockout_prob: number;
   first_stockout_tick?: number | null;
   inventory_p50: number[];
+  initial_inv?: number;
+  ending_inv?: number;
+  delta_liters?: number;
+  unmet_liters?: number;
+  overflow_liters?: number;
 }
 
 export interface WhatIfScenario {
