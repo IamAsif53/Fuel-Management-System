@@ -101,4 +101,23 @@ describe("Phase 09 Ops Assistant Page", () => {
       expect(screen.getAllByText(/99.40%/i).length).toBeGreaterThanOrEqual(1);
     });
   });
+
+  it("handles assistant network/server error gracefully without attributing to rules engine", async () => {
+    vi.mocked(client.askAssistant).mockRejectedValue(new Error("Internal Server Error"));
+
+    renderWithProviders(<Assistant />);
+
+    const input = screen.getByPlaceholderText(/Ask about station inventory/i);
+    const askBtn = screen.getByRole("button", { name: /^ask$/i });
+
+    fireEvent.change(input, { target: { value: "Why is Cox's Bazar at risk?" } });
+    fireEvent.click(askBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Error: Internal Server Error/i)).toBeInTheDocument();
+    });
+
+    // Verify error banner is visible and retry advice is shown
+    expect(screen.getByText(/Please check platform network connectivity and retry/i)).toBeInTheDocument();
+  });
 });

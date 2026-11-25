@@ -90,8 +90,7 @@ export default function Assistant() {
         {
           id: `err-${Date.now()}`,
           sender: "assistant",
-          text: `Error: ${msg}. Please retry.`,
-          engine: "rules",
+          text: `Error: ${msg}. Please check platform network connectivity and retry.`,
           timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
         },
       ]);

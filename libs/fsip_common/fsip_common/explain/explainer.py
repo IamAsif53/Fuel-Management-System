@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from jinja2 import Environment, FileSystemLoader, select_autoescape
+from jinja2 import ChoiceLoader, Environment, FileSystemLoader, PackageLoader, select_autoescape
 
 TEMPLATE_DIR = Path(__file__).parent / "templates"
 _jinja_env: Environment | None = None
@@ -13,8 +13,17 @@ _jinja_env: Environment | None = None
 def get_jinja_env() -> Environment:
     global _jinja_env
     if _jinja_env is None:
+        loaders = [FileSystemLoader(str(TEMPLATE_DIR))]
+        opt_templates = Path("/opt/fsip_common/fsip_common/explain/templates")
+        if opt_templates.exists():
+            loaders.append(FileSystemLoader(str(opt_templates)))
+        try:
+            loaders.append(PackageLoader("fsip_common.explain", "templates"))
+        except Exception:
+            pass
+
         _jinja_env = Environment(
-            loader=FileSystemLoader(str(TEMPLATE_DIR)),
+            loader=ChoiceLoader(loaders),
             autoescape=select_autoescape(disabled_extensions=("j2",)),
             trim_blocks=True,
             lstrip_blocks=True,

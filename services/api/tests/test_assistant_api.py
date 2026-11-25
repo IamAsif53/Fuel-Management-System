@@ -95,6 +95,87 @@ async def test_ask_assistant_grounded_and_unsupported(dummy_state: dict[str, Any
 
 
 @pytest.mark.asyncio
+async def test_ask_assistant_tuple_return_and_all_categories(dummy_state: dict[str, Any]):
+    """Verify assistant handles tuple return from get_current_state and answers all operational categories."""
+    mock_tuple = (dummy_state, 140, False, "W/etag-abc")
+    mock_alerts = [
+        {"id": 1, "station_id": "station-coxsbazar", "severity": "CRITICAL", "message": "Diesel stockout imminent"}
+    ]
+    mock_decisions = [
+        {"id": 55, "tick": 140, "status": "APPROVED", "policy": "optimizer", "total_volume": 12000.0, "lines_count": 2}
+    ]
+    mock_incidents = [
+        {"id": "inc-1", "title": "Highway N1 Disruption", "status": "ACTIVE"}
+    ]
+
+    with patch("app.routers.assistant.get_current_state", new=AsyncMock(return_value=mock_tuple)), \
+         patch("app.routers.assistant.fetch_alerts", new=AsyncMock(return_value=mock_alerts)), \
+         patch("app.routers.assistant.fetch_decisions", new=AsyncMock(return_value=mock_decisions)), \
+         patch("app.routers.assistant.fetch_incidents", new=AsyncMock(return_value=mock_incidents)):
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            # 1. Regression test: Cox's Bazar risk inquiry
+            r_cox = await client.post("/api/assistant/ask", json={"question": "Why is Cox's Bazar at risk?"})
+            assert r_cox.status_code == 200, r_cox.text
+            d_cox = r_cox.json()
+            assert d_cox["engine"] == "rules"
+            assert "station-coxsbazar" in d_cox["answer"] or "CRITICAL" in d_cox["answer"]
+            assert any(s["id"] == "station-coxsbazar" for s in d_cox["sources"])
+
+            # 2. Alerts category
+            r_alert = await client.post("/api/assistant/ask", json={"question": "Show me active shortage alerts"})
+            assert r_alert.status_code == 200
+            d_alert = r_alert.json()
+            assert "Active alerts" in d_alert["answer"]
+
+            # 3. Decisions / recommendations category
+            r_dec = await client.post(
+                "/api/assistant/ask", json={"question": "What is the latest dispatch recommendation?"}
+            )
+            assert r_dec.status_code == 200
+            d_dec = r_dec.json()
+            assert "55" in d_dec["answer"] or "APPROVED" in d_dec["answer"]
+
+            # 4. System health category
+            r_health = await client.post("/api/assistant/ask", json={"question": "How is system health right now?"})
+            assert r_health.status_code == 200
+            d_health = r_health.json()
+            assert "Healthy" in d_health["answer"] or "NORMAL" in d_health["answer"]
+
+            # 5. Shift summary inquiry
+            r_sum = await client.post("/api/assistant/ask", json={"question": "Summarize the current shift"})
+            assert r_sum.status_code == 200
+            d_sum = r_sum.json()
+            assert "service level" in d_sum["answer"].lower() or "99.40%" in d_sum["answer"]
+
+            # 6. Inventory inquiry
+            r_inv = await client.post("/api/assistant/ask", json={"question": "What is the current inventory?"})
+            assert r_inv.status_code == 200
+            d_inv = r_inv.json()
+            assert "Network inventory summary" in d_inv["answer"]
+
+
+@pytest.mark.asyncio
+async def test_ask_assistant_llm_failure_fallback_to_rules(dummy_state: dict[str, Any]):
+    """Verify that when external LLM raises an unexpected error or times out, assistant falls back to rules."""
+    with patch("app.routers.assistant.get_current_state", new=AsyncMock(return_value=dummy_state)), \
+         patch("app.routers.assistant.fetch_alerts", new=AsyncMock(return_value=[])), \
+         patch("app.routers.assistant.fetch_decisions", new=AsyncMock(return_value=[])), \
+         patch("app.routers.assistant.fetch_incidents", new=AsyncMock(return_value=[])), \
+         patch("app.routers.assistant.LLMExplainer.answer_assistant", side_effect=RuntimeError("503 Provider Error")):
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post("/api/assistant/ask", json={"question": "Why is Cox's Bazar at risk?"})
+            assert resp.status_code == 200, resp.text
+            data = resp.json()
+            # Must fall back gracefully to rules
+            assert data["engine"] == "rules"
+            assert "station-coxsbazar" in data["answer"] or "CRITICAL" in data["answer"]
+
+
+@pytest.mark.asyncio
 async def test_ask_assistant_validation():
     """Verify validation on empty or overly long questions."""
     transport = ASGITransport(app=app)

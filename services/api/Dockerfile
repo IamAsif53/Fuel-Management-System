@@ -5,7 +5,7 @@ WORKDIR /app
 COPY services/api/requirements.txt /tmp/requirements.txt
 RUN pip install -r /tmp/requirements.txt
 COPY libs/fsip_common /opt/fsip_common
-RUN pip install /opt/fsip_common
+RUN pip install -e /opt/fsip_common
 COPY services/api/app /app/app
 ARG APP_VERSION=dev
 ARG GIT_SHA=unknown

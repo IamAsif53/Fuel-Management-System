@@ -141,72 +141,163 @@ def check_numbers_grounded(narrative: str, input_json: dict[str, Any]) -> tuple[
 # ---------------------------------------------------------------- Rules-based Fallback Assistant
 def rules_based_assistant(question: str, context_json: dict[str, Any]) -> tuple[str, str, list[dict[str, str]]]:
     """Provide grounded rule-based answers when LLM is unavailable or ungrounded."""
-    q_lower = question.lower()
+    q_lower = question.lower().strip()
     sources: list[dict[str, str]] = []
 
-    # 1. Check for specific station queries e.g. "why is coxsbazar at risk"
+    clean_q_alpha = re.sub(r"[^a-z0-9]", "", q_lower)
+
     stations = context_json.get("stations", [])
     risks = context_json.get("risks", [])
+    depots = context_json.get("depots", [])
+    alerts = context_json.get("alerts", [])
+    decisions = context_json.get("decisions", [])
+    incidents = context_json.get("incidents", [])
+    summary = context_json.get("state_summary", {})
+    health = context_json.get("health", {})
 
+    # Helper: resolve target station from query
     target_station = None
     for st in stations:
         st_id = st.get("id", "").lower()
         st_name = st.get("name", "").lower()
         base_id = st_id.replace("station-", "")
-        if st_id in q_lower or (base_id and base_id in q_lower) or (st_name and st_name in q_lower):
+        clean_base = re.sub(r"[^a-z0-9]", "", base_id)
+        clean_name = re.sub(r"[^a-z0-9]", "", st_name)
+        if (
+            st_id in q_lower
+            or (base_id and (base_id in q_lower or clean_base in clean_q_alpha))
+            or (st_name and (st_name in q_lower or clean_name in clean_q_alpha))
+            or any(word in q_lower for word in st_name.split() if len(word) > 3)
+        ):
             target_station = st
             break
 
+    # Helper: resolve target depot from query
+    target_depot = None
+    if not target_station:
+        for dp in depots:
+            dp_id = dp.get("id", "").lower()
+            dp_name = dp.get("name", "").lower()
+            base_dp = dp_id.replace("depot-", "")
+            clean_dp_base = re.sub(r"[^a-z0-9]", "", base_dp)
+            clean_dp_name = re.sub(r"[^a-z0-9]", "", dp_name)
+            if (
+                dp_id in q_lower
+                or (base_dp and (base_dp in q_lower or clean_dp_base in clean_q_alpha))
+                or (dp_name and (dp_name in q_lower or clean_dp_name in clean_q_alpha))
+            ):
+                target_depot = dp
+                break
+
+    # 1. Target Station specific query (e.g. "Why is Cox's Bazar at risk?", "How much fuel in Mirpur?")
     if target_station:
         st_id = target_station.get("id", "")
+        st_name = target_station.get("name", st_id)
         sources.append({"type": "station", "id": st_id})
-
-        # Match risk row
-        matched_risk = None
-        for r in risks:
-            if r.get("station_id") == st_id:
-                matched_risk = r
-                break
 
         inv = target_station.get("inventory", {})
         total_inv = sum(inv.values()) if isinstance(inv, dict) else 0.0
 
-        if matched_risk:
-            lvl = matched_risk.get("level", "MEDIUM")
-            h_so = matched_risk.get("hours_to_stockout", 0.0)
-            p_so = matched_risk.get("stockout_prob_horizon", 0.0)
-            fuel = matched_risk.get("fuel_type", "DIESEL")
+        # Gather risk information from both station.risk and context risks
+        st_risks = []
+        if isinstance(target_station.get("risk"), dict):
+            for fuel, rdata in target_station["risk"].items():
+                if isinstance(rdata, dict):
+                    st_risks.append({
+                        "fuel_type": fuel,
+                        "level": rdata.get("level", "LOW"),
+                        "hours_to_stockout": rdata.get("hours_to_stockout", 99.0),
+                        "stockout_prob_horizon": rdata.get("stockout_prob_horizon", 0.0),
+                        "drivers": rdata.get("drivers", []),
+                        "inventory": rdata.get("inventory", inv.get(fuel, 0.0)),
+                        "inflight": rdata.get("inflight", 0.0),
+                        "fill_pct": rdata.get("fill_pct", 0.0),
+                    })
+        for r in risks:
+            if r.get("station_id") == st_id and not any(sr.get("fuel_type") == r.get("fuel_type") for sr in st_risks):
+                st_risks.append(r)
+
+        # Sort risks: CRITICAL > HIGH > MEDIUM > LOW
+        sev_order = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
+        st_risks.sort(key=lambda r: (sev_order.get(r.get("level", "LOW"), 4), r.get("hours_to_stockout", 99.0)))
+        elevated_risks = [r for r in st_risks if r.get("level") in ("CRITICAL", "HIGH", "MEDIUM")]
+
+        # If user asked specifically about inventory / fuel stock without risk keywords
+        is_inv_query = bool(
+            re.search(r"\b(inventory|stock|fuel|remaining|capacity|liters|level)\b", q_lower)
+            and not re.search(r"\b(risk|why|danger|shortage|stockout)\b", q_lower)
+        )
+
+        if is_inv_query:
+            diesel_val = int(inv.get("DIESEL", 0))
+            petrol_val = int(inv.get("PETROL", 0))
+            octane_val = int(inv.get("OCTANE", 0))
             ans = (
-                f"{st_id} is at {lvl} risk for {fuel}. Current total inventory is {int(total_inv):,} L with "
-                f"{h_so:.1f} hours to stockout (projected stockout probability: {int(p_so * 100)}%). "
-                f"Demand drivers include local consumption surge and transit lead times."
+                f"{st_name} ({st_id}) currently holds {int(total_inv):,} L total inventory. "
+                f"Fuel breakdown: Diesel {diesel_val:,} L, Petrol {petrol_val:,} L, Octane {octane_val:,} L. "
+                f"Operating status is {target_station.get('status', 'ACTIVE')}."
+            )
+            return ans, "rules", sources
+
+        # Risk query for this station
+        if elevated_risks:
+            worst = elevated_risks[0]
+            lvl = worst.get("level", "HIGH")
+            fuel = worst.get("fuel_type", "DIESEL")
+            h_so = worst.get("hours_to_stockout", 0.0)
+            p_so = worst.get("stockout_prob_horizon", 0.0)
+            drivers = worst.get("drivers", [])
+            driver_str = ", ".join(drivers) if drivers else "local consumption surge and transit delivery lead time"
+
+            # Check if there are active alerts for this station
+            st_alerts = [a for a in alerts if a.get("station_id") == st_id]
+            for a in st_alerts:
+                aid = str(a.get("id"))
+                if not any(s["id"] == aid for s in sources):
+                    sources.append({"type": "alert", "id": aid})
+
+            rec_note = "Priority replenishment tanker dispatch is recommended to prevent stockout."
+            ans = (
+                f"{st_id} ({st_name}) is at {lvl} risk for {fuel}. "
+                f"Current total inventory is {int(total_inv):,} L with {h_so:.1f} hours to stockout "
+                f"(projected stockout probability: {int(p_so * 100)}%). "
+                f"Contributing drivers include: {driver_str}. "
+                f"Operational action: {rec_note}"
             )
             return ans, "rules", sources
         else:
-            ans = f"{st_id} currently holds {int(total_inv):,} L inventory and is operating within normal parameters."
+            # Low risk
+            ans = (
+                f"{st_id} ({st_name}) is currently at LOW risk across all fuel types. "
+                f"Current total inventory is {int(total_inv):,} L with over 48 hours of cover runway "
+                f"and no imminent stockout detected. Telemetry confirms normal replenishment pipeline."
+            )
             return ans, "rules", sources
 
-    # 2. Top risks inquiry
-    if re.search(r"\b(risk|risks|danger|shortage|shortages|stockout|stockouts)\b", q_lower):
-        if not risks:
-            return "No critical stockout risks are currently detected across the network.", "rules", []
-        top_risks = risks[:3]
-        lines = []
-        for r in top_risks:
-            sid = r.get("station_id", "")
-            f = r.get("fuel_type", "")
-            lvl = r.get("level", "")
-            h = r.get("hours_to_stockout", 0.0)
-            sources.append({"type": "station", "id": sid})
-            lines.append(f"{sid} ({f}): {lvl} risk, ~{h:.1f} h to stockout")
-        ans = "Top at-risk stations in the network: " + "; ".join(lines) + "."
+    # 2. Target Depot specific query
+    if target_depot:
+        dp_id = target_depot.get("id", "")
+        dp_name = target_depot.get("name", dp_id)
+        sources.append({"type": "depot", "id": dp_id})
+        d_inv = target_depot.get("inventory", {})
+        total_d_inv = sum(d_inv.values()) if isinstance(d_inv, dict) else 0.0
+        d_status = target_depot.get("status", "OPEN")
+        ans = (
+            f"{dp_name} ({dp_id}) is currently {d_status} with {int(total_d_inv):,} L bulk inventory. "
+            f"Breakdown: Diesel {int(d_inv.get('DIESEL', 0)):,} L, "
+            f"Petrol {int(d_inv.get('PETROL', 0)):,} L, "
+            f"Octane {int(d_inv.get('OCTANE', 0)):,} L."
+        )
         return ans, "rules", sources
 
     # 3. Alerts inquiry
-    if re.search(r"\b(alert|alerts|alarm|alarms)\b", q_lower):
-        alerts = context_json.get("alerts", [])
-        if not alerts:
-            return "There are currently no open alerts.", "rules", []
+    if re.search(r"\b(alert|alerts|alarm|alarms|incident|incidents)\b", q_lower):
+        if not alerts and not incidents:
+            return (
+                "There are currently no active shortage alerts or unacknowledged incidents across the network.",
+                "rules",
+                [],
+            )
         lines = []
         for a in alerts[:4]:
             aid = str(a.get("id", ""))
@@ -214,45 +305,101 @@ def rules_based_assistant(question: str, context_json: dict[str, Any]) -> tuple[
             title = a.get("title", "Alert")
             sources.append({"type": "alert", "id": aid})
             lines.append(f"[{sev}] #{aid}: {title}")
-        ans = f"Active alerts ({len(alerts)} open): " + "; ".join(lines) + "."
+        for inc in incidents[:2]:
+            iid = str(inc.get("id", ""))
+            comp = inc.get("component", "system")
+            sources.append({"type": "incident", "id": iid})
+            lines.append(f"[INCIDENT] #{iid} on {comp}")
+        ans = f"Active alerts ({len(alerts)} open, {len(incidents)} incidents): " + "; ".join(lines) + "."
         return ans, "rules", sources
 
-    # 4. Decisions / recommendations inquiry
+    # 4. Overall / Network Risk inquiry
+    if re.search(r"\b(risk|risks|danger|shortage|shortages|stockout|stockouts)\b", q_lower):
+        elevated = [r for r in risks if r.get("level") in ("CRITICAL", "HIGH", "MEDIUM")]
+        if not elevated:
+            return (
+                "No critical stockout risks are currently detected across the network. "
+                "All retail stations are operating with adequate fuel cover.",
+                "rules",
+                [],
+            )
+        top_risks = elevated[:3]
+        lines = []
+        for r in top_risks:
+            sid = r.get("station_id", "")
+            f = r.get("fuel_type", "")
+            lvl = r.get("level", "")
+            h = r.get("hours_to_stockout", 0.0)
+            if not any(s["id"] == sid for s in sources):
+                sources.append({"type": "station", "id": sid})
+            lines.append(f"{sid} ({f}): {lvl} risk (~{h:.1f}h to stockout)")
+        ans = (
+            f"Active stockout risks detected ({len(elevated)} elevated): "
+            + "; ".join(lines)
+            + ". Replenishment replanning advised."
+        )
+        return ans, "rules", sources
+
+    # 5. Decisions / recommendations inquiry
     decisions_pattern = (
         r"\b(decision|decisions|recommendation|recommendations|dispatch|dispatches|plan|plans|planning)\b"
     )
     if re.search(decisions_pattern, q_lower):
-        decisions = context_json.get("decisions", [])
         if not decisions:
-            return "No pending or recent dispatch decisions in the current planning cycle.", "rules", []
+            return (
+                "No pending or recent dispatch decisions in the current planning cycle. "
+                "Network deliveries are up to date.",
+                "rules",
+                [],
+            )
         latest = decisions[0]
         did = str(latest.get("id", ""))
         status = latest.get("status", "PENDING_APPROVAL")
+        policy = latest.get("policy", "optimizer")
         expl = latest.get("explanation", {})
         headline = expl.get("headline") if isinstance(expl, dict) else None
         if not headline:
-            headline = f"Decision #{did} ({status})"
+            headline = f"Optimization plan #{did} under policy {policy}"
         sources.append({"type": "decision", "id": did})
-        ans = f"Latest recommendation #{did} ({status}): {headline}."
+        ans = f"Latest recommendation #{did} ({status}, policy: {policy}): {headline}."
         return ans, "rules", sources
 
-    # 5. System status / health inquiry
-    if re.search(r"\b(health|system|status|mode|engine)\b", q_lower):
-        health = context_json.get("health", {})
+    # 6. System health / engine status inquiry
+    if re.search(r"\b(health|system|status|mode|engine|sync|simulator)\b", q_lower):
         overall = health.get("overall", "Healthy")
         mode = health.get("engine_mode", "NORMAL")
-        ans = f"System overall status is {overall}. Engine is operating in {mode} mode."
+        tick = summary.get("tick", 0)
+        sl = summary.get("service_level", 1.0)
+        ans = (
+            f"System overall status is {overall}. Engine is operating in {mode} mode at tick {tick}. "
+            f"Current network service level is {sl * 100:.2f}%."
+        )
         return ans, "rules", []
 
-    # 6. Shift summary inquiry
-    if re.search(r"\b(summary|shift|overview|kpi|kpis)\b", q_lower):
-        summary = context_json.get("state_summary", {})
+    # 7. Shift summary inquiry
+    if re.search(r"\b(summary|shift|overview|kpi|kpis|report)\b", q_lower):
         sl = summary.get("service_level", 1.0)
         unmet = summary.get("unmet_liters", 0.0)
         tick = summary.get("tick", 0)
+        mode = summary.get("engine_mode", "NORMAL")
+        num_alerts = len(alerts)
+        num_decs = len(decisions)
         ans = (
-            f"Shift snapshot at tick {tick}: Network service level is {sl * 100:.2f}% "
-            f"with {int(unmet):,} L total unmet demand."
+            f"Shift executive summary at tick {tick}: Network service level is {sl * 100:.2f}% "
+            f"with {int(unmet):,} L total unmet demand. Operating mode: {mode}. "
+            f"Active alerts: {num_alerts}, recent decisions: {num_decs}."
+        )
+        return ans, "rules", []
+
+    # 8. General inventory inquiry across network
+    if re.search(r"\b(inventory|stock|fuel|storage|depots|stations)\b", q_lower):
+        total_st_fuel = sum(
+            sum(st.get("inventory", {}).values()) for st in stations if isinstance(st.get("inventory"), dict)
+        )
+        ans = (
+            f"Network inventory summary: {len(stations)} active retail stations "
+            f"holding {int(total_st_fuel):,} L total fuel, "
+            f"supported by {len(depots)} bulk supply depots."
         )
         return ans, "rules", []
 

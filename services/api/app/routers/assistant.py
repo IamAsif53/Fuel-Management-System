@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from fsip_common.explain import LLMExplainer, render_template
+from fsip_common.explain import LLMExplainer, render_template, rules_based_assistant
 from fsip_common.logging import get_logger
 from pydantic import BaseModel, Field
 from sqlalchemy import text
@@ -102,76 +102,153 @@ async def _build_assistant_context(
 ) -> dict[str, Any]:
     """Assemble a grounded platform context snapshot for the assistant, capped at ~6000 tokens."""
     # 1. State
-    state = await get_current_state(request, session)
+    redis_client = getattr(request.app.state, "redis", None)
+    state_res = await get_current_state(redis_client, session)
+    if isinstance(state_res, tuple):
+        state, tick, is_degraded, _ = state_res
+    elif isinstance(state_res, dict):
+        state = state_res
+        tick = state.get("tick", 0)
+        is_degraded = bool(state.get("degraded", False))
+    else:
+        state = {}
+        tick = 0
+        is_degraded = False
+
     stations_compact = []
+    all_risks = []
+
     for st in state.get("stations", []):
         inv = st.get("inventory", {})
+        cap = st.get("capacity", {})
+        st_risk = st.get("risk", {})
+        st_id = st.get("id", "")
+
+        # Flatten station risks into all_risks list for easy querying
+        if isinstance(st_risk, dict):
+            for fuel, rdata in st_risk.items():
+                if isinstance(rdata, dict):
+                    all_risks.append({
+                        "station_id": st_id,
+                        "fuel_type": fuel,
+                        "level": rdata.get("level", "LOW"),
+                        "hours_to_stockout": rdata.get("hours_to_stockout", 99.0),
+                        "stockout_prob_horizon": rdata.get("stockout_prob_horizon", 0.0),
+                        "stockout_prob_lead": rdata.get("stockout_prob_lead", 0.0),
+                        "drivers": rdata.get("drivers", []),
+                        "inventory": rdata.get("inventory", inv.get(fuel, 0.0)),
+                        "inflight": rdata.get("inflight", 0.0),
+                        "fill_pct": rdata.get("fill_pct", 0.0),
+                    })
+
         stations_compact.append({
-            "id": st.get("id"),
+            "id": st_id,
             "name": st.get("name"),
             "inventory": inv,
+            "capacity": cap,
+            "risk": st_risk,
             "region_id": st.get("region_id"),
+            "status": st.get("status", "ACTIVE"),
+        })
+
+    # Include explicit risks list from state if present
+    for r in state.get("risks", []):
+        if not any(
+            ar.get("station_id") == r.get("station_id") and ar.get("fuel_type") == r.get("fuel_type")
+            for ar in all_risks
+        ):
+            all_risks.append(r)
+
+    # Sort all_risks by severity
+    severity_order = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
+    all_risks.sort(
+        key=lambda r: (severity_order.get(r.get("level", "LOW"), 4), r.get("hours_to_stockout", 99.0))
+    )
+
+    # Depots
+    depots_compact = []
+    for dp in state.get("depots", []):
+        depots_compact.append({
+            "id": dp.get("id"),
+            "name": dp.get("name"),
+            "inventory": dp.get("inventory", {}),
+            "capacity": dp.get("capacity", {}),
+            "status": dp.get("status", "OPEN"),
         })
 
     # 2. Open alerts
-    alerts_data = await fetch_alerts(session, status="OPEN", limit=10)
-    alerts_compact = [
-        {
-            "id": a.get("id"),
-            "severity": a.get("severity"),
-            "station_id": a.get("station_id"),
-            "fuel_type": a.get("fuel_type"),
-            "title": a.get("title"),
-        }
-        for a in alerts_data
-    ]
+    try:
+        alerts_data = await fetch_alerts(session, status="OPEN", limit=15)
+        alerts_compact = [
+            {
+                "id": a.get("id"),
+                "severity": a.get("severity"),
+                "station_id": a.get("station_id"),
+                "fuel_type": a.get("fuel_type"),
+                "title": a.get("title"),
+            }
+            for a in alerts_data
+        ]
+    except Exception as exc:
+        log.warning("assistant.fetch_alerts_failed", error=str(exc))
+        alerts_compact = []
 
     # 3. Last 10 decisions
-    decisions_data = await fetch_decisions(session, limit=10)
-    decisions_compact = [
-        {
-            "id": d.get("id"),
-            "status": d.get("status"),
-            "policy": d.get("policy"),
-            "confidence": d.get("confidence"),
-            "explanation": d.get("explanation"),
-        }
-        for d in decisions_data
-    ]
+    try:
+        decisions_data = await fetch_decisions(session, limit=10)
+        decisions_compact = [
+            {
+                "id": d.get("id"),
+                "status": d.get("status"),
+                "policy": d.get("policy"),
+                "confidence": d.get("confidence"),
+                "explanation": d.get("explanation"),
+            }
+            for d in decisions_data
+        ]
+    except Exception as exc:
+        log.warning("assistant.fetch_decisions_failed", error=str(exc))
+        decisions_compact = []
 
     # 4. Open Incidents
-    incidents_data = await fetch_incidents(session, limit=5)
-    incidents_compact = [
-        {
-            "id": inc.get("id"),
-            "component": inc.get("component"),
-            "status": inc.get("status"),
-            "started_at": inc.get("started_at"),
-        }
-        for inc in incidents_data
-    ]
+    try:
+        incidents_data = await fetch_incidents(session, limit=5)
+        incidents_compact = [
+            {
+                "id": inc.get("id"),
+                "component": inc.get("component"),
+                "status": inc.get("status"),
+                "started_at": inc.get("started_at"),
+            }
+            for inc in incidents_data
+        ]
+    except Exception as exc:
+        log.warning("assistant.fetch_incidents_failed", error=str(exc))
+        incidents_compact = []
 
-    # 5. Risks table from state
-    risks = state.get("risks", [])
+    cur_tick = tick if tick else state.get("tick", 0)
+    metrics = state.get("metrics", {})
 
     return {
         "state_summary": {
-            "tick": state.get("tick", 0),
+            "tick": cur_tick,
             "sim_run_id": state.get("sim_run_id", 1),
-            "service_level": state.get("metrics", {}).get("service_level", 1.0),
-            "unmet_liters": state.get("metrics", {}).get("unmet_liters", 0.0),
+            "service_level": metrics.get("service_level", 1.0),
+            "unmet_liters": metrics.get("unmet_liters", 0.0),
             "engine_mode": state.get("engine_mode", "NORMAL"),
             "policy": state.get("policy", "optimizer"),
         },
         "stations": stations_compact,
-        "risks": risks,
+        "depots": depots_compact,
+        "risks": all_risks,
         "alerts": alerts_compact,
         "decisions": decisions_compact,
         "incidents": incidents_compact,
         "events": state.get("events", []),
         "health": {
-            "overall": "Degraded" if state.get("degraded") else "Healthy",
+            "overall": "Degraded" if is_degraded or state.get("degraded") else "Healthy",
             "engine_mode": state.get("engine_mode", "NORMAL"),
+            "tick": cur_tick,
         },
     }
 
@@ -196,8 +273,20 @@ async def ask_assistant(
             detail={"code": "VALIDATION_ERROR", "message": "Question must be between 1 and 500 characters"},
         )
 
-    # 3. Build grounded context
-    context = await _build_assistant_context(request, session)
+    # 3. Build grounded context safely
+    try:
+        context = await _build_assistant_context(request, session)
+    except Exception as exc:
+        log.error("assistant.build_context_failed", error=str(exc))
+        context = {
+            "state_summary": {"tick": 0, "service_level": 1.0, "unmet_liters": 0.0, "engine_mode": "NORMAL"},
+            "stations": [],
+            "depots": [],
+            "risks": [],
+            "alerts": [],
+            "decisions": [],
+            "health": {"overall": "Degraded", "engine_mode": "NORMAL"},
+        }
 
     # 4. Initialize LLM adapter
     explainer = LLMExplainer(
@@ -206,8 +295,13 @@ async def ask_assistant(
         timeout_sec=settings.llm_timeout_sec,
     )
 
-    # 5. Answer grounded query
-    answer, engine_used, sources = await explainer.answer_assistant(clean_q, context)
+    # 5. Answer grounded query with guaranteed fallback
+    try:
+        answer, engine_used, sources = await explainer.answer_assistant(clean_q, context)
+    except Exception as exc:
+        log.error("assistant.execution_failed_falling_back_to_rules", error=str(exc))
+        answer, engine_used, sources = rules_based_assistant(clean_q, context)
+
     now_iso = datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
     return AskResponse(
@@ -225,7 +319,16 @@ async def get_summary(
     window_ticks: Annotated[int, Query(ge=1, le=1000)] = 96,
 ) -> SummaryResponse:
     """Retrieve an executive shift summary over the specified window (default 96 ticks = 24 h)."""
-    state = await get_current_state(request, session)
+    redis_client = getattr(request.app.state, "redis", None)
+    state_res = await get_current_state(redis_client, session)
+    if isinstance(state_res, tuple):
+        state, tick, _, _ = state_res
+    elif isinstance(state_res, dict):
+        state = state_res
+        tick = state.get("tick", 0)
+    else:
+        state = {}
+        tick = 0
 
     # Compute metrics over the window
     metrics = state.get("metrics", {})
@@ -233,7 +336,7 @@ async def get_summary(
     unmet_liters = float(metrics.get("unmet_liters", 0.0))
 
     # Query decisions in this window
-    cur_tick = state.get("tick", 0)
+    cur_tick = tick if tick else state.get("tick", 0)
     min_tick = max(0, cur_tick - window_ticks)
 
     q_dec = text(
@@ -243,8 +346,12 @@ async def get_summary(
         WHERE tick >= :min_tick
         """
     )
-    res_dec = await session.execute(q_dec, {"min_tick": min_tick})
-    dec_rows = res_dec.mappings().all()
+    try:
+        res_dec = await session.execute(q_dec, {"min_tick": min_tick})
+        dec_rows = res_dec.mappings().all()
+    except Exception as exc:
+        log.warning("summary.query_decisions_failed", error=str(exc))
+        dec_rows = []
 
     decisions_count = len(dec_rows)
     autopilot_count = sum(1 for d in dec_rows if d.get("approved_by") == "autopilot")
@@ -294,7 +401,17 @@ async def get_summary(
     }
 
     # Render template narrative
-    narrative = render_template("shift_summary.j2", stats)
+    try:
+        narrative = render_template("shift_summary.j2", stats)
+    except Exception as exc:
+        log.warning("summary.render_template_failed", error=str(exc))
+        narrative = (
+            f"Executive Shift Summary ({window_ticks} ticks): "
+            f"Network service level is {service_level * 100:.2f}% with {int(unmet_liters):,} L total unmet demand. "
+            f"Total fuel dispatched: {int(total_dispatched):,} L across {decisions_count} decisions. "
+            f"Active alerts: {alerts_opened} open, {alerts_resolved} resolved. "
+            f"Active policy: {state.get('policy', 'optimizer')}."
+        )
 
     return SummaryResponse(
         text=narrative,
