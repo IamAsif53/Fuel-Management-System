@@ -29,33 +29,37 @@ export function KpiCard({
     neutral: "bg-bg-raised text-ink-muted border-bg-border",
   };
 
+  // Adjust font size for longer textual values like NORMAL, DEGRADED, SAFE_HOLD
+  const isLongText = value.length > 5 && !value.includes("%") && !value.includes("L");
+
   return (
     <div
       data-testid={testId || `kpi-${label.toLowerCase().replace(/\s+/g, "-")}`}
-      className="flex min-w-0 flex-col justify-between rounded-lg border border-bg-border bg-bg-panel p-3 sm:p-3.5 transition hover:border-bg-border/80 shadow-sm"
+      className="flex min-w-0 flex-col justify-between rounded-xl border border-bg-border bg-bg-panel p-3 sm:p-3.5 transition hover:border-bg-border/80 shadow-sm"
     >
       <div
         title={label}
-        className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted truncate"
+        className="h-7 flex items-center text-[11px] font-semibold uppercase tracking-wider text-ink-muted leading-tight truncate"
       >
         {label}
       </div>
-      <div className="mt-2 flex flex-col gap-1.5 min-w-0">
+      <div className="mt-1 flex flex-col gap-1 min-w-0">
         <div
           title={value}
           className={clsx(
-            "text-xl sm:text-2xl font-bold tabular-nums whitespace-nowrap tracking-tight overflow-hidden text-ellipsis",
+            "font-bold tabular-nums whitespace-nowrap tracking-tight overflow-hidden text-ellipsis leading-none",
+            isLongText ? "text-lg xl:text-xl" : "text-xl xl:text-2xl",
             toneColors[tone]
           )}
         >
           {value}
         </div>
         {sub && (
-          <div className="flex min-w-0">
+          <div className="mt-1 flex min-w-0">
             <span
               title={sub}
               className={clsx(
-                "inline-block max-w-full truncate rounded border px-1.5 py-0.5 text-[10px] font-medium leading-tight whitespace-nowrap",
+                "inline-block max-w-full truncate rounded border px-1.5 py-0.5 text-[10px] font-medium leading-none whitespace-nowrap",
                 badgeColors[tone]
               )}
             >
