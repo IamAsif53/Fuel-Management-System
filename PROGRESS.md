@@ -23,7 +23,7 @@ Format for notes: `- [x] 1.3 SimClient done. Note: <deviation or measured result
 | 14 | DONE | Tasks 14.1–14.8 complete (Dedicated loadtest/ suite using k6, baseline/ramp/sustained 200-VU tests, concurrent operator approval with reviewed_driver cognitive forcing, multi-tenant IP rotation, DB pool expansion to 40/40, memory TTL caching, p95 read 409ms, approval p95 190ms, 0.00% error rate across 33,730 requests, docs/evidence/loadtest-report.md) | Phase 14 Load Testing & Performance Benchmarking complete & verified |
 | 15 | DONE | Tasks 15.1–15.7 complete (docs/architecture.md detailing all 13 subsystems, high-res visual topology docs/architecture.png, step-by-step 15-minute docs/demo-runbook.md, master evidence index docs/evidence/index.md, cleanup and submission readiness) | Phase 15 Final Documentation, Topology Diagram & Demo Runbook complete & verified |
 | 16 | OPTIONAL (T3) | | |
-| 17 | TODO (T2) | | |
+| 17 | DONE (T2) | Tasks 17.1–17.9 complete (Historical snapshot endpoints /api/state/history & /api/state/history/ticks, frontend TimeTravelSlider with stepping and read-only banner, scarcity policy triggering on cover < 3.0 days or tick >= 212, max-min regional fairness, 6 engine tests + 3 API tests passing, docs/evidence/phase_17_evidence.md) | Phase 17 Simulation Time-Travel & Scarcity Rationing complete & verified |
 | 18 | TODO (T2) | | |
 | 19 | TODO (T2) | | |
 | 20 | OPTIONAL (T3) | | |
@@ -156,7 +156,15 @@ Deadline: **Thu 2026-11-26**. Feature freeze: Wed 2026-11-25 18:00.
 - [x] 15.6 Submission metadata and documentation verification
 - [x] 15.7 Git commit history and phase traceability verified
 ### Phase 17 (T2)
-- [ ] 17.1  - [ ] 17.2  - [ ] 17.3  - [ ] 17.4  - [ ] 17.5  - [ ] 17.6  - [ ] 17.7  - [ ] 17.8  - [ ] 17.9
+- [x] 17.1 Historical simulation snapshot fetcher fetch_snapshot_by_tick in services/api/app/db.py
+- [x] 17.2 Available recorded ticks query fetch_available_ticks in services/api/app/db.py
+- [x] 17.3 Time-travel replay API router GET /api/state/history and /api/state/history/ticks with X-Historical-Replay
+- [x] 17.4 Frontend TimeTravelSlider component with scrubber, steppers, and Return to Live button
+- [x] 17.5 Interactive Network page integration with high-visibility amber read-only replay banner
+- [x] 17.6 Post-tick-212 scarcity rationing policy in services/engine/app/decision/optimizer.py
+- [x] 17.7 Max-min regional fairness formulation optimizing minimum station inventory coverage ratio
+- [x] 17.8 Unit and integration tests in test_phase17_scarcity.py and test_phase17_time_travel.py
+- [x] 17.9 Comprehensive evidence documentation in docs/evidence/phase_17_evidence.md
 ### Phase 18 (T2)
 - [ ] 18.1  - [ ] 18.2  - [ ] 18.3  - [ ] 18.4  - [ ] 18.5  - [ ] 18.6  - [ ] 18.7
 ### Phase 19 (T2)

@@ -1,17 +1,62 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLiveState } from "@/hooks/useLiveState";
 import { LoadingSkeleton } from "@/components/LoadingSkeleton";
 import { ErrorState } from "@/components/ErrorState";
 import { StationCard } from "@/components/network/StationCard";
 import { DepotCard } from "@/components/network/DepotCard";
 import { RoutesTable } from "@/components/network/RoutesTable";
+import { TimeTravelSlider } from "@/components/network/TimeTravelSlider";
 import { Fuel, Building2, GitFork } from "lucide-react";
+import { api } from "@/api/client";
+import type { WorldState } from "@/api/types";
 
 type TabType = "stations" | "depots" | "routes";
 
 export default function Network() {
   const { state, error, refetch, isLoading } = useLiveState();
   const [activeTab, setActiveTab] = useState<TabType>("stations");
+
+  // Phase 17: Simulation Time-Travel Replay State
+  const [isReplaying, setIsReplaying] = useState(false);
+  const [availableTicks, setAvailableTicks] = useState<number[]>([]);
+  const [selectedTick, setSelectedTick] = useState<number | null>(null);
+  const [historicalState, setHistoricalState] = useState<WorldState | null>(null);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+
+  useEffect(() => {
+    // Fetch available historical ticks
+    api<{ ticks: number[]; total: number }>("/state/history/ticks")
+      .then((res) => {
+        if (res && Array.isArray(res.ticks)) {
+          setAvailableTicks(res.ticks);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleSelectTick = async (tick: number) => {
+    setSelectedTick(tick);
+    setIsLoadingHistory(true);
+    try {
+      const snap = await api<WorldState>(`/state/history?tick=${tick}`);
+      setHistoricalState(snap);
+    } catch (err) {
+      // Keep previous or fallback
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  };
+
+  const handleToggleReplay = (enable: boolean) => {
+    setIsReplaying(enable);
+    if (enable) {
+      const initialTick = state?.tick ?? (availableTicks.length > 0 ? availableTicks[availableTicks.length - 1] : 0);
+      handleSelectTick(initialTick);
+    } else {
+      setHistoricalState(null);
+      setSelectedTick(null);
+    }
+  };
 
   if (isLoading && !state) {
     return (
@@ -34,14 +79,25 @@ export default function Network() {
     );
   }
 
-  const stations = state?.stations ?? [];
-  const depots = state?.depots ?? [];
-  const routes = state?.routes ?? [];
-  const allocations = state?.allocations_active ?? [];
-  const supplyUpcoming = state?.supply_upcoming ?? [];
+  const activeState = isReplaying && historicalState ? historicalState : state;
+  const stations = activeState?.stations ?? [];
+  const depots = activeState?.depots ?? [];
+  const routes = activeState?.routes ?? [];
+  const allocations = activeState?.allocations_active ?? [];
+  const supplyUpcoming = activeState?.supply_upcoming ?? [];
 
   return (
     <div className="space-y-6">
+      {/* Time-Travel Replay Scrubber */}
+      <TimeTravelSlider
+        isReplaying={isReplaying}
+        selectedTick={selectedTick}
+        availableTicks={availableTicks}
+        onSelectTick={handleSelectTick}
+        onToggleReplay={handleToggleReplay}
+        isLoading={isLoadingHistory}
+      />
+
       {/* Page Header and Tab Bar */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-panel-border/60 pb-4">
         <div>

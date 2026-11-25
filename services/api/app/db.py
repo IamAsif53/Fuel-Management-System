@@ -35,8 +35,9 @@ def get_engine() -> AsyncEngine:
         settings = get_settings()
         _engine = create_async_engine(
             settings.database_url,
-            pool_size=10,
-            max_overflow=5,
+            pool_size=15,
+            max_overflow=10,
+            pool_timeout=10,
             pool_pre_ping=True,
             connect_args={"server_settings": {"application_name": "fsip_api"}},
         )
@@ -164,6 +165,76 @@ async def fetch_latest_world_snapshot(session: AsyncSession) -> dict[str, Any] |
     if row is None:
         return None
     return snapshot_row_to_state(dict(row))
+
+
+async def fetch_snapshot_by_tick(
+    session: AsyncSession,
+    tick: int,
+    sim_run_id: int | str | None = None,
+) -> dict[str, Any] | None:
+    """Fetch a specific historical world snapshot by tick and optional sim_run_id."""
+    if sim_run_id is not None:
+        query = text(
+            """
+            SELECT id, sim_run_id, tick, sim_time, depots, stations, routes,
+                   events, supply, metrics, stale, degraded, created_at
+            FROM world_snapshots
+            WHERE sim_run_id = :sim_run_id AND tick = :tick
+            ORDER BY id DESC
+            LIMIT 1
+            """
+        )
+        params = {"sim_run_id": int(sim_run_id), "tick": int(tick)}
+    else:
+        query = text(
+            """
+            SELECT id, sim_run_id, tick, sim_time, depots, stations, routes,
+                   events, supply, metrics, stale, degraded, created_at
+            FROM world_snapshots
+            WHERE tick = :tick
+            ORDER BY id DESC
+            LIMIT 1
+            """
+        )
+        params = {"tick": int(tick)}
+
+    result = await session.execute(query, params)
+    row = result.mappings().first()
+    if row is None:
+        return None
+    return snapshot_row_to_state(dict(row))
+
+
+async def fetch_available_ticks(
+    session: AsyncSession,
+    sim_run_id: int | str | None = None,
+    limit: int = 500,
+) -> list[int]:
+    """Fetch recorded simulation ticks available for time-travel replay."""
+    if sim_run_id is not None:
+        query = text(
+            """
+            SELECT DISTINCT tick
+            FROM world_snapshots
+            WHERE sim_run_id = :sim_run_id
+            ORDER BY tick ASC
+            LIMIT :limit
+            """
+        )
+        params = {"sim_run_id": int(sim_run_id), "limit": limit}
+    else:
+        query = text(
+            """
+            SELECT DISTINCT tick
+            FROM world_snapshots
+            ORDER BY tick ASC
+            LIMIT :limit
+            """
+        )
+        params = {"limit": limit}
+
+    result = await session.execute(query, params)
+    return [int(r["tick"]) for r in result.mappings().all()]
 
 
 async def fetch_station_demand_history(
@@ -332,7 +403,7 @@ async def fetch_recommendations(session: AsyncSession, sim_run_id: int | None = 
                explanation, impact, objective
         FROM decisions
         {where_clause}
-        ORDER BY tick DESC, id DESC
+        ORDER BY id DESC
         """
     )
     res = await session.execute(q, params)
