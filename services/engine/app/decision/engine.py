@@ -220,9 +220,23 @@ class DecisionEngine:
         mode = getattr(store, "operating_mode", getattr(store, "engine_mode", self.settings.engine_mode)) or "advisory"
         is_autopilot = (str(mode).lower() == "autopilot")
 
+        # Domain SLO Error Budget enforcement: Target 99.0% (allowable unreliability 1.0%)
+        # Error budget remaining = (service_level - 0.99) / 0.01
+        sl = getattr(getattr(store, "metrics", None), "service_level", 1.0)
+        domain_slo_budget = (float(sl) - 0.99) / 0.01 if sl is not None else 1.0
+        slo_exhausted = domain_slo_budget < 0.25
+
+        if slo_exhausted:
+            if hasattr(store, "degraded_reasons"):
+                store.degraded_reasons.add("error_budget_exhausted")
+        else:
+            if hasattr(store, "degraded_reasons"):
+                store.degraded_reasons.discard("error_budget_exhausted")
+
         resilience_mode = str(getattr(store, "engine_mode", "NORMAL")).upper()
         auto_eligible = (
             is_autopilot
+            and not slo_exhausted
             and confidence >= self.settings.auto_approve_min_confidence
             and all(line.quantity <= self.settings.auto_approve_max_liters for line in plan_lines)
             and not is_stale
@@ -269,7 +283,15 @@ class DecisionEngine:
                 impact=impact_data,
                 plan_meta=explanation_payload,
             )
+            if slo_exhausted:
+                structured_explanation["warning"] = (
+                    "Autopilot frozen by error-budget policy (domain SLO remaining < 25%)"
+                )
+                structured_explanation["domain_slo_budget_remaining"] = round(domain_slo_budget, 4)
+
             initial_narrative = generate_decision_narrative(structured_explanation, tick=cur_tick)
+            if slo_exhausted:
+                initial_narrative += " Warning: Autopilot frozen by error-budget policy (domain SLO remaining < 25%)."
 
             dec = Decision(
                 sim_run_id=store.sim_run_id,

@@ -2,14 +2,17 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import time
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
 import orjson
 from fastapi import APIRouter, Request
 from fsip_common.logging import get_logger
+from sqlalchemy import text
 
 from app.config import get_settings
 from app.db import check_db_health, fetch_incidents, get_sessionmaker
@@ -126,7 +129,12 @@ async def system_status(request: Request) -> dict[str, Any]:
 
     current_availability = round(max(0.0, 1.0 - err_rate), 4)
 
-    return {
+    fuel_sl = 1.0
+    if isinstance(engine_health, dict) and "service_level" in engine_health:
+        fuel_sl = float(engine_health["service_level"])
+    fuel_budget_rem = round(max(0.0, min(1.0, (fuel_sl - 0.99) / 0.01)), 4)
+
+    res_payload: dict[str, Any] = {
         "overall": worst,
         "engine_mode": engine_mode,
         "components": comps,
@@ -162,11 +170,16 @@ async def system_status(request: Request) -> dict[str, Any]:
             {
                 "name": "Fuel Service Level",
                 "target": 0.99,
-                "current": 0.995,
-                "budget_remaining": 1.0,
+                "current": fuel_sl,
+                "budget_remaining": fuel_budget_rem,
             },
         ],
     }
+
+    if fuel_budget_rem < 0.25:
+        res_payload["slo_warning"] = "Autopilot frozen by error-budget policy (domain SLO remaining < 25%)"
+
+    return res_payload
 
 
 # ---------------------------------------------------------------- Alertmanager Webhook (Phase 11)
@@ -212,6 +225,55 @@ async def alertmanager_webhook(
         processed += 1
         log.info("alertmanager.alert_received", alert=alert_name, status=status, summary=summary)
 
+        sev = "CRITICAL" if labels.get("severity") == "critical" else "WARNING"
+        status_val = "OPEN" if status == "FIRING" else "RESOLVED"
+        fp = f"alertmanager:{alert_name}:{labels.get('service', 'system')}"
+
+        # Persist alert to database
+        try:
+            sessionmaker = get_sessionmaker()
+            async with sessionmaker() as session:
+                chk = await session.execute(
+                    text("SELECT id FROM alerts WHERE fingerprint = :fp LIMIT 1"),
+                    {"fp": fp},
+                )
+                existing_id = chk.scalar()
+                now_dt = datetime.now(UTC)
+                if existing_id:
+                    if status == "FIRING":
+                        await session.execute(
+                            text("UPDATE alerts SET severity = :sev, message = :msg, status = :status WHERE id = :id"),
+                            {"sev": sev, "msg": summary, "status": status_val, "id": existing_id},
+                        )
+                    else:
+                        await session.execute(
+                            text("UPDATE alerts SET status = 'RESOLVED', resolved_at = :now WHERE id = :id"),
+                            {"now": now_dt, "id": existing_id},
+                        )
+                else:
+                    await session.execute(
+                        text("""
+                            INSERT INTO alerts (
+                                fingerprint, category, severity, title, message,
+                                entity_type, entity_id, status, opened_at, data
+                            )
+                            VALUES (:fp, 'SYSTEM', :sev, :title, :msg, 'system', :srv, :status, :now, :data)
+                        """),
+                        {
+                            "fp": fp,
+                            "sev": sev,
+                            "title": f"SYSTEM: {alert_name}",
+                            "msg": summary,
+                            "srv": labels.get("service", "system"),
+                            "status": status_val,
+                            "now": now_dt,
+                            "data": json.dumps(labels),
+                        },
+                    )
+                await session.commit()
+        except Exception as exc:
+            log.warning("alertmanager.db_persist_failed", error=str(exc))
+
         if redis_client is not None:
             try:
                 now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
@@ -222,10 +284,10 @@ async def alertmanager_webhook(
                     "tick": "0",
                     "data": orjson.dumps({
                         "category": "SYSTEM",
-                        "severity": "CRITICAL" if labels.get("severity") == "critical" else "WARNING",
+                        "severity": sev,
                         "title": f"SYSTEM: {alert_name}",
                         "message": summary,
-                        "status": "OPEN" if status == "FIRING" else "RESOLVED",
+                        "status": status_val,
                         "labels": labels,
                     }).decode("utf-8"),
                 }

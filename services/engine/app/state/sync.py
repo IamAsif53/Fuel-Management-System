@@ -602,12 +602,21 @@ class SyncLoop:
             FSIP_CYCLE_DURATION_SECONDS.observe(duration)
 
         if self.store.metrics is not None:
+            sl = float(getattr(self.store.metrics, "service_level", 1.0))
             if FSIP_SERVICE_LEVEL is not None:
-                FSIP_SERVICE_LEVEL.set(float(getattr(self.store.metrics, "service_level", 1.0)))
+                FSIP_SERVICE_LEVEL.set(sl)
             if FSIP_UNMET_LITERS_TOTAL is not None:
                 FSIP_UNMET_LITERS_TOTAL.set(float(getattr(self.store.metrics, "unmet_demand_liters", 0.0)))
             if FSIP_ALLOCATION_FAILURES_TOTAL is not None:
                 FSIP_ALLOCATION_FAILURES_TOTAL.set(float(getattr(self.store.metrics, "allocation_failures", 0)))
+
+            # Domain SLO Error Budget enforcement: Target 99.0% (allowable unreliability 1.0%)
+            # Error budget remaining = (service_level - 0.99) / 0.01
+            slo_budget_rem = (sl - 0.99) / 0.01
+            if slo_budget_rem < 0.25:
+                self.store.degraded_reasons.add("error_budget_exhausted")
+            else:
+                self.store.degraded_reasons.discard("error_budget_exhausted")
 
         if FSIP_STATION_INVENTORY is not None and self.store.stations:
             for st in self.store.stations:

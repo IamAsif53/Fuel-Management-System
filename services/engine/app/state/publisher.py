@@ -84,6 +84,7 @@ class Publisher:
                 "engine_mode": store.engine_mode,
                 "tick": store.tick,
                 "sim_run_id": store.sim_run_id,
+                "service_level": float(getattr(store.metrics, "service_level", 1.0)) if store.metrics else 1.0,
                 "degraded": store.degraded,
                 "degraded_reasons": sorted(list(store.degraded_reasons)),
                 "updated_at": now_iso,
