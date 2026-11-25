@@ -61,6 +61,10 @@ jobs:
           --health-interval 5s
           --health-timeout 3s
           --health-retries 10
+      simulator:
+        image: asifmahmoud414/bup-fuel-supply-simulator:1.0.0
+        ports:
+          - 8005:8000
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

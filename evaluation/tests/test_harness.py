@@ -1,5 +1,6 @@
 """Tests for evaluation harness and CLI functionality (Task 12.2 / 12.3)."""
 
+import os
 from pathlib import Path
 
 import pytest
@@ -8,11 +9,23 @@ from evaluation.harness import EvaluationRunner, IsolatedSimClient
 from evaluation.scenario_loader import load_scenario
 
 SCENARIOS_DIR = Path(__file__).resolve().parent.parent / "scenarios"
+SIM_URL = os.environ.get("EVAL_SIM_URL", "http://localhost:8005")
+
+
+def is_sim_available(url: str = SIM_URL) -> bool:
+    try:
+        client = IsolatedSimClient(url)
+        res = client.request("/v1/health")
+        return isinstance(res, dict) and res.get("status") == "ok"
+    except Exception:
+        return False
 
 
 @pytest.fixture
 def sim_client():
-    return IsolatedSimClient("http://localhost:8005")
+    if not is_sim_available():
+        pytest.skip(f"Isolated simulator at {SIM_URL} is not reachable.")
+    return IsolatedSimClient(SIM_URL)
 
 
 def test_isolated_sim_connectivity(sim_client):
@@ -22,15 +35,19 @@ def test_isolated_sim_connectivity(sim_client):
 
 
 def test_runner_determinism_short():
-    runner = EvaluationRunner(sim_url="http://localhost:8005", out_dir=Path("evaluation/reports/test_det"))
+    if not is_sim_available():
+        pytest.skip(f"Isolated simulator at {SIM_URL} is not reachable.")
+    runner = EvaluationRunner(sim_url=SIM_URL, out_dir=Path("evaluation/reports/test_det"))
     sc = load_scenario("baseline", SCENARIOS_DIR)
     passed = runner.verify_determinism(sc, "heuristic", ticks=10)
     assert passed is True
 
 
 def test_runner_execution_and_reports():
+    if not is_sim_available():
+        pytest.skip(f"Isolated simulator at {SIM_URL} is not reachable.")
     out_dir = Path("evaluation/reports/test_exec")
-    runner = EvaluationRunner(sim_url="http://localhost:8005", out_dir=out_dir)
+    runner = EvaluationRunner(sim_url=SIM_URL, out_dir=out_dir)
     sc = load_scenario("baseline", SCENARIOS_DIR)
     res = runner.run_single(sc, "do_nothing", ticks_override=5)
 
