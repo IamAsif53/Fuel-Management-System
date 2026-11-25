@@ -1,0 +1,15 @@
+name: regional_blackout
+description: "Regional logistics blackout: all routes connected to Chattogram division disrupted for 48 ticks."
+ticks: 288
+seed: 12345
+events:
+  - type: route_disruption
+    start_tick: 20
+    duration_ticks: 48
+    surprise: false
+    parameters:
+      route_ids:
+        - route-patiya-karnaphuli
+        - route-patiya-coxsbazar
+        - route-gazipur-karnaphuli
+        - route-patiya-mirpur

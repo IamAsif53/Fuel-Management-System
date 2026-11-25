@@ -1,0 +1,38 @@
+name: combined_crisis
+description: "Multi-vector compounded crisis: demand spike, supply shortfall, simultaneous route disruptions, shipment delay, and station outage."
+ticks: 288
+seed: 12345
+events:
+  - type: demand_spike
+    start_tick: 20
+    duration_ticks: 96
+    surprise: false
+    parameters:
+      multiplier: 1.6
+  - type: supply_shortfall
+    start_tick: 30
+    duration_ticks: 1
+    surprise: false
+    parameters:
+      factor: 0.5
+  - type: route_disruption
+    start_tick: 40
+    duration_ticks: 48
+    surprise: false
+    parameters:
+      route_ids:
+        - route-patiya-karnaphuli
+        - route-gazipur-mirpur
+  - type: shipment_delay
+    start_tick: 50
+    duration_ticks: 1
+    surprise: false
+    parameters:
+      delay_ticks: 24
+  - type: station_outage
+    start_tick: 100
+    duration_ticks: 16
+    surprise: false
+    parameters:
+      station_ids:
+        - station-tongi

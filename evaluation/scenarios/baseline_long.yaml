@@ -1,0 +1,5 @@
+name: baseline_long
+description: "Long-horizon operational baseline extended past the scheduled supply horizon (600 ticks / 6.25 days)."
+ticks: 600
+seed: 12345
+events: []

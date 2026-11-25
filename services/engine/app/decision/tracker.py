@@ -192,7 +192,13 @@ class AllocationOutcomeTracker:
                     line.reason = (line.reason or "") + f" [FAILED: {fail_reason}]"
 
                     if FSIP_ALLOCATION_FAILURES_TOTAL is not None:
-                        FSIP_ALLOCATION_FAILURES_TOTAL.labels(fuel_type=line.fuel_type).inc()
+                        try:
+                            if getattr(FSIP_ALLOCATION_FAILURES_TOTAL, "_labelnames", None):
+                                FSIP_ALLOCATION_FAILURES_TOTAL.labels(fuel_type=line.fuel_type).inc()
+                            else:
+                                FSIP_ALLOCATION_FAILURES_TOTAL.inc()
+                        except Exception:
+                            pass
 
                     updated_count += 1
                     touched_decisions.add(line.decision_id)

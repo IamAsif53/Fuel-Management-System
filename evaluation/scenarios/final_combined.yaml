@@ -1,0 +1,31 @@
+name: final_combined
+description: "Exact scenario retrieved from pinned simulator image /app/scenarios/final_combined.yaml with seed 9001."
+ticks: 288
+seed: 9001
+events:
+  - type: demand_spike
+    start_tick: 8
+    duration_ticks: 16
+    surprise: false
+    parameters:
+      region_ids:
+        - region-dhaka
+      multiplier: 1.7
+  - type: shipment_delay
+    start_tick: 10
+    duration_ticks: 1
+    surprise: false
+    parameters:
+      depot_ids:
+        - depot-gazipur
+      fuel_types:
+        - DIESEL
+        - PETROL
+      delay_ticks: 8
+  - type: route_disruption
+    start_tick: 14
+    duration_ticks: 10
+    surprise: false
+    parameters:
+      route_ids:
+        - route-gazipur-mirpur

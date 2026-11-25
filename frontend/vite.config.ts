@@ -10,5 +10,10 @@ export default defineConfig({
   plugins: [react()],
   resolve: { alias: { "@": path.resolve(__dirname, "src") } },
   server: { port: 5173, proxy: { "/api": { target: apiTarget, changeOrigin: true } } },
-  test: { environment: "jsdom", globals: true, setupFiles: ["./src/test/setup.ts"] },
+  test: {
+    environment: "jsdom",
+    globals: true,
+    setupFiles: ["./src/test/setup.ts"],
+    exclude: ["**/node_modules/**", "**/dist/**", "**/e2e/**"],
+  },
 });

@@ -1,0 +1,5 @@
+name: baseline
+description: "Nominal operational conditions without disruptions over 72 hours (3 days)."
+ticks: 288
+seed: 12345
+events: []

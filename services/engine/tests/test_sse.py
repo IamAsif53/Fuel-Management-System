@@ -323,11 +323,11 @@ async def test_sse_keepalive_prevents_inactivity_reconnect(mock_callbacks):
         nonlocal session_count
         session_count += 1
         yield b": connected\n\n"
-        # Yield keepalive every 0.02s (within inactivity_timeout=0.04s)
+        # Yield keepalive every 0.04s (well within inactivity_timeout=0.15s, safe from Windows timer jitter)
         for _ in range(3):
-            await asyncio.sleep(0.02)
+            await asyncio.sleep(0.04)
             yield b": keepalive\n\n"
-        await asyncio.sleep(0.02)
+        await asyncio.sleep(0.04)
 
     transport = httpx.MockTransport(
         lambda req: httpx.Response(200, headers={"content-type": "text/event-stream"}, content=keepalive_stream())
@@ -340,12 +340,12 @@ async def test_sse_keepalive_prevents_inactivity_reconnect(mock_callbacks):
         on_notice=on_notice,
         on_connect=on_connect,
         client=client,
-        inactivity_timeout=0.04,
-        initial_backoff=0.01,
+        inactivity_timeout=0.15,
+        initial_backoff=0.02,
     )
 
     task = asyncio.create_task(listener.run())
-    await asyncio.sleep(0.07)
+    await asyncio.sleep(0.14)
     listener.stop()
     await task
     await client.aclose()

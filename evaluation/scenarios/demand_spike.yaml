@@ -1,0 +1,13 @@
+name: demand_spike
+description: "Simulator-bundled demand spike: Dhaka division demand surge (x1.8) at tick 8 for 12 ticks."
+ticks: 288
+seed: 12345
+events:
+  - type: demand_spike
+    start_tick: 8
+    duration_ticks: 12
+    surprise: false
+    parameters:
+      region_ids:
+        - region-dhaka
+      multiplier: 1.8

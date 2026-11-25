@@ -1,0 +1,23 @@
+name: supply_disruption
+description: "Simulator-bundled supply disruption: Gazipur DIESEL delay (+8 ticks) at tick 6 and Patiya shortfall (factor 0.6) at tick 10."
+ticks: 288
+seed: 12345
+events:
+  - type: shipment_delay
+    start_tick: 6
+    duration_ticks: 1
+    surprise: false
+    parameters:
+      depot_ids:
+        - depot-gazipur
+      fuel_types:
+        - DIESEL
+      delay_ticks: 8
+  - type: supply_shortfall
+    start_tick: 10
+    duration_ticks: 1
+    surprise: false
+    parameters:
+      depot_ids:
+        - depot-patiya
+      factor: 0.6
