@@ -106,6 +106,45 @@ export default function Recommendations() {
     return () => window.removeEventListener("fsip-event", handleEvent);
   }, [state?.sim_run_id]);
 
+  // Phase 19: Operator Hotkeys (A to Approve, X to Reject)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Safety guard 1: Do not trigger inside text inputs, textareas, selects, or editable fields
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+
+      // Safety guard 2: Do not trigger while a modal or dialog is open
+      if (rejectingDecision || pendingApproval || showManualModal) {
+        return;
+      }
+
+      // Safety guard 3: Ignore modified keys (Ctrl, Alt, Meta)
+      if (e.ctrlKey || e.metaKey || e.altKey) {
+        return;
+      }
+
+      const activeRec = recommendations[0];
+      if (!activeRec) return;
+
+      if (e.key.toLowerCase() === "a") {
+        e.preventDefault();
+        handleApproveClick(activeRec);
+      } else if (e.key.toLowerCase() === "x") {
+        e.preventDefault();
+        handleRejectClick(activeRec);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [recommendations, rejectingDecision, pendingApproval, showManualModal]);
+
   const toggleLine = (decisionId: number, lineId: number) => {
     setSelectedLines((prev) => ({
       ...prev,
@@ -529,6 +568,7 @@ export default function Recommendations() {
                     className="flex items-center gap-1.5 rounded-lg border border-bg-border bg-bg-raised px-3 py-1.5 text-xs font-semibold text-ink-muted hover:border-risk-critical/40 hover:text-risk-critical transition-colors"
                   >
                     <XCircle size={14} />
+                    <span className="font-mono text-[10px] opacity-70 bg-bg px-1 rounded">X</span>
                     Reject
                   </button>
 
@@ -548,6 +588,7 @@ export default function Recommendations() {
                     )}
                   >
                     <CheckCircle2 size={14} className={clsx(isActing && "animate-spin")} />
+                    <span className="font-mono text-[10px] bg-white/20 px-1 rounded">A</span>
                     Approve & Dispatch
                   </button>
                 </div>

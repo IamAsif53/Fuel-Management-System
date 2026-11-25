@@ -200,6 +200,18 @@ services:
     restart: unless-stopped
     ports: ["${NODE_EXPORTER_HOST_PORT:-9100}:9100"]
 
+  mailpit:
+    image: axllent/mailpit:v1.21
+    container_name: fsip-mailpit
+    profiles: ["notify", "full"]
+    restart: unless-stopped
+    ports:
+      - "${MAILPIT_SMTP_PORT:-1025}:1025"
+      - "${MAILPIT_WEB_PORT:-8025}:8025"
+    environment:
+      MP_MAX_MESSAGES: 500
+      MP_SMTP_AUTH_ACCEPT_ANY: 1
+
 volumes:
   pgdata: {}
   redisdata: {}

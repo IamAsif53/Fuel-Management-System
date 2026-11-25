@@ -21,6 +21,7 @@ import { LoadingSkeleton } from "@/components/LoadingSkeleton";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { ExplainPanel } from "@/components/ExplainPanel";
+import { exportToCSV, exportToJSON } from "@/lib/export";
 
 export default function Decisions() {
   const { state } = useLiveState();
@@ -218,9 +219,25 @@ export default function Decisions() {
           </select>
         </div>
 
-        <div className="ml-auto text-xs text-ink-muted">
-          Showing <span className="font-semibold text-ink">{decisions.length}</span> of{" "}
-          <span className="font-semibold text-ink">{totalCount}</span> entries
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            onClick={() => exportToCSV("fsip-decisions", decisions)}
+            className="rounded border border-bg-border bg-bg-raised px-2.5 py-1 text-xs text-ink hover:bg-bg-border transition-colors"
+            title="Export filtered decisions to CSV"
+          >
+            Export CSV
+          </button>
+          <button
+            onClick={() => exportToJSON("fsip-decisions", decisions)}
+            className="rounded border border-bg-border bg-bg-raised px-2.5 py-1 text-xs text-ink hover:bg-bg-border transition-colors"
+            title="Export filtered decisions to JSON"
+          >
+            Export JSON
+          </button>
+          <div className="text-xs text-ink-muted ml-2">
+            Showing <span className="font-semibold text-ink">{decisions.length}</span> of{" "}
+            <span className="font-semibold text-ink">{totalCount}</span> entries
+          </div>
         </div>
       </div>
 

@@ -31,6 +31,7 @@ from app.routers import (
     system_router,
 )
 from app.routers.contingency import router as contingency_router
+from app.routers.notifications import router as notifications_router
 
 log = get_logger()
 
@@ -174,3 +175,4 @@ app.include_router(stream_router)
 app.include_router(entities_router)
 app.include_router(system_router)
 app.include_router(contingency_router)
+app.include_router(notifications_router)

@@ -4,6 +4,7 @@ import { Header } from "./Header";
 import { Sidebar } from "./Sidebar";
 import { DegradedBanner } from "./DegradedBanner";
 import { ToastContainer } from "@/components/Toast";
+import { CommandPalette } from "@/components/CommandPalette";
 
 export function AppLayout() {
   const { state, connection } = useLiveState();
@@ -37,6 +38,9 @@ export function AppLayout() {
 
       {/* Real-time Toast Notifications */}
       <ToastContainer />
+
+      {/* Global Command Palette (Ctrl+K) */}
+      <CommandPalette />
 
       {/* Release Version Footer (Phase 13) */}
       <footer

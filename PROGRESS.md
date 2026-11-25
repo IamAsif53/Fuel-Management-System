@@ -25,7 +25,7 @@ Format for notes: `- [x] 1.3 SimClient done. Note: <deviation or measured result
 | 16 | OPTIONAL (T3) | | |
 | 17 | DONE (T2) | Tasks 17.1–17.9 complete (Historical snapshot endpoints /api/state/history & /api/state/history/ticks, frontend TimeTravelSlider with stepping and read-only banner, scarcity policy triggering on cover < 3.0 days or tick >= 212, max-min regional fairness, 6 engine tests + 3 API tests passing, docs/evidence/phase_17_evidence.md) | Phase 17 Simulation Time-Travel & Scarcity Rationing complete & verified |
 | 18 | DONE (T2) | Tasks 18.1–18.7 complete (N-1 contingency evaluator GET /api/contingency/n-1 across depots/routes/supply, SPOF detection, network resilience score, split-conformal prediction intervals GET /api/contingency/conformal with 90% empirical coverage, demand suppression modeling POST /api/contingency/demand-suppression, Risk dashboard view mode integration, 3 API tests passing, docs/evidence/phase_18_evidence.md) | Phase 18 Advanced Contingency & Uncertainty Analytics complete & verified |
-| 19 | TODO (T2) | | |
+| 19 | DONE (T2) | Tasks 19.1–19.7 complete (Mailpit SMTP container in compose under profile notify, NotificationService in services/api/app/services/notifier.py for P1 alerts, CommandPalette Ctrl+K modal overlay, operator hotkeys A/X with input & dialog safety guards, CSV/JSON data export utilities, 4 API tests passing, docs/evidence/phase_19_evidence.md) | Phase 19 Operator Ergonomics & Notification Escalation complete & verified |
 | 20 | OPTIONAL (T3) | | |
 
 Deadline: **Thu 2026-11-26**. Feature freeze: Wed 2026-11-25 18:00.
@@ -174,6 +174,12 @@ Deadline: **Thu 2026-11-26**. Feature freeze: Wed 2026-11-25 18:00.
 - [x] 18.6 Risk dashboard integration with N-1 matrix and Conformal prediction tabs in frontend/src/pages/Risk.tsx
 - [x] 18.7 Unit and integration tests in test_phase18_contingency.py and docs/evidence/phase_18_evidence.md
 ### Phase 19 (T2)
-- [ ] 19.1  - [ ] 19.2  - [ ] 19.3  - [ ] 19.4  - [ ] 19.5  - [ ] 19.6  - [ ] 19.7
+- [x] 19.1 Mailpit SMTP service definition in docker-compose.yml under profile notify
+- [x] 19.2 NotificationService implementation in services/api/app/services/notifier.py for P1 critical alerts
+- [x] 19.3 Notification router endpoints POST /api/notifications/test and GET /api/notifications/history
+- [x] 19.4 Global Command Palette (Ctrl+K) in frontend/src/components/CommandPalette.tsx
+- [x] 19.5 Single-keystroke approval hotkeys (A to approve, X to reject) with safety guards in Recommendations.tsx
+- [x] 19.6 Operational data export (CSV & JSON) utilities in frontend/src/lib/export.ts integrated into Decisions.tsx and Risk.tsx
+- [x] 19.7 Unit tests in test_phase19_notifications.py and comprehensive evidence in docs/evidence/phase_19_evidence.md
 ### Phase 20 (T3)
 - [ ] 20.1  - [ ] 20.2  - [ ] 20.3  - [ ] 20.4  - [ ] 20.5  - [ ] 20.6
