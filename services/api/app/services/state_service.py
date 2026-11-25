@@ -14,9 +14,6 @@ from app.db import fetch_latest_world_snapshot
 
 log = get_logger()
 
-_CACHED_STATE: tuple[dict[str, Any], int, bool, str] | None = None
-_CACHED_STATE_EXPIRY: float = 0.0
-
 
 async def get_current_state(
     redis_client: aioredis.Redis | None,
@@ -27,11 +24,6 @@ async def get_current_state(
     Returns:
         tuple of (state_dict, tick, is_degraded, etag)
     """
-    global _CACHED_STATE, _CACHED_STATE_EXPIRY
-    now = time.time()
-    if _CACHED_STATE is not None and now < _CACHED_STATE_EXPIRY:
-        return _CACHED_STATE
-
     # 1. Try Redis live snapshot
     if redis_client is not None:
         try:
@@ -42,9 +34,7 @@ async def get_current_state(
                 sim_run_id = int(state.get("sim_run_id", 0))
                 is_degraded = bool(state.get("degraded", False))
                 etag = f'"{sim_run_id}-{tick}"'
-                _CACHED_STATE = (state, tick, is_degraded, etag)
-                _CACHED_STATE_EXPIRY = now + 1.0
-                return _CACHED_STATE
+                return state, tick, is_degraded, etag
         except Exception as exc:
             log.warning("api.state.redis_read_failed_falling_back_to_db", error=str(exc))
 

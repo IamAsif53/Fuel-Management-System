@@ -513,6 +513,14 @@ class DecisionEngine:
                 raise DecisionNotFoundError(decision_id)
 
             cur_tick = getattr(current_state, "tick", dec.tick) if current_state else dec.tick
+            cur_sim_run_id = getattr(current_state, "sim_run_id", dec.sim_run_id) if current_state else dec.sim_run_id
+
+            if current_state and cur_sim_run_id and dec.sim_run_id != cur_sim_run_id:
+                raise DecisionError(
+                    "SIM_RUN_MISMATCH",
+                    f"Decision {decision_id} belongs to past simulation run {dec.sim_run_id}, but active run is {cur_sim_run_id}",
+                    status_code=409,
+                )
 
             # Expiry check
             if dec.expires_at_tick is not None and cur_tick >= dec.expires_at_tick:

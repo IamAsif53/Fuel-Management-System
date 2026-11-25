@@ -445,6 +445,10 @@ async def approve_decision(decision_id: int, req: ApproveDecisionRequest):
         ) from exc
     except DecisionError as exc:
         raise HTTPException(status_code=exc.status_code, detail={"code": exc.code, "message": exc.message}) from exc
+    except Exception as exc:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail={"code": "INTERNAL_ERROR", "message": f"{type(exc).__name__}: {exc}"}) from exc
 
     return {
         "status": "ok",

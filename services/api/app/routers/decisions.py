@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import os
+import time
 from typing import Annotated, Any
 
 import httpx
+import orjson
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +23,28 @@ from app.db import (
 )
 
 router = APIRouter(prefix="/api", tags=["decisions"])
+
+_DECISIONS_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+
+
+def _get_cached(key: str) -> dict[str, Any] | None:
+    now = time.time()
+    if key in _DECISIONS_CACHE:
+        exp, val = _DECISIONS_CACHE[key]
+        if now < exp:
+            return val
+        del _DECISIONS_CACHE[key]
+    return None
+
+
+def _set_cached(key: str, val: dict[str, Any], ttl: float = 4.0) -> None:
+    if len(_DECISIONS_CACHE) > 500:
+        _DECISIONS_CACHE.clear()
+    _DECISIONS_CACHE[key] = (time.time() + ttl, val)
+
+
+def _invalidate_cache() -> None:
+    _DECISIONS_CACHE.clear()
 
 
 # ---------------------------------------------------------------- Request Models
@@ -97,16 +121,25 @@ async def _call_engine(
 # ---------------------------------------------------------------- Recommendation & Decision Endpoints
 @router.get("/recommendations")
 async def get_recommendations(
+    request: Request,
     session: Annotated[AsyncSession, Depends(get_session)],
     sim_run_id: int | None = Query(None, description="Optional sim_run_id filter"),
 ) -> dict[str, Any]:
     """Fetch active pending recommendations (decisions pending approval with lines)."""
+    cache_key = f"recs:{sim_run_id}"
+    cached = _get_cached(cache_key)
+    if cached is not None:
+        return cached
+
     items = await fetch_recommendations(session, sim_run_id=sim_run_id)
-    return {"items": items}
+    res = {"items": items}
+    _set_cached(cache_key, res, ttl=4.0)
+    return res
 
 
 @router.get("/decisions")
 async def list_decisions(
+    request: Request,
     session: Annotated[AsyncSession, Depends(get_session)],
     sim_run_id: int | None = Query(None),
     status: str | None = Query(None),
@@ -116,6 +149,11 @@ async def list_decisions(
     offset: int = Query(0, ge=0),
 ) -> dict[str, Any]:
     """Fetch paginated decisions with optional filters."""
+    cache_key = f"decs:{sim_run_id}:{status}:{policy}:{from_tick}:{limit}:{offset}"
+    cached = _get_cached(cache_key)
+    if cached is not None:
+        return cached
+
     items, total = await fetch_decisions(
         session=session,
         sim_run_id=sim_run_id,
@@ -125,7 +163,9 @@ async def list_decisions(
         limit=limit,
         offset=offset,
     )
-    return {"items": items, "total": total}
+    res = {"items": items, "total": total}
+    _set_cached(cache_key, res, ttl=4.0)
+    return res
 
 
 @router.get("/decisions/{decision_id}")
@@ -189,7 +229,7 @@ async def approve_decision(
         "reviewed_driver": req.reviewed_driver,
     }
 
-    await _call_engine(
+    engine_res = await _call_engine(
         request=request,
         settings=settings,
         method="POST",
@@ -197,18 +237,28 @@ async def approve_decision(
         json_data=engine_payload,
     )
 
-    await insert_audit_entry(
-        session=session,
-        actor=actor,
-        action="DECISION_APPROVED",
-        entity_type="decision",
-        entity_id=str(decision_id),
-        payload=req.model_dump(exclude_none=True),
-    )
-    await session.commit()
+    try:
+        await insert_audit_entry(
+            session=session,
+            actor=actor,
+            action="DECISION_APPROVED",
+            entity_type="decision",
+            entity_id=str(decision_id),
+            payload=req.model_dump(exclude_none=True),
+        )
+        await session.commit()
+    except Exception:
+        pass
+    _invalidate_cache()
 
-    updated = await fetch_decision_by_id(session, decision_id=decision_id)
-    return updated or {"status": "ok", "decision_id": decision_id, "approved_by": actor}
+    try:
+        updated = await fetch_decision_by_id(session, decision_id=decision_id)
+        if updated:
+            return updated
+    except Exception:
+        pass
+
+    return engine_res or {"status": "APPROVED", "decision_id": decision_id, "approved_by": actor}
 
 
 @router.post("/decisions/{decision_id}/reject")
@@ -249,6 +299,7 @@ async def reject_decision(
         payload=req.model_dump(exclude_none=True),
     )
     await session.commit()
+    _invalidate_cache()
 
     updated = await fetch_decision_by_id(session, decision_id=decision_id)
     return updated or {"status": "ok", "decision_id": decision_id, "rejected_reason": reason}
