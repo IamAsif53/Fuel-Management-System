@@ -466,6 +466,7 @@ async def insert_audit_entry(
 async def fetch_audit_logs(
     session: AsyncSession,
     action: str | None = None,
+    action_prefix: str | None = None,
     actor: str | None = None,
     limit: int = 50,
     offset: int = 0,
@@ -476,6 +477,9 @@ async def fetch_audit_logs(
     if action:
         conditions.append("action = :action")
         params["action"] = action
+    elif action_prefix:
+        conditions.append("action LIKE :prefix")
+        params["prefix"] = f"{action_prefix}%"
     if actor:
         conditions.append("actor = :actor")
         params["actor"] = actor

@@ -9,7 +9,7 @@ import RiskPage from "@/pages/Risk";
 import AlertsPage from "@/pages/Alerts";
 import WhatIfPage from "@/pages/WhatIf";
 import AssistantPage from "@/pages/Assistant";
-import { PlaceholderPage } from "@/pages/PlaceholderPage";
+import ControlPage from "@/pages/Control";
 
 export default function App() {
   return (
@@ -32,16 +32,7 @@ export default function App() {
         <Route path="/decisions" element={<Decisions />} />
         <Route path="/whatif" element={<WhatIfPage />} />
         <Route path="/assistant" element={<AssistantPage />} />
-        <Route
-          path="/control"
-          element={
-            <PlaceholderPage
-              title="Simulator Controls (Demo)"
-              phase={10}
-              description="Interactive simulation stepping, pause/resume, chaos fault injection, and crisis preset execution."
-            />
-          }
-        />
+        <Route path="/control" element={<ControlPage />} />
 
         {/* Catch-all fallback */}
         <Route path="*" element={<Navigate to="/overview" replace />} />

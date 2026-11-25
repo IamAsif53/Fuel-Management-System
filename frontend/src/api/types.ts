@@ -542,4 +542,44 @@ export interface SummaryResponse {
   stats: SummaryStats;
 }
 
+export interface ControlPreset {
+  title: string;
+  description: string;
+  events: Array<{
+    type: string;
+    duration_ticks: number;
+    parameters: Record<string, unknown>;
+  }>;
+}
+
+export interface ControlStatus {
+  demo_controls_enabled: boolean;
+  sim_status: "RUNNING" | "PAUSED" | "STOPPED" | "DISABLED" | string;
+  tick: number;
+  sim_time: string | null;
+  scenario_id?: string;
+  active_events_count: number;
+  active_events: Array<{
+    id: number;
+    type: string;
+    start_tick: number;
+    end_tick: number;
+    status: string;
+    parameters: Record<string, unknown>;
+  }>;
+  active_faults?: Array<Record<string, unknown>>;
+  presets: Record<string, ControlPreset>;
+  faults: Record<string, string>;
+}
+
+export interface ControlLogEntry {
+  id: number;
+  at: string;
+  actor: string;
+  action: string;
+  status: "SUCCESS" | "FAILED" | string;
+  result: string;
+  details?: Record<string, unknown>;
+}
+
 

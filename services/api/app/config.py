@@ -24,6 +24,7 @@ class ApiSettings(BaseServiceSettings):
     llm_timeout_sec: float = 8.0
     breakglass_dir: str = "/data/breakglass"
     internal_alertmanager_token: str = "change-me-internal"
+    demo_controls: bool = True
 
 
 @lru_cache
