@@ -237,13 +237,15 @@ async def approve_decision(
     )
 
     try:
+        is_awaiting = engine_res.get("status") == "AWAITING_SECOND_APPROVAL"
+        action_name = "DECISION_FIRST_APPROVAL" if is_awaiting else "DECISION_APPROVED"
         await insert_audit_entry(
             session=session,
             actor=actor,
-            action="DECISION_APPROVED",
+            action=action_name,
             entity_type="decision",
             entity_id=str(decision_id),
-            payload=req.model_dump(exclude_none=True),
+            payload={**req.model_dump(exclude_none=True), "status": engine_res.get("status")},
         )
         await session.commit()
     except Exception:

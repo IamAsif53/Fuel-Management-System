@@ -257,6 +257,120 @@ async def test_control_mode_and_policy(auth_headers):
 
 
 @pytest.mark.asyncio
+async def test_control_mode_stale_rejection(auth_headers):
+    """Verify /api/control/mode returns 409 STALE_DATA if engine rejects enabling autopilot."""
+    from fastapi import HTTPException
+
+    mock_session = AsyncMock()
+
+    with (
+        patch("app.routers.decisions._call_engine", new_callable=AsyncMock) as mock_call,
+        patch("app.routers.decisions.insert_audit_entry", new_callable=AsyncMock) as mock_audit,
+    ):
+        mock_call.side_effect = HTTPException(
+            status_code=409,
+            detail={
+                "code": "STALE_DATA",
+                "message": "Cannot enable Autopilot when data is stale or system is degraded",
+            },
+        )
+
+        async def override_get_session():
+            yield mock_session
+
+        app.dependency_overrides[get_session] = override_get_session
+        try:
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+                res = await client.post("/api/control/mode", headers=auth_headers, json={"mode": "autopilot"})
+                assert res.status_code == 409
+                data = res.json()
+                assert data["detail"]["code"] == "STALE_DATA"
+                # Rejected call must not record audit entry
+                assert mock_audit.await_count == 0
+        finally:
+            app.dependency_overrides.pop(get_session, None)
+
+
+@pytest.mark.asyncio
+async def test_approve_decision_four_eyes(auth_headers):
+    """Verify four-eyes approval status progression and 403 on duplicate actor."""
+    from fastapi import HTTPException
+
+    mock_session = AsyncMock()
+
+    with (
+        patch("app.routers.decisions.fetch_decision_by_id", new_callable=AsyncMock) as mock_fetch,
+        patch("app.routers.decisions._call_engine", new_callable=AsyncMock) as mock_call,
+        patch("app.routers.decisions.insert_audit_entry", new_callable=AsyncMock) as mock_audit,
+    ):
+        mock_fetch.side_effect = [
+            {
+                "id": 88,
+                "status": "PENDING_APPROVAL",
+                "lines": [{"id": 1, "quantity": 8000.0}],
+                "confidence": 0.9,
+                "degraded": False,
+            },
+            {
+                "id": 88,
+                "status": "AWAITING_SECOND_APPROVAL",
+                "lines": [{"id": 1, "quantity": 8000.0}],
+                "confidence": 0.9,
+                "degraded": False,
+            },
+            {
+                "id": 88,
+                "status": "AWAITING_SECOND_APPROVAL",
+                "lines": [{"id": 1, "quantity": 8000.0}],
+                "confidence": 0.9,
+                "degraded": False,
+            },
+        ]
+        # First approval
+        mock_call.return_value = {
+            "status": "AWAITING_SECOND_APPROVAL",
+            "decision_id": 88,
+            "decision_status": "AWAITING_SECOND_APPROVAL",
+            "approved_by": "operator",
+        }
+
+        async def override_get_session():
+            yield mock_session
+
+        app.dependency_overrides[get_session] = override_get_session
+        try:
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+                res = await client.post(
+                    "/api/decisions/88/approve",
+                    headers=auth_headers,
+                    json={"reviewed_driver": True},
+                )
+                assert res.status_code == 200
+                assert res.json()["status"] == "AWAITING_SECOND_APPROVAL"
+
+                # Duplicate approval by same user raises 403
+                mock_call.side_effect = HTTPException(
+                    status_code=403,
+                    detail={
+                        "code": "FOUR_EYES_SAME_ACTOR",
+                        "message": "Second approval must be by different operator",
+                    },
+                )
+                res_dup = await client.post(
+                    "/api/decisions/88/approve",
+                    headers=auth_headers,
+                    json={"reviewed_driver": True},
+                )
+                assert res_dup.status_code == 403
+                assert res_dup.json()["detail"]["code"] == "FOUR_EYES_SAME_ACTOR"
+                assert mock_audit.await_count >= 1
+        finally:
+            app.dependency_overrides.pop(get_session, None)
+
+
+@pytest.mark.asyncio
 async def test_manual_allocation(auth_headers):
     """Verify /api/manual-allocation dispatches manual line and records audit log."""
     mock_session = AsyncMock()

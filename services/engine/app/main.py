@@ -524,6 +524,33 @@ async def control_mode(req: EngineModeRequest):
     dec_engine: DecisionEngine = getattr(app.state, "decision_engine", None)
     publisher: Publisher = getattr(app.state, "publisher", None)
 
+    # 21_API_CONTRACTS.md §2.8 & 05_INTELLIGENCE_DESIGN.md §4.5:
+    # 409 STALE_DATA if turning autopilot on while degraded, stale, or non-NORMAL engine mode
+    if mode == "autopilot" and store:
+        is_stale = bool(getattr(store, "stale", False))
+        is_degraded = bool(getattr(store, "degraded", False))
+        resilience_mode = str(getattr(store, "engine_mode", "NORMAL")).upper()
+        degraded_reasons = set(getattr(store, "degraded_reasons", set()))
+
+        if is_stale or is_degraded or bool(degraded_reasons) or resilience_mode != "NORMAL":
+            reasons: list[str] = []
+            if is_stale:
+                reasons.append("data is stale")
+            if is_degraded or degraded_reasons:
+                reasons_str = f" ({', '.join(sorted(degraded_reasons))})" if degraded_reasons else ""
+                reasons.append(f"system is degraded{reasons_str}")
+            if resilience_mode != "NORMAL":
+                reasons.append(f"engine mode is {resilience_mode} (must be NORMAL)")
+
+            reason_msg = "; ".join(reasons)
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "STALE_DATA",
+                    "message": f"Cannot enable Autopilot when data is stale or system is degraded: {reason_msg}",
+                },
+            )
+
     if store:
         store.operating_mode = mode
     if dec_engine:
@@ -536,8 +563,25 @@ async def control_mode(req: EngineModeRequest):
             sim_run_id=store.sim_run_id,
             tick=store.tick,
         )
+        # Immediately update Redis live snapshot so frontend header reflects mode
+        try:
+            if hasattr(publisher, "publish_state"):
+                await publisher.publish_state(store)
+        except Exception as exc:
+            log.warning("autopilot.snapshot_update_failed", error=str(exc))
 
-    return {"status": "ok", "mode": mode}
+    auto_approved_count = 0
+    if mode == "autopilot" and dec_engine and store:
+        try:
+            auto_approved_count = await dec_engine.evaluate_autopilot_pending(store)
+            if auto_approved_count == 0:
+                dec = await dec_engine.plan_now(store)
+                if dec and dec.status == "APPROVED":
+                    auto_approved_count += 1
+        except Exception as exc:
+            log.warning("autopilot.immediate_evaluation_failed", error=str(exc))
+
+    return {"status": "ok", "mode": mode, "operating_mode": mode, "auto_approved": auto_approved_count}
 
 
 @app.post("/engine/control/policy", dependencies=[Depends(require_internal)])

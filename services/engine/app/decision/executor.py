@@ -16,7 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import EngineSettings, get_settings
-from app.db.models import Decision, DecisionLine
+from app.db.models import AuditLog, Decision, DecisionLine
 from app.sim.client import (
     SimClient,
     SimDomainError,
@@ -123,6 +123,24 @@ class Executor:
             db_dec = await session.get(Decision, decision.id)
             if db_dec:
                 db_dec.status = decision_status
+
+            # Record audit log entry for automatic / manual allocation execution
+            audit_entry = AuditLog(
+                actor=decision.approved_by or "autopilot",
+                action="ALLOCATION_EXECUTED",
+                entity_type="decision",
+                entity_id=str(decision.id),
+                payload={
+                    "decision_id": decision.id,
+                    "sim_run_id": decision.sim_run_id,
+                    "status": decision_status,
+                    "submitted_lines": submitted_count,
+                    "deferred_lines": deferred_count,
+                    "failed_lines": failed_count,
+                    "total_lines": len(lines),
+                },
+            )
+            session.add(audit_entry)
 
             # Update lines
             line_ids = [ln.id for ln in lines if ln.id is not None]

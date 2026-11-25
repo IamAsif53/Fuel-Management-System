@@ -10,6 +10,7 @@ import {
   ShieldAlert,
   Bot,
   UserCheck,
+  Users,
 } from "lucide-react";
 import clsx from "clsx";
 import {
@@ -417,6 +418,12 @@ export default function Recommendations() {
                       Degraded State
                     </span>
                   )}
+                  {rec.status === "AWAITING_SECOND_APPROVAL" && (
+                    <span className="flex items-center gap-1 rounded bg-purple-500/15 text-purple-400 px-2 py-0.5 text-[11px] font-semibold">
+                      <Users size={12} />
+                      Needs Supervisor Approval (1/2)
+                    </span>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-3">
@@ -447,6 +454,26 @@ export default function Recommendations() {
                 <div className="mt-3 rounded-lg bg-bg-raised/60 p-3 text-xs leading-relaxed text-ink-muted">
                   <span className="font-semibold text-ink">Rationale: </span>
                   {rec.narrative}
+                </div>
+              )}
+
+              {/* Autopilot Status Feedback */}
+              {rec.explanation?.autopilot_blocked_reason && (
+                <div className="mt-2.5 flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs text-amber-200">
+                  <ShieldAlert size={15} className="mt-0.5 shrink-0 text-amber-400" />
+                  <div>
+                    <span className="font-semibold text-amber-300">Autopilot Held (Operator Review Required): </span>
+                    <span>{rec.explanation.autopilot_blocked_reason}</span>
+                  </div>
+                </div>
+              )}
+              {!rec.explanation?.autopilot_blocked_reason && operatingMode === "autopilot" && rec.status === "PENDING_APPROVAL" && (
+                <div className="mt-2.5 flex items-center gap-2 rounded-lg border border-brand/30 bg-brand/10 p-2.5 text-xs text-brand">
+                  <Bot size={15} className="shrink-0" />
+                  <span>
+                    <span className="font-semibold">Autopilot Active: </span>
+                    Eligible recommendation queued for autonomous cycle dispatch.
+                  </span>
                 </div>
               )}
 

@@ -388,7 +388,7 @@ async def fetch_decision_by_id(session: AsyncSession, decision_id: int) -> dict[
 
 async def fetch_recommendations(session: AsyncSession, sim_run_id: int | None = None) -> list[dict[str, Any]]:
     """Fetch active pending recommendations (decisions pending approval with lines)."""
-    conditions = ["status IN ('PENDING_APPROVAL', 'PROPOSED')"]
+    conditions = ["status IN ('PENDING_APPROVAL', 'PROPOSED', 'AWAITING_SECOND_APPROVAL')"]
     params: dict[str, Any] = {}
     if sim_run_id is not None:
         conditions.append("sim_run_id = :sim_run_id")

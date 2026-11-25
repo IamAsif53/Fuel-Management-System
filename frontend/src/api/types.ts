@@ -284,6 +284,18 @@ export interface DecisionOutcome {
   created_at?: string;
 }
 
+export interface AutopilotEligibility {
+  eligible: boolean;
+  blocked_reasons: string[];
+  requires_four_eyes?: boolean;
+}
+
+export interface DecisionExplanation {
+  autopilot_blocked_reason?: string;
+  autopilot_eligibility?: AutopilotEligibility;
+  [key: string]: any;
+}
+
 export interface Decision {
   id: number;
   sim_run_id?: number | null;
@@ -302,7 +314,7 @@ export interface Decision {
   rejected_reason?: string | null;
   expires_at_tick?: number | null;
   created_at?: string;
-  explanation?: Record<string, unknown> | null;
+  explanation?: DecisionExplanation | Record<string, any> | null;
   impact?: Record<string, unknown> | null;
   objective?: Record<string, unknown> | null;
   lines: DecisionLine[];

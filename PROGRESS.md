@@ -186,10 +186,11 @@ Deadline: **Thu 2026-11-26**. Feature freeze: Wed 2026-11-25 18:00.
 - [x] 19.5 Single-keystroke approval hotkeys (A to approve, X to reject) with safety guards in Recommendations.tsx
 - [x] 19.6 Operational data export (CSV & JSON) utilities in frontend/src/lib/export.ts integrated into Decisions.tsx and Risk.tsx
 - [x] 19.7 Unit tests in test_phase19_notifications.py and comprehensive evidence in docs/evidence/phase_19_evidence.md
-### Phase 20 (Release Lock)
+### Phase 20 (Release Lock & Post-Audit Hardening)
 - [x] 20.1 Full-system startup verified across simulator, engine, api, intelligence, frontend, DB, redis, observability
 - [x] 20.2 End-to-end operational scenario demonstration verified in accordance with docs/demo-runbook.md
 - [x] 20.3 Final automated test suites executed across all services (548 passed, 0 failed)
 - [x] 20.4 Production frontend TypeScript compilation and build verified with zero errors
 - [x] 20.5 Master completion report authored in docs/FINAL_PROJECT_COMPLETION_REPORT.md covering all 15 required sections
 - [x] 20.6 Final release tagged v1.0.0 and locked for submission
+- [x] 20.7 Autopilot autonomous execution & four-eyes supervisory governance fully restored, live verified, and documented in docs/evidence/autopilot_verification.md

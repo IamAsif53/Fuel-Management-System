@@ -24,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.config import EngineSettings, get_settings
-from app.db.models import Decision, DecisionLine, SimRun
+from app.db.models import AuditLog, Decision, DecisionLine, SimRun
 from app.decision.constraints import PlanLine, check_line
 from app.decision.heuristic import plan_heuristic
 from app.decision.optimizer import OptimizerPolicy
@@ -118,7 +118,22 @@ class DecisionEngine:
         if not force_plan and self.last_plan_tick >= 0 and (cur_tick - self.last_plan_tick) < interval:
             # Check expiry of older decisions even when not planning
             await self.expire_stale_decisions(cur_tick, store.sim_run_id)
+            # Evaluate existing pending decisions if in autopilot mode
+            if str(getattr(store, "operating_mode", "advisory")).lower() == "autopilot":
+                try:
+                    await self.evaluate_autopilot_pending(store)
+                except Exception as exc:
+                    self._log.warning("autopilot.cycle_eval_failed", error=str(exc))
             return None
+
+        # Check expiry of older decisions
+        await self.expire_stale_decisions(cur_tick, store.sim_run_id)
+        # Evaluate existing pending decisions if in autopilot mode
+        if str(getattr(store, "operating_mode", "advisory")).lower() == "autopilot":
+            try:
+                await self.evaluate_autopilot_pending(store)
+            except Exception as exc:
+                self._log.warning("autopilot.cycle_eval_failed", error=str(exc))
 
         decision = await self._build_and_persist_decision(store, cur_tick)
         if decision:
@@ -136,6 +151,203 @@ class DecisionEngine:
     async def plan_now(self, store: WorldState) -> Decision | None:
         """Trigger an immediate planning cycle, bypassing interval check."""
         return await self.on_cycle(store, force_plan=True)
+
+    def check_autopilot_eligibility(
+        self,
+        store: WorldState,
+        lines: list[Any],
+        confidence: float,
+    ) -> tuple[bool, list[str]]:
+        """Evaluate locked Autopilot eligibility criteria (20_FINAL_SPEC_LOCK.md & 05_INTELLIGENCE_DESIGN.md §4.5).
+
+        Conditions:
+        1. operating_mode == 'autopilot'
+        2. confidence >= 0.7
+        3. every allocation line <= 7,000 L
+        4. total decision volume <= 7,000 L (volumes > 7,000 L require four-eyes supervisory approval)
+        5. data must not be stale (store.stale == False)
+        6. not degraded (store.degraded == False)
+        7. no CRITICAL data-quality alert active
+        8. engine mode must be NORMAL
+        9. domain SLO error budget remaining >= 25%
+        10. simulator service available
+
+        Returns:
+            (is_eligible, blocked_reasons)
+        """
+        mode = getattr(store, "operating_mode", None)
+        if mode is None:
+            raw_mode = getattr(store, "engine_mode", self.settings.engine_mode)
+            if str(raw_mode).lower() in ("advisory", "autopilot"):
+                mode = raw_mode
+            else:
+                mode = self.settings.engine_mode or "advisory"
+        is_autopilot = (str(mode).lower() == "autopilot")
+
+        raw_engine_mode = getattr(store, "engine_mode", "NORMAL")
+        if str(raw_engine_mode).lower() in ("advisory", "autopilot"):
+            resilience_mode = "NORMAL"
+        else:
+            resilience_mode = str(raw_engine_mode).upper()
+
+        is_stale = bool(getattr(store, "stale", False))
+        is_degraded = bool(getattr(store, "degraded", False))
+        degraded_reasons = set(getattr(store, "degraded_reasons", set()))
+
+        # Domain SLO Error Budget enforcement: Target 99.0% (allowable unreliability 1.0%)
+        # Error budget remaining = (service_level - 0.99) / 0.01
+        sl = getattr(getattr(store, "metrics", None), "service_level", 1.0)
+        domain_slo_budget = (float(sl) - 0.99) / 0.01 if sl is not None else 1.0
+        slo_exhausted = domain_slo_budget < 0.25
+
+        if slo_exhausted:
+            if hasattr(store, "degraded_reasons"):
+                store.degraded_reasons.add("error_budget_exhausted")
+        else:
+            if hasattr(store, "degraded_reasons"):
+                store.degraded_reasons.discard("error_budget_exhausted")
+
+        # Check critical data quality alert
+        has_critical_dq = (
+            bool(getattr(store, "has_critical_data_quality_alert", False))
+            or "invalid_simulator_data" in degraded_reasons
+            or "data_quality_critical" in degraded_reasons
+        )
+        active_alerts = getattr(store, "active_alerts", None) or getattr(store, "alerts", None)
+        if isinstance(active_alerts, dict):
+            for alt in active_alerts.values():
+                cat = getattr(alt, "category", None) or (alt.get("category") if isinstance(alt, dict) else None)
+                sev = getattr(alt, "severity", None) or (alt.get("severity") if isinstance(alt, dict) else None)
+                if cat == "DATA_QUALITY" and sev == "CRITICAL":
+                    has_critical_dq = True
+                    break
+        elif isinstance(active_alerts, list):
+            for alt in active_alerts:
+                cat = getattr(alt, "category", None) or (alt.get("category") if isinstance(alt, dict) else None)
+                sev = getattr(alt, "severity", None) or (alt.get("severity") if isinstance(alt, dict) else None)
+                if cat == "DATA_QUALITY" and sev == "CRITICAL":
+                    has_critical_dq = True
+                    break
+
+        total_qty = sum(float(getattr(ln, "quantity", 0.0)) for ln in lines)
+        max_line_qty = max((float(getattr(ln, "quantity", 0.0)) for ln in lines), default=0.0)
+
+        blocked_reasons: list[str] = []
+        if not is_autopilot:
+            blocked_reasons.append("Operating mode is ADVISORY")
+        if confidence < self.settings.auto_approve_min_confidence:
+            min_c = self.settings.auto_approve_min_confidence
+            blocked_reasons.append(f"Confidence score {confidence:.2f} is below required {min_c:.2f} threshold")
+        if max_line_qty > self.settings.auto_approve_max_liters:
+            blocked_reasons.append(
+                f"Allocation line ({max_line_qty:,.0f} L) exceeds 7,000 L maximum autonomous ceiling"
+            )
+        if total_qty > 7000.0:
+            blocked_reasons.append(
+                f"Decision volume ({total_qty:,.0f} L) exceeds 7,000 L threshold (requires four-eyes signoff)"
+            )
+        if is_stale:
+            blocked_reasons.append("Telemetry data is stale")
+        if is_degraded:
+            reasons_str = f" ({', '.join(sorted(degraded_reasons))})" if degraded_reasons else ""
+            blocked_reasons.append(f"System operating in degraded state{reasons_str}")
+        if has_critical_dq:
+            blocked_reasons.append("Active CRITICAL data-quality alert detected")
+        if resilience_mode != "NORMAL":
+            blocked_reasons.append(f"Engine resilience mode is {resilience_mode} (must be NORMAL)")
+        if slo_exhausted:
+            blocked_reasons.append(
+                f"Domain SLO error budget exhausted ({domain_slo_budget * 100:.1f}% remaining, minimum 25% required)"
+            )
+        if "sim_unavailable" in degraded_reasons or "simulator_unavailable" in degraded_reasons:
+            blocked_reasons.append("Simulator service is unavailable")
+
+        is_eligible = len(blocked_reasons) == 0
+        return is_eligible, blocked_reasons
+
+    async def evaluate_autopilot_pending(self, store: WorldState) -> int:
+        """Evaluate active PENDING_APPROVAL decisions against the Autopilot eligibility gate.
+
+        If eligible, automatically approves and executes them.
+        If ineligible, updates blocked reasons in explanation.
+        Returns the count of auto-approved decisions.
+        """
+        cur_tick = getattr(store, "tick", 0)
+        sim_run_id = getattr(store, "sim_run_id", None)
+        if sim_run_id is None:
+            return 0
+
+        approved_count = 0
+        to_execute: list[tuple[Decision, list[DecisionLine]]] = []
+
+        async with self.session_factory() as session:
+            stmt = (
+                select(Decision)
+                .options(selectinload(Decision.lines))
+                .where(
+                    Decision.status == "PENDING_APPROVAL",
+                    Decision.sim_run_id == sim_run_id,
+                )
+                .order_by(Decision.id.asc())
+            )
+            res = await session.execute(stmt)
+            pending = list(res.scalars().all())
+
+            for dec in pending:
+                if dec.expires_at_tick is not None and cur_tick >= dec.expires_at_tick:
+                    dec.status = "EXPIRED"
+                    continue
+
+                conf = dec.confidence if dec.confidence is not None else 0.5
+                is_eligible, blocked_reasons = self.check_autopilot_eligibility(store, list(dec.lines), conf)
+
+                expl = dict(dec.explanation or {})
+                total_liters = sum(float(ln.quantity) for ln in dec.lines)
+                expl["autopilot_eligibility"] = {
+                    "eligible": is_eligible,
+                    "blocked_reasons": blocked_reasons,
+                    "requires_four_eyes": total_liters > 7000.0,
+                }
+                if blocked_reasons:
+                    expl["autopilot_blocked_reason"] = "; ".join(blocked_reasons)
+                else:
+                    expl.pop("autopilot_blocked_reason", None)
+                dec.explanation = expl
+
+                if is_eligible:
+                    dec.status = "APPROVED"
+                    dec.approved_by = "autopilot"
+                    dec.approved_at = datetime.now(UTC)
+
+                    audit_entry = AuditLog(
+                        actor="autopilot",
+                        action="DECISION_AUTO_APPROVED",
+                        entity_type="decision",
+                        entity_id=str(dec.id),
+                        payload={
+                            "decision_id": dec.id,
+                            "tick": cur_tick,
+                            "policy": dec.policy,
+                            "confidence": dec.confidence,
+                            "lines_count": len(dec.lines),
+                            "total_liters": total_liters,
+                        },
+                    )
+                    session.add(audit_entry)
+                    approved_count += 1
+                    to_execute.append((dec, list(dec.lines)))
+
+            await session.commit()
+
+        # If any were approved, execute them via executor
+        for approved_dec, approved_lines in to_execute:
+            if self.executor is not None:
+                try:
+                    await self.executor.execute(approved_dec, approved_lines)
+                except Exception as exc:
+                    self._log.error("autopilot.execute_pending_failed", decision_id=approved_dec.id, error=str(exc))
+
+        return approved_count
 
     async def _build_and_persist_decision(
         self,
@@ -218,31 +430,7 @@ class DecisionEngine:
 
         # 5. Evaluate approval policy (Autopilot truth table)
         mode = getattr(store, "operating_mode", getattr(store, "engine_mode", self.settings.engine_mode)) or "advisory"
-        is_autopilot = (str(mode).lower() == "autopilot")
-
-        # Domain SLO Error Budget enforcement: Target 99.0% (allowable unreliability 1.0%)
-        # Error budget remaining = (service_level - 0.99) / 0.01
-        sl = getattr(getattr(store, "metrics", None), "service_level", 1.0)
-        domain_slo_budget = (float(sl) - 0.99) / 0.01 if sl is not None else 1.0
-        slo_exhausted = domain_slo_budget < 0.25
-
-        if slo_exhausted:
-            if hasattr(store, "degraded_reasons"):
-                store.degraded_reasons.add("error_budget_exhausted")
-        else:
-            if hasattr(store, "degraded_reasons"):
-                store.degraded_reasons.discard("error_budget_exhausted")
-
-        resilience_mode = str(getattr(store, "engine_mode", "NORMAL")).upper()
-        auto_eligible = (
-            is_autopilot
-            and not slo_exhausted
-            and confidence >= self.settings.auto_approve_min_confidence
-            and all(line.quantity <= self.settings.auto_approve_max_liters for line in plan_lines)
-            and not is_stale
-            and not is_degraded
-            and resilience_mode not in ("DEGRADED", "SAFE_HOLD", "NO_FEASIBLE_ROUTES")
-        )
+        auto_eligible, blocked_reasons = self.check_autopilot_eligibility(store, plan_lines, confidence)
 
         initial_status = "APPROVED" if auto_eligible else "PENDING_APPROVAL"
         approved_by = "autopilot" if auto_eligible else None
@@ -283,11 +471,24 @@ class DecisionEngine:
                 impact=impact_data,
                 plan_meta=explanation_payload,
             )
+            sl = getattr(getattr(store, "metrics", None), "service_level", 1.0)
+            domain_slo_budget = (float(sl) - 0.99) / 0.01 if sl is not None else 1.0
+            slo_exhausted = domain_slo_budget < 0.25
+
             if slo_exhausted:
                 structured_explanation["warning"] = (
                     "Autopilot frozen by error-budget policy (domain SLO remaining < 25%)"
                 )
                 structured_explanation["domain_slo_budget_remaining"] = round(domain_slo_budget, 4)
+
+            total_plan_liters = sum(float(line.quantity) for line in plan_lines)
+            structured_explanation["autopilot_eligibility"] = {
+                "eligible": auto_eligible,
+                "blocked_reasons": blocked_reasons,
+                "requires_four_eyes": total_plan_liters > 7000.0,
+            }
+            if blocked_reasons and str(mode).lower() == "autopilot":
+                structured_explanation["autopilot_blocked_reason"] = "; ".join(blocked_reasons)
 
             initial_narrative = generate_decision_narrative(structured_explanation, tick=cur_tick)
             if slo_exhausted:
@@ -345,6 +546,23 @@ class DecisionEngine:
                 )
                 session.add(d_line)
                 db_lines.append(d_line)
+
+            if auto_eligible:
+                audit_entry = AuditLog(
+                    actor="autopilot",
+                    action="DECISION_AUTO_APPROVED",
+                    entity_type="decision",
+                    entity_id=str(dec.id),
+                    payload={
+                        "decision_id": dec.id,
+                        "tick": cur_tick,
+                        "policy": policy_name,
+                        "confidence": confidence,
+                        "lines_count": len(db_lines),
+                        "total_liters": total_plan_liters,
+                    },
+                )
+                session.add(audit_entry)
 
             await session.commit()
             await session.refresh(dec, ["lines"])
@@ -534,8 +752,8 @@ class DecisionEngine:
                     f"Decision {decision_id} expired at tick {dec.expires_at_tick} (current tick {cur_tick})",
                 )
 
-            if dec.status != "PENDING_APPROVAL":
-                raise DecisionInvalidStateError(dec.status, "PENDING_APPROVAL")
+            if dec.status not in ("PENDING_APPROVAL", "AWAITING_SECOND_APPROVAL"):
+                raise DecisionInvalidStateError(dec.status, "PENDING_APPROVAL or AWAITING_SECOND_APPROVAL")
 
             # Check stale state before approving
             if current_state and getattr(current_state, "stale", False):
@@ -587,25 +805,89 @@ class DecisionEngine:
 
             # F-TRUST Cognitive Forcing check (12_ADVANCED_FEATURES.md / Phase 09 §4.5):
             max_qty = max((line.quantity for line in approved_lines), default=0.0)
+            total_qty = sum((line.quantity for line in approved_lines), 0.0)
             conf = dec.confidence if dec.confidence is not None else 1.0
             state_deg = bool(getattr(current_state, "degraded", False)) if current_state is not None else False
             is_deg = bool(dec.degraded) or state_deg
-            requires_review = (max_qty > 5000.0) or (conf < 0.7) or is_deg
 
-            if requires_review and not reviewed_driver:
-                forcing_msg = (
-                    "Cognitive forcing review required: you must expand Why and review "
-                    "the main risk driver before approving this recommendation."
-                )
-                raise DecisionError(
-                    "REVIEW_REQUIRED",
-                    forcing_msg,
-                    status_code=422,
-                )
+            # Cognitive forcing review applies to human operators
+            if actor != "autopilot":
+                requires_review = (max_qty > 5000.0) or (conf < 0.7) or is_deg
+                if requires_review and not reviewed_driver:
+                    forcing_msg = (
+                        "Cognitive forcing review required: you must expand Why and review "
+                        "the main risk driver before approving this recommendation."
+                    )
+                    raise DecisionError(
+                        "REVIEW_REQUIRED",
+                        forcing_msg,
+                        status_code=422,
+                    )
+
+            # Four-eyes supervisory sign-off check (20_FINAL_SPEC_LOCK.md §95 & 21_API_CONTRACTS.md §133):
+            # Decisions exceeding 7,000 L total require two distinct human approvals.
+            if total_qty > 7000.0 and actor != "autopilot":
+                if dec.status == "PENDING_APPROVAL":
+                    dec.status = "AWAITING_SECOND_APPROVAL"
+                    dec.approved_by = actor
+                    dec.approved_at = datetime.now(UTC)
+                    audit_entry = AuditLog(
+                        actor=actor,
+                        action="DECISION_FIRST_APPROVAL",
+                        entity_type="decision",
+                        entity_id=str(dec.id),
+                        payload={
+                            "decision_id": dec.id,
+                            "tick": cur_tick,
+                            "status": "AWAITING_SECOND_APPROVAL",
+                            "lines_approved": len(approved_lines),
+                            "total_liters": total_qty,
+                        },
+                    )
+                    session.add(audit_entry)
+                    await session.commit()
+                    await session.refresh(dec, ["lines"])
+
+                    if self.publisher is not None:
+                        await self.publisher.event(
+                            type="decision.awaiting_second_approval",
+                            data={
+                                "decision_id": dec.id,
+                                "first_approver": actor,
+                                "total_quantity": total_qty,
+                            },
+                            sim_run_id=dec.sim_run_id,
+                            tick=cur_tick,
+                        )
+                    return dec
+                elif dec.status == "AWAITING_SECOND_APPROVAL":
+                    if dec.approved_by and dec.approved_by.strip().lower() == actor.strip().lower():
+                        raise DecisionError(
+                            "FOUR_EYES_SAME_ACTOR",
+                            "Four-eyes policy violation: second approval must be by a different operator.",
+                            status_code=403,
+                        )
+                    dec.approved_by = f"{dec.approved_by}, {actor}"
 
             dec.status = "APPROVED"
-            dec.approved_by = actor
+            if total_qty <= 7000.0 or actor == "autopilot":
+                dec.approved_by = actor
             dec.approved_at = datetime.now(UTC)
+
+            audit_entry = AuditLog(
+                actor=actor,
+                action="DECISION_APPROVED",
+                entity_type="decision",
+                entity_id=str(dec.id),
+                payload={
+                    "decision_id": dec.id,
+                    "tick": cur_tick,
+                    "approved_by": dec.approved_by,
+                    "lines_approved": len(approved_lines),
+                    "total_liters": total_qty,
+                },
+            )
+            session.add(audit_entry)
 
             await session.commit()
             await session.refresh(dec, ["lines"])
@@ -658,8 +940,8 @@ class DecisionEngine:
             if not dec:
                 raise DecisionNotFoundError(decision_id)
 
-            if dec.status != "PENDING_APPROVAL":
-                raise DecisionInvalidStateError(dec.status, "PENDING_APPROVAL")
+            if dec.status not in ("PENDING_APPROVAL", "AWAITING_SECOND_APPROVAL"):
+                raise DecisionInvalidStateError(dec.status, "PENDING_APPROVAL or AWAITING_SECOND_APPROVAL")
 
             dec.status = "REJECTED"
             dec.approved_by = actor

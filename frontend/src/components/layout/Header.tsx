@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Activity, Bell, Inbox, Play, Bot, UserCheck } from "lucide-react";
+import { Activity, Bell, Inbox, Play, Bot, UserCheck, AlertTriangle } from "lucide-react";
 import clsx from "clsx";
 import type { WorldState } from "@/api/types";
 import type { ConnectionState } from "@/hooks/useLiveState";
@@ -19,6 +19,7 @@ export function Header({ state, connection }: HeaderProps) {
   const [isChangingPolicy, setIsChangingPolicy] = useState(false);
   const [isPlanning, setIsPlanning] = useState(false);
   const [showAutopilotConfirm, setShowAutopilotConfirm] = useState(false);
+  const [modeError, setModeError] = useState<string | null>(null);
 
   const openAlerts = state?.alerts_open_count
     ? Object.values(state.alerts_open_count).reduce((acc, c) => acc + c, 0)
@@ -29,14 +30,17 @@ export function Header({ state, connection }: HeaderProps) {
   const currentPolicy = state?.policy || "heuristic";
 
   const handleToggleMode = async () => {
+    setModeError(null);
     if (currentMode === "advisory") {
       setShowAutopilotConfirm(true);
     } else {
       try {
         setIsChangingMode(true);
         await setControlMode("advisory");
-      } catch (err) {
+      } catch (err: any) {
         console.error("Failed to set mode", err);
+        const msg = err?.response?.data?.detail?.message || err?.message || "Failed to switch operating mode";
+        setModeError(msg);
       } finally {
         setIsChangingMode(false);
       }
@@ -45,11 +49,14 @@ export function Header({ state, connection }: HeaderProps) {
 
   const confirmAutopilot = async () => {
     setShowAutopilotConfirm(false);
+    setModeError(null);
     try {
       setIsChangingMode(true);
       await setControlMode("autopilot");
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to set autopilot mode", err);
+      const msg = err?.response?.data?.detail?.message || err?.message || "Failed to switch operating mode";
+      setModeError(msg);
     } finally {
       setIsChangingMode(false);
     }
@@ -210,6 +217,29 @@ export function Header({ state, connection }: HeaderProps) {
                 className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand/90"
               >
                 Confirm & Enable Autopilot
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Autopilot Rejected / Stale Error Modal */}
+      {modeError && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-xl border border-risk-high/40 bg-bg-panel p-6 shadow-2xl">
+            <div className="flex items-center gap-3 text-risk-high">
+              <AlertTriangle size={24} />
+              <h3 className="text-lg font-semibold text-ink">Cannot Enable Autopilot</h3>
+            </div>
+            <p className="mt-3 text-sm text-ink-muted leading-relaxed">
+              {modeError}
+            </p>
+            <div className="mt-6 flex justify-end">
+              <button
+                onClick={() => setModeError(null)}
+                className="rounded-lg bg-bg-raised border border-bg-border px-4 py-2 text-sm font-medium text-ink hover:bg-bg-raised/80"
+              >
+                Dismiss
               </button>
             </div>
           </div>
