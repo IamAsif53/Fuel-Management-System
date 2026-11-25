@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fsip-config
+  namespace: fsip
+data:
+  ENVIRONMENT: "production"
+  LOG_LEVEL: "INFO"
+  REDIS_URL: "redis://fsip-redis:6379/0"
+  SIMULATOR_URL: "http://fsip-simulator:8000"
+  ENGINE_INTERNAL_URL: "http://fsip-engine:8100"
+  INTELLIGENCE_URL: "http://fsip-intelligence:8200"
+  FSIP_DEMO_CONTROLS_ENABLED: "false"
+  FSIP_BREAKGLASS_DATA_DIR: "/data/breakglass"
+  AUTONOMOUS_POLICY: "optimizer"
+  AUTONOMOUS_CONFIDENCE_THRESHOLD: "0.70"
+  FSIP_SMTP_HOST: "fsip-mailpit"
+  FSIP_SMTP_PORT: "1025"

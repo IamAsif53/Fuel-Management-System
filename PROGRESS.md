@@ -22,7 +22,7 @@ Format for notes: `- [x] 1.3 SimClient done. Note: <deviation or measured result
 | 13 | DONE | Tasks 13.1–13.7 complete (Pinned deploy/versions.env, hardened docker-compose.prod.yml without DB port exposures, automated scripts/deploy.sh with rollback trap, version stamping in UI/API, comprehensive .github/workflows/ci.yml with 6 jobs, Makefile release/rollback, docs/evidence/cicd.md) | Phase 13 CI/CD, Versioning & Production Release Hardening complete & verified |
 | 14 | DONE | Tasks 14.1–14.8 complete (Dedicated loadtest/ suite using k6, baseline/ramp/sustained 200-VU tests, concurrent operator approval with reviewed_driver cognitive forcing, multi-tenant IP rotation, DB pool expansion to 40/40, memory TTL caching, p95 read 409ms, approval p95 190ms, 0.00% error rate across 33,730 requests, docs/evidence/loadtest-report.md) | Phase 14 Load Testing & Performance Benchmarking complete & verified |
 | 15 | DONE | Tasks 15.1–15.7 complete (docs/architecture.md detailing all 13 subsystems, high-res visual topology docs/architecture.png, step-by-step 15-minute docs/demo-runbook.md, master evidence index docs/evidence/index.md, cleanup and submission readiness) | Phase 15 Final Documentation, Topology Diagram & Demo Runbook complete & verified |
-| 16 | OPTIONAL (T3) | | |
+| 16 | DONE (OPTIONAL) | Tasks 16.1–16.3 complete (Kubernetes cloud orchestration manifests in k8s/ for engine, api, intelligence, frontend, configmaps, and secrets; RL baseline documented as deferred research scope per cut-list priority) | Phase 16 Cloud Orchestration complete & verified |
 | 17 | DONE (T2) | Tasks 17.1–17.9 complete (Historical snapshot endpoints /api/state/history & /api/state/history/ticks, frontend TimeTravelSlider with stepping and read-only banner, scarcity policy triggering on cover < 3.0 days or tick >= 212, max-min regional fairness, 6 engine tests + 3 API tests passing, docs/evidence/phase_17_evidence.md) | Phase 17 Simulation Time-Travel & Scarcity Rationing complete & verified |
 | 18 | DONE (T2) | Tasks 18.1–18.7 complete (N-1 contingency evaluator GET /api/contingency/n-1 across depots/routes/supply, SPOF detection, network resilience score, split-conformal prediction intervals GET /api/contingency/conformal with 90% empirical coverage, demand suppression modeling POST /api/contingency/demand-suppression, Risk dashboard view mode integration, 3 API tests passing, docs/evidence/phase_18_evidence.md) | Phase 18 Advanced Contingency & Uncertainty Analytics complete & verified |
 | 19 | DONE (T2) | Tasks 19.1–19.7 complete (Mailpit SMTP container in compose under profile notify, NotificationService in services/api/app/services/notifier.py for P1 alerts, CommandPalette Ctrl+K modal overlay, operator hotkeys A/X with input & dialog safety guards, CSV/JSON data export utilities, 4 API tests passing, docs/evidence/phase_19_evidence.md) | Phase 19 Operator Ergonomics & Notification Escalation complete & verified |
@@ -155,6 +155,11 @@ Deadline: **Thu 2026-11-26**. Feature freeze: Wed 2026-11-25 18:00.
 - [x] 15.5 Repository cleanup removing temporary and generated scratch artifacts
 - [x] 15.6 Submission metadata and documentation verification
 - [x] 15.7 Git commit history and phase traceability verified
+### Phase 16 (Optional)
+- [x] 16.1 Kubernetes deployment manifests for Engine, API, Intelligence, and Frontend under k8s/
+- [x] 16.2 ConfigMaps, Secrets templates, resource limits, and health check probes configured
+- [x] 16.3 RL baseline documented as deferred research scope in accordance with cut-list priority
+
 ### Phase 17 (T2)
 - [x] 17.1 Historical simulation snapshot fetcher fetch_snapshot_by_tick in services/api/app/db.py
 - [x] 17.2 Available recorded ticks query fetch_available_ticks in services/api/app/db.py

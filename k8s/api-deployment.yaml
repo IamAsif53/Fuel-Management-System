@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fsip-api
+  namespace: fsip
+  labels:
+    app: fsip-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: fsip-api
+  template:
+    metadata:
+      labels:
+        app: fsip-api
+    spec:
+      containers:
+        - name: api
+          image: ghcr.io/iamasif53/fsip-api:1.0.0
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: fsip-config
+            - secretRef:
+                name: fsip-secrets
+          ports:
+            - containerPort: 8080
+              name: http
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "2000m"
+              memory: "2048Mi"
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 3
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 2
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fsip-api
+  namespace: fsip
+spec:
+  type: ClusterIP
+  selector:
+    app: fsip-api
+  ports:
+    - protocol: TCP
+      port: 8080
+      targetPort: 8080

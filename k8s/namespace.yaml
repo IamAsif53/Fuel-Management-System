@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: fsip
+  labels:
+    app.kubernetes.io/name: fsip
+    app.kubernetes.io/part-of: fuel-supply-intelligence-platform
