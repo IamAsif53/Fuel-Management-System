@@ -2,5 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-html, body, #root { height: 100%; }
-body { font-feature-settings: "tnum" 1; } /* tabular numbers: no jitter on live updates */
+html, body, #root { height: 100%; color-scheme: dark; }
+body { font-feature-settings: "tnum" 1; background-color: #0B1220; color: #E6EDF7; } /* tabular numbers: no jitter on live updates */
+input, select, textarea { color-scheme: dark; }

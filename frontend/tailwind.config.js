@@ -12,6 +12,13 @@ export default {
         risk: { low: "#22C55E", medium: "#EAB308", high: "#F97316", critical: "#EF4444" },
         fuel: { diesel: "#38BDF8", petrol: "#A78BFA", octane: "#F472B6" },
         state: { healthy: "#22C55E", degraded: "#EAB308", down: "#EF4444", unknown: "#64748B" },
+        card: "#111A2E",
+        background: "#17223A",
+        border: "#24314F",
+        foreground: "#E6EDF7",
+        "muted-foreground": "#93A4C3",
+        muted: "#17223A",
+        primary: { DEFAULT: "#3B82F6", foreground: "#FFFFFF" },
       },
       fontFamily: {
         sans: ["Inter", "system-ui", "Segoe UI", "Roboto", "sans-serif"],
