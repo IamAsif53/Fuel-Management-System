@@ -438,3 +438,26 @@ export async function fetchSummary(
 }
 
 
+
+export async function fetchN1Contingency(elementType?: string): Promise<any> {
+  const q = elementType ? `?element_type=${elementType}` : "";
+  return api<any>(`/contingency/n-1${q}`);
+}
+
+export async function fetchConformalPrediction(coverage: number = 0.9, horizonTicks: number = 24): Promise<any> {
+  return api<any>(`/contingency/conformal?coverage=${coverage}&horizon_ticks=${horizonTicks}`);
+}
+
+export async function evaluateDemandSuppression(body: {
+  reduction_pct: number;
+  duration_ticks?: number;
+  fuel_type?: string;
+  station_id?: string;
+  region_id?: string;
+}): Promise<any> {
+  return api<any>("/contingency/demand-suppression", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}

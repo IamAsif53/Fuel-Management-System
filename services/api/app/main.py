@@ -30,6 +30,7 @@ from app.routers import (
     stream_router,
     system_router,
 )
+from app.routers.contingency import router as contingency_router
 
 log = get_logger()
 
@@ -60,7 +61,10 @@ async def lifespan(app: FastAPI):
         socket_timeout=1,
         socket_connect_timeout=1,
     )
-    app.state.http = httpx.AsyncClient(timeout=1.5)
+    app.state.http = httpx.AsyncClient(
+        limits=httpx.Limits(max_keepalive_connections=100, max_connections=300),
+        timeout=5.0,
+    )
     yield
     await app.state.http.aclose()
     await app.state.redis.aclose()
@@ -169,3 +173,4 @@ app.include_router(state_router)
 app.include_router(stream_router)
 app.include_router(entities_router)
 app.include_router(system_router)
+app.include_router(contingency_router)

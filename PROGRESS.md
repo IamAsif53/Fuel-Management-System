@@ -24,7 +24,7 @@ Format for notes: `- [x] 1.3 SimClient done. Note: <deviation or measured result
 | 15 | DONE | Tasks 15.1–15.7 complete (docs/architecture.md detailing all 13 subsystems, high-res visual topology docs/architecture.png, step-by-step 15-minute docs/demo-runbook.md, master evidence index docs/evidence/index.md, cleanup and submission readiness) | Phase 15 Final Documentation, Topology Diagram & Demo Runbook complete & verified |
 | 16 | OPTIONAL (T3) | | |
 | 17 | DONE (T2) | Tasks 17.1–17.9 complete (Historical snapshot endpoints /api/state/history & /api/state/history/ticks, frontend TimeTravelSlider with stepping and read-only banner, scarcity policy triggering on cover < 3.0 days or tick >= 212, max-min regional fairness, 6 engine tests + 3 API tests passing, docs/evidence/phase_17_evidence.md) | Phase 17 Simulation Time-Travel & Scarcity Rationing complete & verified |
-| 18 | TODO (T2) | | |
+| 18 | DONE (T2) | Tasks 18.1–18.7 complete (N-1 contingency evaluator GET /api/contingency/n-1 across depots/routes/supply, SPOF detection, network resilience score, split-conformal prediction intervals GET /api/contingency/conformal with 90% empirical coverage, demand suppression modeling POST /api/contingency/demand-suppression, Risk dashboard view mode integration, 3 API tests passing, docs/evidence/phase_18_evidence.md) | Phase 18 Advanced Contingency & Uncertainty Analytics complete & verified |
 | 19 | TODO (T2) | | |
 | 20 | OPTIONAL (T3) | | |
 
@@ -166,7 +166,13 @@ Deadline: **Thu 2026-11-26**. Feature freeze: Wed 2026-11-25 18:00.
 - [x] 17.8 Unit and integration tests in test_phase17_scarcity.py and test_phase17_time_travel.py
 - [x] 17.9 Comprehensive evidence documentation in docs/evidence/phase_17_evidence.md
 ### Phase 18 (T2)
-- [ ] 18.1  - [ ] 18.2  - [ ] 18.3  - [ ] 18.4  - [ ] 18.5  - [ ] 18.6  - [ ] 18.7
+- [x] 18.1 N-1 contingency evaluation router in services/api/app/routers/contingency.py
+- [x] 18.2 Single point of failure (SPOF) identification across depots, corridors, and supply vessels
+- [x] 18.3 Network resilience scoring model and automated mitigation recommendations
+- [x] 18.4 Split-conformal prediction interval calculation with calibrated empirical coverage guarantees
+- [x] 18.5 Demand suppression scenario evaluator modeling consumer fuel rationing and quota policies
+- [x] 18.6 Risk dashboard integration with N-1 matrix and Conformal prediction tabs in frontend/src/pages/Risk.tsx
+- [x] 18.7 Unit and integration tests in test_phase18_contingency.py and docs/evidence/phase_18_evidence.md
 ### Phase 19 (T2)
 - [ ] 19.1  - [ ] 19.2  - [ ] 19.3  - [ ] 19.4  - [ ] 19.5  - [ ] 19.6  - [ ] 19.7
 ### Phase 20 (T3)
