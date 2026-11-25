@@ -88,6 +88,12 @@ jobs:
           cd libs/fsip_common
           python -m pytest -q
 
+      - name: Apply database migrations
+        env:
+          DATABASE_URL: "postgresql+asyncpg://fsip:change-me@localhost:15432/fsip"
+        run: |
+          python -m alembic -c services/engine/alembic.ini upgrade head
+
       - name: Run service tests
         env:
           DATABASE_URL: "postgresql+asyncpg://fsip:change-me@localhost:15432/fsip"
@@ -180,7 +186,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: ./frontend
-          file: frontend/Dockerfile
+          file: ./frontend/Dockerfile
           push: false
           tags: fsip/frontend:${{ github.sha }}
           build-args: |
@@ -222,6 +228,7 @@ jobs:
           GIT_SHA: ${{ github.sha }}
           SIMULATION_SPEED: "8.0"
         run: |
+          cp .env.example .env
           docker compose up -d --build
           sleep 10
 
@@ -260,15 +267,19 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Lowercase repository owner
+        id: repo-owner
+        run: echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> $GITHUB_OUTPUT
+
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: |
-            ghcr.io/${{ github.repository_owner }}/fsip-engine
-            ghcr.io/${{ github.repository_owner }}/fsip-api
-            ghcr.io/${{ github.repository_owner }}/fsip-intelligence
-            ghcr.io/${{ github.repository_owner }}/fsip-frontend
+            ghcr.io/${{ steps.repo-owner.outputs.owner }}/fsip-engine
+            ghcr.io/${{ steps.repo-owner.outputs.owner }}/fsip-api
+            ghcr.io/${{ steps.repo-owner.outputs.owner }}/fsip-intelligence
+            ghcr.io/${{ steps.repo-owner.outputs.owner }}/fsip-frontend
           tags: |
             type=sha,format=short
             type=ref,event=branch
@@ -281,8 +292,8 @@ jobs:
           file: services/engine/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/fsip-engine:${{ github.sha }}
-            ghcr.io/${{ github.repository_owner }}/fsip-engine:${{ github.ref_name }}
+            ghcr.io/${{ steps.repo-owner.outputs.owner }}/fsip-engine:${{ github.sha }}
+            ghcr.io/${{ steps.repo-owner.outputs.owner }}/fsip-engine:${{ github.ref_name }}
           build-args: |
             APP_VERSION=${{ github.ref_name }}
             GIT_SHA=${{ github.sha }}
@@ -294,8 +305,8 @@ jobs:
           file: services/api/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/fsip-api:${{ github.sha }}
-            ghcr.io/${{ github.repository_owner }}/fsip-api:${{ github.ref_name }}
+            ghcr.io/${{ steps.repo-owner.outputs.owner }}/fsip-api:${{ github.sha }}
+            ghcr.io/${{ steps.repo-owner.outputs.owner }}/fsip-api:${{ github.ref_name }}
           build-args: |
             APP_VERSION=${{ github.ref_name }}
             GIT_SHA=${{ github.sha }}
@@ -307,8 +318,8 @@ jobs:
           file: services/intelligence/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/fsip-intelligence:${{ github.sha }}
-            ghcr.io/${{ github.repository_owner }}/fsip-intelligence:${{ github.ref_name }}
+            ghcr.io/${{ steps.repo-owner.outputs.owner }}/fsip-intelligence:${{ github.sha }}
+            ghcr.io/${{ steps.repo-owner.outputs.owner }}/fsip-intelligence:${{ github.ref_name }}
           build-args: |
             APP_VERSION=${{ github.ref_name }}
             GIT_SHA=${{ github.sha }}
@@ -317,11 +328,11 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: ./frontend
-          file: frontend/Dockerfile
+          file: ./frontend/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/fsip-frontend:${{ github.sha }}
-            ghcr.io/${{ github.repository_owner }}/fsip-frontend:${{ github.ref_name }}
+            ghcr.io/${{ steps.repo-owner.outputs.owner }}/fsip-frontend:${{ github.sha }}
+            ghcr.io/${{ steps.repo-owner.outputs.owner }}/fsip-frontend:${{ github.ref_name }}
           build-args: |
             APP_VERSION=${{ github.ref_name }}
             GIT_SHA=${{ github.sha }}
