@@ -46,6 +46,9 @@ describe("Phase 09 Ops Assistant Page", () => {
     expect(screen.getByText(/Why is Cox's Bazar at risk\?/i)).toBeInTheDocument();
     expect(screen.getByText(/Generate Shift Summary/i)).toBeInTheDocument();
     expect(screen.getByPlaceholderText(/Ask about station inventory/i)).toBeInTheDocument();
+    expect(screen.getByTestId("assistant-chat-log")).toHaveAttribute("aria-live", "polite");
+    expect(screen.getByRole("log", { name: /Operations assistant conversation/i })).toBeInTheDocument();
+    expect(screen.getAllByTestId("assistant-msg-bot").length).toBeGreaterThan(0);
   });
 
   it("submits question and renders answer, engine badge, and source chips", async () => {

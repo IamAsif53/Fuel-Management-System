@@ -117,6 +117,13 @@ export default function ControlPage() {
   const onClearFaults = () =>
     handleAction("clear-faults", () => api("/control/chaos/clear", { method: "POST" }), "All active chaos faults cleared.");
 
+  const onPrepareAutopilotDemo = () =>
+    handleAction(
+      "prepare-autopilot",
+      () => api("/control/demo/prepare-autopilot", { method: "POST" }),
+      "Autopilot demo armed: reset baseline, mode=autopilot, plan-now. Watch header banner for freeze/SLO."
+    );
+
   const isEnabled = status?.demo_controls_enabled ?? true;
 
   if (statusLoading && !status) {
@@ -134,7 +141,7 @@ export default function ControlPage() {
       {/* Header */}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-xl font-bold tracking-tight text-ink flex items-center gap-2">
+          <h1 className="font-display text-2xl font-semibold tracking-tight text-ink flex items-center gap-2">
             <Radio className="text-amber-400" size={24} />
             Simulator Controls & Chaos Injection
           </h1>
@@ -308,6 +315,30 @@ export default function ControlPage() {
               >
                 <RotateCcw size={14} className={loadingAction === "reset" ? "animate-spin" : ""} />
                 <span>Reset…</span>
+              </button>
+            </div>
+
+            <div className="rounded-lg border border-brand/30 bg-brand/5 p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="space-y-1">
+                <h3 className="text-xs font-semibold text-ink flex items-center gap-2">
+                  <Radio size={14} className="text-brand" />
+                  Prepare Autopilot Demo
+                </h3>
+                <p className="text-[11px] text-ink-muted leading-relaxed max-w-2xl">
+                  Clears chaos, resets to a healthy baseline, steps 2 ticks, enables Autopilot, and triggers Plan Now.
+                  Production guards stay intact — large plans may auto-dispatch a ≤7k L subset; the header banner shows
+                  SLO freeze / four-eyes reasons.
+                </p>
+              </div>
+              <button
+                type="button"
+                data-testid="ctl-prepare-autopilot"
+                disabled={loadingAction !== null}
+                onClick={onPrepareAutopilotDemo}
+                className="shrink-0 flex items-center justify-center gap-2 rounded-lg bg-brand/20 border border-brand/40 px-4 py-2.5 text-xs font-semibold text-brand hover:bg-brand/30 disabled:opacity-40 transition"
+              >
+                <Layers size={14} className={loadingAction === "prepare-autopilot" ? "animate-spin" : ""} />
+                <span>Arm Autopilot Demo</span>
               </button>
             </div>
           </div>

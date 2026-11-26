@@ -111,7 +111,7 @@ export default function SystemHealth() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-panel-border/60 pb-4">
         <div>
           <div className="flex items-center gap-3">
-            <h1 className="text-xl font-bold tracking-tight text-ink">
+            <h1 className="font-display text-2xl font-semibold tracking-tight text-ink">
               System Observability & Health
             </h1>
             <div data-testid="overall-status-pill">

@@ -1,0 +1,140 @@
+{
+  "timestamp": "2026-11-26T12:45:00Z",
+  "stack": "localhost:3000 UI + localhost:18080 API",
+  "state_sample": {
+    "tick": 141,
+    "sim_status": "PAUSED",
+    "operating_mode": "autopilot",
+    "engine_mode": "NORMAL",
+    "sl": 0.662569
+  },
+  "control_events": 1,
+  "features": [
+    {
+      "id": "auth_signin",
+      "name": "Sign-In + demo role buttons",
+      "result": "OK",
+      "notes": "Operator/Supervisor/Viewer login; role switch applies immediately"
+    },
+    {
+      "id": "rbac_operator",
+      "name": "Operator powers (approve/reject/mode)",
+      "result": "OK",
+      "notes": "Can mode+approve/reject; cannot change policy (403)"
+    },
+    {
+      "id": "rbac_supervisor",
+      "name": "Supervisor powers (policy + second approval)",
+      "result": "OK",
+      "notes": "Policy change 200; completes four-eyes"
+    },
+    {
+      "id": "overview",
+      "name": "Overview KPIs + topology",
+      "result": "OK",
+      "notes": "SL, unmet, risk heatmap, network graph render"
+    },
+    {
+      "id": "network",
+      "name": "Network page",
+      "result": "OK",
+      "notes": "Stations/Depots/Routes tabs populate"
+    },
+    {
+      "id": "risk",
+      "name": "Risk page",
+      "result": "OK",
+      "notes": "Station Risk / N-1 / Conformal filters present"
+    },
+    {
+      "id": "alerts",
+      "name": "Alerts page",
+      "result": "OK",
+      "notes": "Filters Open/Ack/All + severity/category"
+    },
+    {
+      "id": "health",
+      "name": "System Health",
+      "result": "OK",
+      "notes": "Components + SLO + Grafana links"
+    },
+    {
+      "id": "decisions_ledger",
+      "name": "Decisions audit ledger",
+      "result": "OK",
+      "notes": "Filters + CSV/JSON export controls"
+    },
+    {
+      "id": "approve",
+      "name": "Approve recommendation",
+      "result": "OK",
+      "notes": "UI: expand Why + cognitive checkbox; API reviewed_driver=true -> EXECUTED"
+    },
+    {
+      "id": "reject",
+      "name": "Reject recommendation",
+      "result": "OK",
+      "notes": "POST /decisions/{id}/reject -> REJECTED"
+    },
+    {
+      "id": "four_eyes",
+      "name": "Four-eyes >7k L",
+      "result": "OK",
+      "notes": "First AWAITING_SECOND_APPROVAL; same actor 403; supervisor second EXECUTED (operator, supervisor)"
+    },
+    {
+      "id": "cognitive_forcing",
+      "name": "Cognitive forcing gate",
+      "result": "OK",
+      "notes": "Approve disabled until Why expanded + checkbox; API REVIEW_REQUIRED without reviewed_driver"
+    },
+    {
+      "id": "autopilot_enable",
+      "name": "Enable Autopilot mode",
+      "result": "OK",
+      "notes": "UI confirm dialog + API 200; header shows Autopilot"
+    },
+    {
+      "id": "autopilot_auto_approve",
+      "name": "Autopilot auto-dispatch of plans",
+      "result": "PARTIAL",
+      "notes": "Mode works but auto_approved often 0: plans ~23k L need four-eyes AND domain SLO budget exhausted freezes autopilot decisions"
+    },
+    {
+      "id": "control_step_run_pause",
+      "name": "Control sim run/pause/step",
+      "result": "OK",
+      "notes": "API + UI Step/Run/Pause"
+    },
+    {
+      "id": "control_presets",
+      "name": "Crisis presets",
+      "result": "OK",
+      "notes": "demand_spike_dhaka inject 200; UI Inject Preset"
+    },
+    {
+      "id": "chaos",
+      "name": "Chaos faults + clear",
+      "result": "OK",
+      "notes": "latency inject needs JSON body; clear 200"
+    },
+    {
+      "id": "whatif",
+      "name": "What-If scenarios",
+      "result": "OK",
+      "notes": "UI run shows do_nothing / recommended / custom comparison"
+    },
+    {
+      "id": "assistant",
+      "name": "Operations Assistant",
+      "result": "OK",
+      "notes": "Rules engine answers health/alerts/recs grounded in state"
+    },
+    {
+      "id": "plan_now_policy",
+      "name": "Plan Now + policy selector",
+      "result": "OK",
+      "notes": "Plan Now generates pending recs; supervisor policy switch works"
+    }
+  ]
+}

@@ -132,7 +132,7 @@ export default function Assistant() {
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-bg-border pb-3">
         <div>
-          <h1 className="flex items-center gap-2 text-xl font-bold tracking-tight text-ink">
+          <h1 className="flex items-center gap-2 font-display text-2xl font-semibold tracking-tight text-ink">
             <Bot className="text-accent" size={24} />
             Operations Assistant
           </h1>
@@ -226,10 +226,20 @@ export default function Assistant() {
       )}
 
       {/* Chat Messages Viewport */}
-      <div className="flex-1 overflow-y-auto space-y-3 p-2 rounded-xl border border-bg-border/70 bg-bg-base/40">
+      <div
+        className="flex-1 overflow-y-auto space-y-3 p-2 rounded-xl border border-bg-border/70 bg-bg-base/40"
+        role="log"
+        aria-live="polite"
+        aria-relevant="additions"
+        aria-label="Operations assistant conversation"
+        data-testid="assistant-chat-log"
+      >
         {messages.map((msg) => (
           <div
             key={msg.id}
+            role="article"
+            aria-label={msg.sender === "user" ? "Your message" : "Assistant reply"}
+            data-testid={msg.sender === "user" ? "assistant-msg-user" : "assistant-msg-bot"}
             className={clsx(
               "flex flex-col max-w-2xl text-xs space-y-1.5",
               msg.sender === "user" ? "ml-auto items-end" : "mr-auto items-start"
@@ -238,7 +248,7 @@ export default function Assistant() {
             {/* Header info */}
             <div className="flex items-center gap-2 text-[10px] text-ink-muted px-1">
               <span>{msg.sender === "user" ? "Operator" : "Ops Assistant"}</span>
-              <span>•</span>
+              <span aria-hidden>•</span>
               <span>{msg.timestamp}</span>
               {msg.engine && (
                 <span

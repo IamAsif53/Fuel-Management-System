@@ -1,9 +1,27 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en" data-theme="dawn">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Fuel Ops Console</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Sora:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem("fsip-theme") || "dawn";
+          if (t !== "dawn" && t !== "legacy") t = "dawn";
+          document.documentElement.setAttribute("data-theme", t);
+          document.documentElement.classList.toggle("dark", t === "legacy");
+        } catch (e) {
+          document.documentElement.setAttribute("data-theme", "dawn");
+        }
+      })();
+    </script>
   </head>
   <body class="bg-bg text-ink">
     <div id="root"></div>

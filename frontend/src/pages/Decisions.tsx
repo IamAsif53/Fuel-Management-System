@@ -215,7 +215,7 @@ export default function Decisions() {
       {/* Top Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-xl font-bold tracking-tight text-ink flex items-center gap-2">
+          <h1 className="font-display text-2xl font-semibold tracking-tight text-ink flex items-center gap-2">
             <History className="text-brand" size={24} />
             Decisions History & Audit Ledger
           </h1>

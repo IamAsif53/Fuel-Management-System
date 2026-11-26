@@ -423,7 +423,7 @@ async def fetch_decision_metrics(
           COUNT(*) FILTER (
             WHERE d.status IN (
               'APPROVED', 'EXECUTED', 'PARTIAL', 'REJECTED',
-              'AWAITING_SECOND_APPROVAL', 'EXPIRED', 'FAILED'
+              'AWAITING_SECOND_APPROVAL'
             )
           ) AS decided_count,
           COUNT(*) FILTER (

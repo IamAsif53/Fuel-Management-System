@@ -59,10 +59,13 @@ export function Sidebar() {
 
   return (
     <nav
-      className="flex w-14 shrink-0 flex-col gap-1 border-r border-bg-border bg-bg-panel p-2 transition-all xl:w-56"
+      className="flex w-14 shrink-0 flex-col gap-0.5 border-r border-bg-border bg-bg-panel/95 p-2 backdrop-blur-sm transition-all xl:w-56 xl:px-3 xl:py-3"
       aria-label="Main Navigation"
       data-testid="sidebar-nav"
     >
+      <div className="mb-2 hidden px-2 pt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-faint xl:block">
+        Operations
+      </div>
       {items.map(({ to, label, Icon }) => (
         <NavLink
           key={to}
@@ -71,9 +74,9 @@ export function Sidebar() {
           data-testid={`nav-${to.replace("/", "") || "overview"}`}
           className={({ isActive }) =>
             clsx(
-              "flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors",
+              "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
               isActive
-                ? "bg-brand-soft text-ink font-semibold border-l-2 border-brand"
+                ? "bg-brand-soft text-brand font-semibold shadow-sm ring-1 ring-brand/20"
                 : "text-ink-muted hover:bg-bg-raised hover:text-ink"
             )
           }

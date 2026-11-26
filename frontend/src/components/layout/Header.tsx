@@ -9,6 +9,7 @@ import { ClockBadge } from "./ClockBadge";
 import { ConnectionDot } from "./ConnectionDot";
 import { UserMenu } from "./UserMenu";
 import { EngineModeBadge } from "./EngineModeBadge";
+import { ThemeToggle } from "./ThemeToggle";
 
 interface HeaderProps {
   state: WorldState | null;
@@ -91,14 +92,19 @@ export function Header({ state, connection }: HeaderProps) {
 
   return (
     <>
-      <header className="flex min-h-12 shrink-0 flex-wrap items-center gap-2 border-b border-bg-border bg-bg-panel px-3 py-2 sm:gap-3 sm:px-6 sm:py-0">
-        {/* Brand logo */}
-        <Link to="/overview" className="flex items-center gap-2 hover:opacity-90">
-          <Activity className="text-brand" size={20} aria-hidden />
-          <span className="font-semibold tracking-wide text-ink text-sm sm:text-base">
-            Fuel Ops Console
-          </span>
-        </Link>
+      <header className="flex min-h-14 shrink-0 flex-wrap items-center gap-2 border-b border-bg-border bg-bg-panel/90 px-3 py-2 backdrop-blur-md sm:gap-3 sm:px-6 sm:py-0">
+        {/* Brand logo + Light / Dark (Dark = previous design) */}
+        <div className="flex items-center gap-3">
+          <Link to="/overview" className="flex items-center gap-2.5 hover:opacity-90">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand text-ink-contrast shadow-sm">
+              <Activity size={16} aria-hidden />
+            </span>
+            <span className="font-display text-sm font-semibold tracking-tight text-ink sm:text-[15px]">
+              Fuel Ops Console
+            </span>
+          </Link>
+          <ThemeToggle />
+        </div>
 
         {/* Clock Badge */}
         <div className="ml-2 hidden sm:block">

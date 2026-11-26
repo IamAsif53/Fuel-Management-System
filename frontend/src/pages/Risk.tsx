@@ -99,7 +99,7 @@ export default function RiskPage() {
     <div className="space-y-6" data-testid="risk-page">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">Risk & Contingency Engine</h1>
+          <h1 className="font-display text-2xl font-semibold tracking-tight text-ink">Risk & Contingency Engine</h1>
           <p className="text-sm text-muted-foreground">
             Multi-horizon Monte Carlo risk (N=300), N-1 infrastructure contingency, and conformal uncertainty intervals
           </p>

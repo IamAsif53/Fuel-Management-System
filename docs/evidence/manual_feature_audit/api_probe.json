@@ -1,0 +1,541 @@
+{
+  "GET /state": {
+    "pass": true,
+    "detail": {
+      "tick": 158,
+      "mode": "autopilot",
+      "engine": "NORMAL"
+    }
+  },
+  "GET /risk": {
+    "pass": true,
+    "detail": null
+  },
+  "GET /alerts": {
+    "pass": true,
+    "detail": null
+  },
+  "GET /recommendations": {
+    "pass": true,
+    "detail": null
+  },
+  "GET /decisions": {
+    "pass": true,
+    "detail": null
+  },
+  "GET /system/status": {
+    "pass": true,
+    "detail": null
+  },
+  "GET /control/status": {
+    "pass": true,
+    "detail": null
+  },
+  "unauth mode blocked": {
+    "pass": true,
+    "detail": null
+  },
+  "login operator": {
+    "pass": true,
+    "detail": null
+  },
+  "operator can mode": {
+    "pass": true,
+    "detail": null
+  },
+  "operator policy forbidden": {
+    "pass": true,
+    "detail": null
+  },
+  "operator me": {
+    "pass": true,
+    "detail": null
+  },
+  "login supervisor": {
+    "pass": true,
+    "detail": null
+  },
+  "supervisor policy allowed": {
+    "pass": true,
+    "detail": null
+  },
+  "chaos clear": {
+    "pass": true,
+    "detail": null
+  },
+  "sim run": {
+    "pass": true,
+    "detail": null
+  },
+  "sim step": {
+    "pass": true,
+    "detail": null
+  },
+  "scenario dhaka": {
+    "pass": true,
+    "detail": null
+  },
+  "chaos clear2": {
+    "pass": true,
+    "detail": null
+  },
+  "whatif baseline": {
+    "pass": true,
+    "detail": {
+      "keys": [
+        "tick",
+        "scenarios",
+        "disclaimer"
+      ]
+    }
+  },
+  "whatif invalid 422": {
+    "pass": true,
+    "detail": null
+  },
+  "assistant ask": {
+    "pass": true,
+    "detail": {
+      "answer_prefix": "System overall status is Healthy. Engine is operating in NORMAL mode at tick 159. Current network service level is 53.59"
+    }
+  },
+  "autopilot enable": {
+    "pass": true,
+    "detail": {
+      "status": "ok",
+      "mode": "autopilot",
+      "operating_mode": "autopilot",
+      "auto_approved": 0
+    }
+  },
+  "plan-now": {
+    "pass": true,
+    "detail": {
+      "status": 202
+    }
+  },
+  "recommendations_sample": [
+    {
+      "id": 2204,
+      "status": "PENDING_APPROVAL",
+      "total_liters": null,
+      "blocked": "Decision volume (22,620 L) exceeds 7,000 L threshold (requires four-eyes signoff); Domain SLO error budget exhausted (-4589.2% remaining, minimum 25% required)",
+      "elig": {
+        "eligible": false,
+        "blocked_reasons": [
+          "Decision volume (22,620 L) exceeds 7,000 L threshold (requires four-eyes signoff)",
+          "Domain SLO error budget exhausted (-4589.2% remaining, minimum 25% required)"
+        ],
+        "requires_four_eyes": true
+      }
+    },
+    {
+      "id": 2203,
+      "status": "PENDING_APPROVAL",
+      "total_liters": null,
+      "blocked": "Decision volume (22,620 L) exceeds 7,000 L threshold (requires four-eyes signoff); Domain SLO error budget exhausted (-4589.2% remaining, minimum 25% required)",
+      "elig": {
+        "eligible": false,
+        "blocked_reasons": [
+          "Decision volume (22,620 L) exceeds 7,000 L threshold (requires four-eyes signoff)",
+          "Domain SLO error budget exhausted (-4589.2% remaining, minimum 25% required)"
+        ],
+        "requires_four_eyes": true
+      }
+    }
+  ],
+  "approve as operator": {
+    "pass": true,
+    "detail": {
+      "id": 2204,
+      "sim_run_id": 2417,
+      "tick": 160,
+      "policy": "optimizer",
+      "policy_version": "optimizer@1.0.0",
+      "trigger": "auto",
+      "status": "EXECUTED",
+      "mode": "autopilot",
+      "confidence": 0.99,
+      "degraded": false,
+      "fallback_reason": null,
+      "narrative": "Recommendation for tick 160: Ship 22620 L across 1 allocation(s). Primary risk at 4: projected_stockout (6.2 h). Expected impact: reduces stockout probability from 100.0% to 100.0%, preventing 2254 L unmet demand. Confidence: 99% (policy: optimizer@1.0.0). Warning: Autopilot frozen by error-budget policy (domain SLO remaining < 25%).",
+      "approved_by": "operator",
+      "approved_at": "2026-11-26T12:35:55.768017Z",
+      "rejected_reason": null,
+      "expires_at_tick": 162,
+      "created_at": "2026-11-26T12:35:54.573388Z",
+      "explanation": {
+        "policy": "optimizer@1.0.0",
+        "sources": [
+          {
+            "id": "station-mirpur",
+            "type": "station"
+          },
+          {
+            "id": "depot-gazipur",
+            "type": "depot"
+          },
+          {
+            "id": "route-gazipur-mirpur",
+            "type": "route"
+          }
+        ],
+        "warning": "Autopilot frozen by error-budget policy (domain SLO remaining < 25%)",
+        "degraded": false,
+        "headline": "Ship 22,620 L across 12 allocations to 4 station(s)",
+        "confidence": 0.99,
+        "constraints": [
+          "depot-gazipur dispatch remaining checked this tick",
+          "station capacity room at arrival accommodates 2,260 L"
+        ],
+        "why_at_risk": [
+          {
+            "value": "6.2 h",
+            "detail": "inventory 0 L vs expected demand in lead time",
+            "signal": "projected_stockout"
+          },
+          {
+            "value": "route-gazipur-mirpur AVAILABLE",
+            "detail": "direct delivery path for DIESEL",
+            "signal": "route_status"
+          }
+        ],
+        "alternatives": [
+          {
+            "name": "do nothing",
+            "why_not": "Leaves station vulnerable to projected stockout peak",
+            "stockout_prob_after": 1.0
+          },
+          {
+            "name": "alternative route to station-mirpur 2,260 L",
+            "why_not": "Transit duration is longer than optimal corridor",
+            "stockout_prob_after": 1.0
+          }
+        ],
+        "forecast_model": "lightgbm@1.2.0",
+        "expected_impact": {
+          "unmet_after": 9241.9,
+          "unmet_before": 11495.6,
+          "stockout_prob_after": 1.0,
+          "stockout_prob_before": 1.0
+        },
+        "confidence_factors": {
+          "solver_status": 1.0,
+          "data_freshness": 1.0,
+          "twin_uncertainty": 0.08,
+          "forecast_coverage": 0.85
+        },
+        "autopilot_eligibility": {
+          "eligible": false,
+          "blocked_reasons": [
+            "Decision volume (22,620 L) exceeds 7,000 L threshold (requires four-eyes signoff)",
+            "Domain SLO error budget exhausted (-4653.3% remaining, minimum 25% required)"
+          ],
+          "requires_four_eyes": true
+        },
+        "autopilot_blocked_reason": "Decision volume (22,620 L) exceeds 7,000 L threshold (requires four-eyes signoff); Domain SLO error budget exhausted (-4653.3% remaining, minimum 25% required)",
+        "domain_slo_budget_remaining": -45.8924
+      },
+      "impact": {
+        "stations": {
+          "station-tongi:DIESEL": {
+            "unmet_after": 7857.9,
+            "unmet_before": 11480.0,
+            "stockout_prob_after": 1.0,
+            "stockout_prob_before": 1.0
+          },
+          "station-tongi:OCTANE": {
+            "unmet_after": 594.0,
+            "unmet_before": 1803.0,
+            "stockout_prob_after": 1.0,
+            "stockout_prob_before": 1.0
+          },
+          "station-tongi:PETROL": {
+            "unmet_after": 1880.9,
+            "unmet_before": 3690.6,
+            "stockout_prob_after": 1.0,
+            "stockout_prob_before": 1.0
+          },
+          "station-mirpur:DIESEL": {
+            "unmet_after": 9241.9,
+            "unmet_before": 11495.6,
+            "stockout_prob_after": 1.0,
+            "stockout_prob_before": 1.0
+          },
+          "station-mirpur:OCTANE": {
+            "unmet_after": 6365.0,
+            "unmet_before": 7568.9,
+            "stockout_prob_after": 1.0,
+            "stockout_prob_before": 1.0
+          },
+          "station-mirpur:PETROL": {
+            "unmet_after": 12315.4,
+            "unmet_before": 14208.0,
+            "stockout_prob_after": 1.0,
+            "stockout_prob_before": 1.0
+          },
+          "station-coxsbazar:DIESEL": {
+            "unmet_after": 302.7,
+            "unmet_before": 3450.7,
+            "stockout_prob_after": 1.0,
+            "stockout_prob_before": 1.0
+          },
+          "station-coxsbazar:OCTANE": {
+            "unmet_after": 965.0,
+            "unmet_before": 1725.2,
+            "stockout_prob_after": 1.0,
+            "stockout_prob_before": 1.0
+          },
+          "station-coxsbazar:PETROL": {
+            "unmet_after": 2254.1,
+            "unmet_before": 3644.5,
+            "stockout_prob_after": 1.0,
+            "stockout_prob_before": 1.0
+          },
+          "station-karnaphuli:DIESEL": {
+            "unmet_after": 4427.5,
+            "unmet_before": 5595.2,
+            "stockout_prob_after": 1.0,
+            "stockout_prob_before": 1.0
+          },
+          "station-karnaphuli:OCTANE": {
+            "unmet_after": 2556.9,
+            "unmet_before": 3306.5,
+            "stockout_prob_after": 1.0,
+            "stockout_prob_before": 1.0
+          },
+          "station-karnaphuli:PETROL": {
+            "unmet_after": 4611.6,
+            "unmet_before": 5867.4,
+            "stockout_prob_after": 1.0,
+            "stockout_prob_before": 1.0
+          }
+        },
+        "unmet_after": 53372.9,
+        "unmet_before": 73835.6,
+        "overflow_after": 0.0,
+        "overflow_before": 0.0
+      },
+      "objective": null,
+      "lines": [
+        {
+          "id": 4920,
+          "line_no": 1,
+          "source_depot_id": "depot-gazipur",
+          "destination_station_id": "station-mirpur",
+          "route_id": "route-gazipur-mirpur",
+          "fuel_type": "DIESEL",
+          "quantity": 2260.0,
+          "idempotency_key": "fsip-2417-2204-1",
+          "status": "SUBMITTED",
+          "sim_allocation_id": 2,
+          "sim_error_code": null,
+          "expected_arrival_tick": 162,
+          "actual_arrival_tick": null,
+          "received_liters": null,
+          "reason": "optimizer_allocation",
+          "created_at": "2026-11-26T12:35:54.575146Z"
+        },
+        {
+          "id": 4921,
+          "line_no": 2,
+          "source_depot_id": "depot-gazipur",
+          "destination_station_id": "station-mirpur",
+          "route_id": "route-gazipur-mirpur",
+          "fuel_type": "PETROL",
+          "quantity": 1880.0,
+          "idempotency_key": "fsip-2417-2204-2",
+          "status": "CANCELLED",
+          "sim_allocation_id": null,
+          "sim_error_code": null,
+          "expected_arrival_tick": 162,
+          "actual_arrival_tick": null,
+          "received_liters": null,
+          "reason": "optimizer_allocation",
+          "created_at": "2026-11-26T12:35:54.575248Z"
+        },
+        {
+          "id": 4922,
+          "line_no": 3,
+          "source_depot_id": "depot-gazipur",
+          "destination_station_id": "station-mirpur",
+          "route_id": "route-gazipur-mirpur",
+          "fuel_type": "OCTANE",
+          "quantity": 1210.0,
+          "idempotency_key": "fsip-2417-2204-3",
+          "status": "CANCELLED",
+          "sim_allocation_id": null,
+          "sim_error_code": null,
+          "expected_arrival_tick": 162,
+          "actual_arrival_tick": null,
+          "received_liters": null,
+          "reason": "optimizer_allocation",
+          "created_at": "2026-11-26T12:35:54.575316Z"
+        },
+        {
+          "id": 4923,
+          "line_no": 4,
+          "source_depot_id": "depot-gazipur",
+          "destination_station_id": "station-tongi",
+          "route_id": "route-gazipur-tongi",
+          "fuel_type": "DIESEL",
+          "quantity": 3630.0,
+          "idempotency_key": "fsip-2417-2204-4",
+          "status": "CANCELLED",
+          "sim_allocation_id": null,
+          "sim_error_code": null,
+          "expected_arrival_tick": 162,
+          "actual_arrival_tick": null,
+          "received_liters": null,
+          "reason": "optimizer_allocation",
+          "created_at": "2026-11-26T12:35:54.575379Z"
+        },
+        {
+          "id": 4924,
+          "line_no": 5,
+          "source_depot_id": "depot-gazipur",
+          "destination_station_id": "station-tongi",
+          "route_id": "route-gazipur-tongi",
+          "fuel_type": "PETROL",
+          "quantity": 1810.0,
+          "idempotency_key": "fsip-2417-2204-5",
+          "status": "CANCELLED",
+          "sim_allocation_id": null,
+          "sim_error_code": null,
+          "expected_arrival_tick": 162,
+          "actual_arrival_tick": null,
+          "received_liters": null,
+          "reason": "optimizer_allocation",
+          "created_at": "2026-11-26T12:35:54.575438Z"
+        },
+        {
+          "id": 4925,
+          "line_no": 6,
+          "source_depot_id": "depot-gazipur",
+          "destination_station_id": "station-tongi",
+          "route_id": "route-gazipur-tongi",
+          "fuel_type": "OCTANE",
+          "quantity": 1210.0,
+          "idempotency_key": "fsip-2417-2204-6",
+          "status": "CANCELLED",
+          "sim_allocation_id": null,
+          "sim_error_code": null,
+          "expected_arrival_tick": 162,
+          "actual_arrival_tick": null,
+          "received_liters": null,
+          "reason": "optimizer_allocation",
+          "created_at": "2026-11-26T12:35:54.575499Z"
+        },
+        {
+          "id": 4926,
+          "line_no": 7,
+          "source_depot_id": "depot-patiya",
+          "destination_station_id": "station-karnaphuli",
+          "route_id": "route-patiya-karnaphuli",
+          "fuel_type": "DIESEL",
+          "quantity": 1170.0,
+          "idempotency_key": "fsip-2417-2204-7",
+          "status": "CANCELLED",
+          "sim_allocation_id": null,
+          "sim_error_code": null,
+          "expected_arrival_tick": 162,
+          "actual_arrival_tick": null,
+          "received_liters": null,
+          "reason": "optimizer_allocation",
+          "created_at": "2026-11-26T12:35:54.575558Z"
+        },
+        {
+          "id": 4927,
+          "line_no": 8,
+          "source_depot_id": "depot-patiya",
+          "destination_station_id": "station-karnaphuli",
+          "route_id": "route-patiya-karnaphuli",
+          "fuel_type": "PETROL",
+          "quantity": 1250.0,
+          "idempotency_key": "fsip-2417-2204-8",
+          "status": "CANCELLED",
+          "sim_allocation_id": null,
+          "sim_error_code": null,
+          "expected_arrival_tick": 162,
+          "actual_arrival_tick": null,
+          "received_liters": null,
+          "reason": "optimizer_allocation",
+          "created_at": "2026-11-26T12:35:54.575617Z"
+        },
+        {
+          "id": 4928,
+          "line_no": 9,
+          "source_depot_id": "depot-patiya",
+          "destination_station_id": "station-karnaphuli",
+          "route_id": "route-patiya-karnaphuli",
+          "fuel_type": "OCTANE",
+          "quantity": 750.0,
+          "idempotency_key": "fsip-2417-2204-9",
+          "status": "CANCELLED",
+          "sim_allocation_id": null,
+          "sim_error_code": null,
+          "expected_arrival_tick": 162,
+          "actual_arrival_tick": null,
+          "received_liters": null,
+          "reason": "optimizer_allocation",
+          "created_at": "2026-11-26T12:35:54.575675Z"
+        },
+        {
+          "id": 4929,
+          "line_no": 10,
+          "source_depot_id": "depot-patiya",
+          "destination_station_id": "station-coxsbazar",
+          "route_id": "route-patiya-coxsbazar",
+          "fuel_type": "DIESEL",
+          "quantity": 5300.0,
+          "idempotency_key": "fsip-2417-2204-10",
+          "status": "CANCELLED",
+          "sim_allocation_id": null,
+          "sim_error_code": null,
+          "expected_arrival_tick": 162,
+          "actual_arrival_tick": null,
+          "received_liters": null,
+          "reason": "optimizer_allocation",
+          "created_at": "2026-11-26T12:35:54.575734Z"
+        },
+        {
+          "id": 4930,
+          "line_no": 11,
+          "source_depot_id": "depot-patiya",
+          "destination_station_id": "station-coxsbazar",
+          "route_id": "route-patiya-coxsbazar",
+          "fuel_type": "PETROL",
+          "quantity": 1390.0,
+          "idempotency_key": "fsip-2417-2204-11",
+          "status": "CANCELLED",
+          "sim_allocation_id": null,
+          "sim_error_code": null,
+          "expected_arrival_tick": 162,
+          "actual_arrival_tick": null,
+          "received_liters": null,
+          "reason": "optimizer_allocation",
+          "created_at": "2026-11-26T12:35:54.575792Z"
+        },
+        {
+          "id": 4931,
+          "line_no": 12,
+          "source_depot_id": "depot-patiya",
+          "destination_station_id": "station-coxsbazar",
+          "route_id": "route-patiya-coxsbazar",
+          "fuel_type": "OCTANE",
+          "quantity": 760.0,
+          "idempotency_key": "fsip-2417-2204-12",
+          "status": "CANCELLED",
+          "sim_allocation_id": null,
+          "sim_error_code": null,
+          "expected_arrival_tick": 162,
+          "actual_arrival_tick": null,
+          "received_liters": null,
+          "reason": "optimizer_allocation",
+          "created_at": "2026-11-26T12:35:54.575850Z"
+        }
+      ],
+      "outcome": null
+    }
+  }
+}

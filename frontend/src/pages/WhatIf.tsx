@@ -101,7 +101,7 @@ export default function WhatIfPage() {
       {/* Header */}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-xl font-bold tracking-tight text-ink">What-If Scenario Simulation</h1>
+          <h1 className="font-display text-2xl font-semibold tracking-tight text-ink">What-If Scenario Simulation</h1>
           <p className="text-xs text-ink-muted mt-1">
             Counterfactual digital twin simulation: evaluate disruptions, candidate dispatches, and multi-scenario impacts.
           </p>

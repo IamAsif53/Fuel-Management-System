@@ -312,7 +312,7 @@ export default function Recommendations() {
       {/* Top Banner & Actions */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-xl font-bold tracking-tight text-ink flex items-center gap-2">
+          <h1 className="font-display text-2xl font-semibold tracking-tight text-ink flex items-center gap-2">
             <Inbox className="text-brand" size={24} />
             Prescriptive Recommendations
           </h1>
@@ -360,7 +360,7 @@ export default function Recommendations() {
             {operatingMode} Mode Active:
           </span>
           {operatingMode === "autopilot"
-            ? "Low-risk routine replenishment recommendations are automatically dispatched on cycle. High-risk alerts or constrained routes remain listed here for manual confirmation."
+            ? "Low-risk ≤7k L allocations auto-dispatch (or a ≤7k L subset of larger plans). Full plans above the four-eyes ceiling and SLO-frozen cycles stay here for review — see the header Autopilot banner for freeze reasons."
             : "All proposed shipment allocations require explicit operator review and sign-off before being dispatched to the delivery network."}
         </div>
       </div>
@@ -376,7 +376,9 @@ export default function Recommendations() {
             {fmtPct(metrics?.acceptance_rate)}
           </div>
           <span className="text-[10px] text-ink-faint">
-            {metrics?.decided_count ? `${metrics.accepted_count}/${metrics.decided_count} decided` : "No decisions yet"}
+            {metrics?.decided_count
+              ? `${metrics.accepted_count}/${metrics.decided_count} decided (excl. expired/failed)`
+              : "No decisions yet"}
           </span>
         </div>
         <div className="space-y-1">
@@ -426,6 +428,10 @@ export default function Recommendations() {
           const selMap = selectedLines[rec.id] || {};
           const qtyMap = modifiedQuantities[rec.id] || {};
           const isActing = actionInProgress[rec.id] || false;
+          const isExpired =
+            Boolean(rec.expires_at_tick) &&
+            state?.tick != null &&
+            rec.expires_at_tick! <= state.tick;
 
           const totalSelectedLiters = (rec.lines || []).reduce((acc, ln) => {
             if (selMap[ln.id]) {
@@ -443,13 +449,21 @@ export default function Recommendations() {
           const isReviewed = reviewedDriver[rec.id] || false;
           const isWhyOpen = whyExpanded[rec.id] || false;
           const canApprove =
-            selectedLinesList.length > 0 && (!requiresCognitiveForcing || (isWhyOpen && isReviewed));
+            !isExpired &&
+            selectedLinesList.length > 0 &&
+            (!requiresCognitiveForcing || (isWhyOpen && isReviewed));
 
           return (
             <div
               key={rec.id}
               data-testid={`rec-card-${rec.id}`}
-              className="rounded-xl border border-bg-border bg-bg-panel p-5 shadow-sm transition-all hover:border-bg-border/80"
+              data-expired={isExpired ? "true" : "false"}
+              className={clsx(
+                "rounded-xl border bg-bg-panel p-5 shadow-sm transition-all",
+                isExpired
+                  ? "border-risk-critical/40 opacity-80"
+                  : "border-bg-border hover:border-bg-border/80"
+              )}
             >
               {/* Card Header */}
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-bg-border/60 pb-3">
@@ -476,13 +490,14 @@ export default function Recommendations() {
                     <span
                       className={clsx(
                         "rounded px-2 py-0.5 font-mono text-[11px]",
-                        state?.tick && rec.expires_at_tick <= state.tick
+                        isExpired
                           ? "bg-risk-critical/15 text-risk-critical font-bold"
                           : "bg-bg-raised text-ink-muted"
                       )}
                     >
-                      Expires t={rec.expires_at_tick}
-                      {state?.tick && rec.expires_at_tick <= state.tick ? " (Expired)" : ""}
+                      {isExpired
+                        ? `Expired at t=${rec.expires_at_tick} — Plan Now`
+                        : `Expires t=${rec.expires_at_tick}`}
                     </span>
                   )}
                   <span className="rounded bg-bg-raised px-2 py-0.5 text-[11px] font-semibold text-ink-muted capitalize">
@@ -517,14 +532,33 @@ export default function Recommendations() {
                     <span>{confPct}% Confidence</span>
                   </div>
 
-                  {/* Expiry */}
-                  {rec.expires_at_tick && (
+                  {!isExpired && rec.expires_at_tick && (
                     <span className="text-xs text-ink-faint">
                       Expires tick {rec.expires_at_tick}
                     </span>
                   )}
                 </div>
               </div>
+
+              {isExpired && (
+                <div
+                  data-testid={`rec-expired-${rec.id}`}
+                  className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-risk-critical/40 bg-risk-critical/10 p-3 text-xs text-risk-critical"
+                  role="status"
+                >
+                  <span className="font-semibold">
+                    This recommendation expired at tick {rec.expires_at_tick}. Approve/Reject are
+                    disabled — run Plan Now for a fresh proposal.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={loadRecommendations}
+                    className="rounded border border-risk-critical/40 bg-bg-panel px-2.5 py-1 text-[11px] font-semibold text-ink hover:bg-bg-raised"
+                  >
+                    Refresh inbox
+                  </button>
+                </div>
+              )}
 
               {/* Narrative / Context */}
               {rec.narrative && (
@@ -668,8 +702,8 @@ export default function Recommendations() {
                   <button
                     data-testid={`reject-${rec.id}`}
                     onClick={() => handleRejectClick(rec)}
-                    disabled={isActing}
-                    className="flex items-center gap-1.5 rounded-lg border border-bg-border bg-bg-raised px-3 py-1.5 text-xs font-semibold text-ink-muted hover:border-risk-critical/40 hover:text-risk-critical transition-colors"
+                    disabled={isActing || isExpired}
+                    className="flex items-center gap-1.5 rounded-lg border border-bg-border bg-bg-raised px-3 py-1.5 text-xs font-semibold text-ink-muted hover:border-risk-critical/40 hover:text-risk-critical transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <XCircle size={14} />
                     <span className="font-mono text-[10px] opacity-70 bg-bg px-1 rounded">X</span>
@@ -679,15 +713,17 @@ export default function Recommendations() {
                   <button
                     data-testid={`approve-${rec.id}`}
                     onClick={() => handleApproveClick(rec)}
-                    disabled={isActing || totalSelectedLiters === 0 || !canApprove}
+                    disabled={isActing || isExpired || totalSelectedLiters === 0 || !canApprove}
                     title={
-                      !canApprove
-                        ? "Cognitive forcing review required: expand Why and check 'I reviewed the main risk driver'"
-                        : ""
+                      isExpired
+                        ? "Expired — run Plan Now for a fresh recommendation"
+                        : !canApprove
+                          ? "Cognitive forcing review required: expand Why and check 'I reviewed the main risk driver'"
+                          : ""
                     }
                     className={clsx(
                       "flex items-center gap-1.5 rounded-lg bg-risk-low px-4 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-risk-low/90",
-                      (isActing || totalSelectedLiters === 0 || !canApprove) &&
+                      (isActing || isExpired || totalSelectedLiters === 0 || !canApprove) &&
                         "opacity-50 cursor-not-allowed"
                     )}
                   >

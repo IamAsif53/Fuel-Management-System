@@ -271,11 +271,49 @@ class DecisionEngine:
         is_eligible = len(blocked_reasons) == 0
         return is_eligible, blocked_reasons
 
+    @staticmethod
+    def _blocked_only_by_volume(blocked_reasons: list[str]) -> bool:
+        """True when every block is a four-eyes / per-line volume ceiling (safe to subset)."""
+        if not blocked_reasons:
+            return False
+        for reason in blocked_reasons:
+            lowered = reason.lower()
+            volume_hit = (
+                "7,000" in reason
+                or "7000" in reason
+                or "four-eyes" in lowered
+                or "autonomous ceiling" in lowered
+            )
+            if not volume_hit:
+                return False
+        return True
+
+    def _select_autopilot_line_subset(
+        self, lines: list[Any], max_total: float = 7000.0
+    ) -> tuple[list[Any], float]:
+        """Pick highest-impact lines that individually and jointly fit autopilot volume gates."""
+        max_line = float(getattr(self.settings, "auto_approve_max_liters", 7000.0) or 7000.0)
+        candidates = [
+            ln for ln in lines if float(getattr(ln, "quantity", 0.0) or 0.0) <= max_line
+        ]
+        candidates.sort(key=lambda ln: float(getattr(ln, "quantity", 0.0) or 0.0), reverse=True)
+        selected: list[Any] = []
+        total = 0.0
+        for ln in candidates:
+            qty = float(getattr(ln, "quantity", 0.0) or 0.0)
+            if qty <= 0:
+                continue
+            if total + qty <= max_total:
+                selected.append(ln)
+                total += qty
+        return selected, total
+
     async def evaluate_autopilot_pending(self, store: WorldState) -> int:
         """Evaluate active PENDING_APPROVAL decisions against the Autopilot eligibility gate.
 
         If eligible, automatically approves and executes them.
-        If ineligible, updates blocked reasons in explanation.
+        If blocked only by volume/four-eyes, auto-approves a ≤7k L line subset (PARTIAL).
+        If otherwise ineligible, updates blocked reasons in explanation.
         Returns the count of auto-approved decisions.
         """
         cur_tick = getattr(store, "tick", 0)
@@ -305,23 +343,56 @@ class DecisionEngine:
                     continue
 
                 conf = dec.confidence if dec.confidence is not None else 0.5
-                is_eligible, blocked_reasons = self.check_autopilot_eligibility(store, list(dec.lines), conf)
+                lines = list(dec.lines)
+                is_eligible, blocked_reasons = self.check_autopilot_eligibility(store, lines, conf)
 
                 expl = dict(dec.explanation or {})
-                total_liters = sum(float(ln.quantity) for ln in dec.lines)
+                total_liters = sum(float(ln.quantity) for ln in lines)
+                subset_lines: list[DecisionLine] = []
+                subset_liters = 0.0
+                partial_ok = False
+
+                if (
+                    not is_eligible
+                    and self._blocked_only_by_volume(blocked_reasons)
+                ):
+                    subset_lines, subset_liters = self._select_autopilot_line_subset(lines)
+                    if subset_lines:
+                        subset_eligible, subset_blocked = self.check_autopilot_eligibility(
+                            store, subset_lines, conf
+                        )
+                        partial_ok = subset_eligible
+                        if partial_ok:
+                            blocked_reasons = [
+                                *blocked_reasons,
+                                (
+                                    f"Autopilot dispatching ≤{subset_liters:,.0f} L subset "
+                                    f"({len(subset_lines)}/{len(lines)} lines); remainder needs review"
+                                ),
+                            ]
+
                 expl["autopilot_eligibility"] = {
-                    "eligible": is_eligible,
+                    "eligible": is_eligible or partial_ok,
                     "blocked_reasons": blocked_reasons,
                     "requires_four_eyes": total_liters > 7000.0,
+                    "partial_subset_liters": subset_liters if partial_ok else None,
+                    "partial_subset_lines": len(subset_lines) if partial_ok else None,
                 }
-                if blocked_reasons:
+                if blocked_reasons and not (is_eligible or partial_ok):
                     expl["autopilot_blocked_reason"] = "; ".join(blocked_reasons)
+                elif partial_ok:
+                    expl["autopilot_blocked_reason"] = (
+                        f"Partial auto-dispatch {subset_liters:,.0f} L; "
+                        f"full plan {total_liters:,.0f} L still exceeds four-eyes threshold"
+                    )
                 else:
                     expl.pop("autopilot_blocked_reason", None)
                 dec.explanation = expl
 
-                if is_eligible:
-                    dec.status = "APPROVED"
+                if is_eligible or partial_ok:
+                    exec_lines = lines if is_eligible else subset_lines
+                    exec_liters = total_liters if is_eligible else subset_liters
+                    dec.status = "APPROVED" if is_eligible else "PARTIAL"
                     dec.approved_by = "autopilot"
                     dec.approved_at = datetime.now(UTC)
 
@@ -335,13 +406,14 @@ class DecisionEngine:
                             "tick": cur_tick,
                             "policy": dec.policy,
                             "confidence": dec.confidence,
-                            "lines_count": len(dec.lines),
-                            "total_liters": total_liters,
+                            "lines_count": len(exec_lines),
+                            "total_liters": exec_liters,
+                            "partial": partial_ok and not is_eligible,
                         },
                     )
                     session.add(audit_entry)
                     approved_count += 1
-                    to_execute.append((dec, list(dec.lines)))
+                    to_execute.append((dec, exec_lines))
 
             await session.commit()
 

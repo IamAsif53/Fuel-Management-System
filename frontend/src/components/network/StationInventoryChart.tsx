@@ -56,7 +56,7 @@ export function StationInventoryChart({ history, capacity }: StationInventoryCha
           />
           <Tooltip
             contentStyle={{
-              backgroundColor: "#111A2E",
+              backgroundColor: "var(--color-bg-panel)",
               borderColor: "#24314F",
               borderRadius: "4px",
               fontSize: "11px",

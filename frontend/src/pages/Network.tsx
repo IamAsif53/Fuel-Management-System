@@ -134,7 +134,7 @@ export default function Network() {
       {/* Page Header and Tab Bar */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-panel-border/60 pb-4">
         <div>
-          <h1 className="text-xl font-bold tracking-tight text-ink">
+          <h1 className="font-display text-2xl font-semibold tracking-tight text-ink">
             Network & Inventory Infrastructure
           </h1>
           <p className="mt-1 text-xs text-ink-muted">

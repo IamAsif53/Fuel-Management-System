@@ -1,0 +1,45 @@
+{
+  "reset": {
+    "status": 200,
+    "body": "{\"status\":\"ok\",\"action\":\"reset\",\"sim\":{\"id\":1,\"scenario_id\":\"baseline\",\"scenario_version\":\"1.0\",\"seed\":12345,\"sim_time\":"
+  },
+  "pending_count": 1,
+  "decision": {
+    "id": 2207,
+    "status": "PENDING_APPROVAL",
+    "lines": 6,
+    "total": 23000.0
+  },
+  "four_eyes_first": {
+    "status": 422,
+    "body": "{\"detail\":{\"code\":\"CONSTRAINT_VIOLATION\",\"message\":\"Line 1 violated constraints: [R4_MAX_SHIPMENT] Quantity 8000.0 L exceeds route max shipment 7000.0 L or is <= 0.; [R7_STATION_CAPACITY] Current inventory (8849.4 L) + quantity (8000.0 L) exceeds capacity (14000.0 L).; [R7B_OVERFLOW_AT_ARRIVAL] Quan"
+  },
+  "reject": {
+    "status": 409,
+    "body": "{\"detail\":{\"code\":\"INVALID_STATE\",\"message\":\"Decision in status 'EXPIRED' cannot be transitioned (expected 'PENDING_APPROVAL or AWAITING_SECOND_APPROVAL')\"}}"
+  },
+  "autopilot": {
+    "mode": "autopilot",
+    "pending": 1,
+    "sample": [
+      {
+        "id": 2212,
+        "status": "PENDING_APPROVAL",
+        "elig": {
+          "eligible": false,
+          "blocked_reasons": [
+            "Decision volume (22,980 L) exceeds 7,000 L threshold (requires four-eyes signoff)"
+          ],
+          "requires_four_eyes": true
+        },
+        "blocked": "Decision volume (22,980 L) exceeds 7,000 L threshold (requires four-eyes signoff)"
+      }
+    ]
+  },
+  "autopilot_audit_count": 0,
+  "risk_filters": {
+    "dhaka": 6,
+    "chattogram": 6
+  },
+  "endpoint /cover": "200"
+}

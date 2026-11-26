@@ -36,16 +36,16 @@ const DEFAULT_POSITIONS: Record<string, Point> = {
 };
 
 const FUEL_COLORS: Record<Fuel, string> = {
-  DIESEL: "#38BDF8",
-  PETROL: "#A78BFA",
-  OCTANE: "#F472B6",
+  DIESEL: "var(--color-fuel-diesel)",
+  PETROL: "var(--color-fuel-petrol)",
+  OCTANE: "var(--color-fuel-octane)",
 };
 
 const RISK_BORDER_COLORS: Record<RiskLevel, string> = {
-  LOW: "#22C55E",
-  MEDIUM: "#EAB308",
-  HIGH: "#F97316",
-  CRITICAL: "#EF4444",
+  LOW: "var(--color-risk-low)",
+  MEDIUM: "var(--color-risk-medium)",
+  HIGH: "var(--color-risk-high)",
+  CRITICAL: "var(--color-risk-critical)",
 };
 
 function getNodePos(id: string, fallbackIndex: number, isDepot: boolean): Point {
@@ -216,19 +216,19 @@ export function NetworkGraph({ state, onSelectEntity }: NetworkGraphProps) {
         {/* Legend */}
         <div className="flex flex-wrap items-center gap-4 text-xs text-ink-muted">
           <div className="flex items-center gap-1.5">
-            <span className="h-0.5 w-4 bg-[#24314F]" />
+            <span className="h-0.5 w-4 bg-bg-border" />
             <span>Available</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="h-0.5 w-4 bg-[#EF4444]" />
-            <span className="text-[#EF4444]">Disrupted</span>
+            <span className="h-0.5 w-4 bg-risk-critical" />
+            <span className="text-risk-critical">Disrupted</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="h-0.5 w-4 border-t-2 border-dashed border-[#EAB308]" />
-            <span className="text-[#EAB308]">Scheduled</span>
+            <span className="h-0.5 w-4 border-t-2 border-dashed border-risk-medium" />
+            <span className="text-risk-medium">Scheduled</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full bg-[#38BDF8] animate-pulse" />
+            <span className="h-2 w-2 rounded-full bg-fuel-diesel animate-pulse" />
             <span>In Transit</span>
           </div>
         </div>
@@ -259,15 +259,15 @@ export function NetworkGraph({ state, onSelectEntity }: NetworkGraphProps) {
                 rg.status === "SCHEDULED_DISRUPTION" ||
                 Boolean(rg.route.scheduled_disruption);
 
-              let strokeColor = "#24314F";
+              let strokeColor = "var(--color-bg-border)";
               let strokeWidth = 2;
               let strokeDasharray = "none";
 
               if (isDisrupted) {
-                strokeColor = "#EF4444";
+                strokeColor = "var(--color-risk-critical)";
                 strokeWidth = 3;
               } else if (isScheduled) {
-                strokeColor = "#EAB308";
+                strokeColor = "var(--color-risk-medium)";
                 strokeWidth = 2.5;
                 strokeDasharray = "6 4";
               }
@@ -295,7 +295,7 @@ export function NetworkGraph({ state, onSelectEntity }: NetworkGraphProps) {
                       width="28"
                       height="20"
                       rx="4"
-                      fill="#111A2E"
+                      fill="var(--color-bg-panel)"
                       stroke={strokeColor}
                       strokeWidth="1"
                     />
@@ -327,7 +327,7 @@ export function NetworkGraph({ state, onSelectEntity }: NetworkGraphProps) {
                     y: rg.p0.y + (rg.p3.y - rg.p0.y) * t,
                   };
 
-              const fuelColor = FUEL_COLORS[alloc.fuel_type] || "#38BDF8";
+              const fuelColor = FUEL_COLORS[alloc.fuel_type] || "var(--color-fuel-diesel)";
 
               return (
                 <g
@@ -338,7 +338,7 @@ export function NetworkGraph({ state, onSelectEntity }: NetworkGraphProps) {
                   <circle
                     r="6"
                     fill={fuelColor}
-                    stroke="#111A2E"
+                    stroke="var(--color-bg-panel)"
                     strokeWidth="1.5"
                     filter="url(#dot-glow)"
                     className="cursor-pointer transition-transform duration-200 hover:scale-125"
@@ -357,7 +357,9 @@ export function NetworkGraph({ state, onSelectEntity }: NetworkGraphProps) {
               if (!pos) return null;
 
               const isConstrained = depot.status === "CONSTRAINED";
-              const strokeColor = isConstrained ? "#EAB308" : "#24314F";
+              const strokeColor = isConstrained
+                ? "var(--color-risk-medium)"
+                : "var(--color-bg-border)";
 
               return (
                 <g
@@ -371,7 +373,7 @@ export function NetworkGraph({ state, onSelectEntity }: NetworkGraphProps) {
                     width="164"
                     height="56"
                     rx="8"
-                    fill="#17223A"
+                    fill="var(--color-bg-raised)"
                     stroke={strokeColor}
                     strokeWidth="2"
                     className="transition group-hover:stroke-brand"
@@ -394,15 +396,15 @@ export function NetworkGraph({ state, onSelectEntity }: NetworkGraphProps) {
                     width="40"
                     height="14"
                     rx="3"
-                    fill={isConstrained ? "#EAB30825" : "#22C55E20"}
-                    stroke={isConstrained ? "#EAB308" : "#22C55E"}
+                    fill={isConstrained ? "color-mix(in srgb, var(--color-risk-medium) 15%, transparent)" : "color-mix(in srgb, var(--color-risk-low) 12%, transparent)"}
+                    stroke={isConstrained ? "var(--color-risk-medium)" : "var(--color-risk-low)"}
                     strokeWidth="0.8"
                   />
                   <text
                     x="136"
                     y="16.5"
                     textAnchor="middle"
-                    fill={isConstrained ? "#EAB308" : "#22C55E"}
+                    fill={isConstrained ? "var(--color-risk-medium)" : "var(--color-risk-low)"}
                     className="text-[9px] font-bold tracking-wider font-mono uppercase"
                   >
                     {depot.status}
@@ -422,7 +424,7 @@ export function NetworkGraph({ state, onSelectEntity }: NetworkGraphProps) {
                           width={barWidth}
                           height="8"
                           rx="2"
-                          fill="#0B1220"
+                          fill="var(--color-bg)"
                         />
                         <rect
                           width={barWidth * fillPct}
@@ -466,7 +468,7 @@ export function NetworkGraph({ state, onSelectEntity }: NetworkGraphProps) {
                     width="192"
                     height="56"
                     rx="8"
-                    fill="#17223A"
+                    fill="var(--color-bg-raised)"
                     stroke={strokeColor}
                     strokeWidth={worstRisk === "HIGH" || worstRisk === "CRITICAL" ? 2.5 : 1.5}
                     className="transition group-hover:stroke-brand"
@@ -517,7 +519,7 @@ export function NetworkGraph({ state, onSelectEntity }: NetworkGraphProps) {
                           width={barWidth}
                           height="8"
                           rx="2"
-                          fill="#0B1220"
+                          fill="var(--color-bg)"
                         />
                         <rect
                           width={barWidth * clampedFill}

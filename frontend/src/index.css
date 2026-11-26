@@ -2,6 +2,122 @@
 @tailwind components;
 @tailwind utilities;
 
-html, body, #root { height: 100%; color-scheme: dark; }
-body { font-feature-settings: "tnum" 1; background-color: #0B1220; color: #E6EDF7; } /* tabular numbers: no jitter on live updates */
-input, select, textarea { color-scheme: dark; }
+/*
+  Themes (reversible):
+  - dawn   = new “control room at dawn” look (default)
+  - legacy = current dark ops console
+  Toggle via data-theme on <html>; persisted in localStorage key fsip-theme.
+*/
+
+:root,
+html[data-theme="dawn"] {
+  color-scheme: light;
+  --color-bg: #e4ebf0;
+  --color-bg-panel: #f5f8fa;
+  --color-bg-raised: #ffffff;
+  --color-bg-border: #c8d4dc;
+  --color-ink: #15252e;
+  --color-ink-muted: #4d6470;
+  --color-ink-faint: #7a909c;
+  --color-ink-contrast: #ffffff;
+  --color-brand: #0e6e6a;
+  --color-brand-soft: #d3ebe9;
+  --color-accent: #0e6e6a;
+  --color-risk-low: #1b8a5a;
+  --color-risk-medium: #c4921a;
+  --color-risk-high: #d97706;
+  --color-risk-critical: #dc2626;
+  --color-fuel-diesel: #0e7490;
+  --color-fuel-petrol: #5b6b8c;
+  --color-fuel-octane: #b45309;
+  --color-state-healthy: #1b8a5a;
+  --color-state-degraded: #c4921a;
+  --color-state-down: #dc2626;
+  --color-state-unknown: #64748b;
+  --color-surface: #ffffff;
+  --color-panel: #f5f8fa;
+  --color-panel-border: #c8d4dc;
+  --color-card: #f5f8fa;
+  --color-background: #ffffff;
+  --color-border: #c8d4dc;
+  --color-foreground: #15252e;
+  --color-muted: #eef3f6;
+  --color-muted-foreground: #4d6470;
+  --color-primary: #0e6e6a;
+  --color-primary-foreground: #ffffff;
+  --shadow-panel: 0 12px 32px rgba(21, 37, 46, 0.08);
+  --app-atmosphere:
+    radial-gradient(1100px 520px at 8% -8%, rgba(14, 110, 106, 0.14) 0%, transparent 55%),
+    radial-gradient(900px 480px at 92% 0%, rgba(14, 116, 144, 0.1) 0%, transparent 50%),
+    linear-gradient(180deg, #eaf2f3 0%, #e4ebf0 45%, #dde5ea 100%);
+}
+
+html[data-theme="legacy"] {
+  color-scheme: dark;
+  --color-bg: #0b1220;
+  --color-bg-panel: #111a2e;
+  --color-bg-raised: #17223a;
+  --color-bg-border: #24314f;
+  --color-ink: #e6edf7;
+  --color-ink-muted: #93a4c3;
+  --color-ink-faint: #5b6b8c;
+  --color-ink-contrast: #ffffff;
+  --color-brand: #3b82f6;
+  --color-brand-soft: #1e3a6b;
+  --color-accent: #3b82f6;
+  --color-risk-low: #22c55e;
+  --color-risk-medium: #eab308;
+  --color-risk-high: #f97316;
+  --color-risk-critical: #ef4444;
+  --color-fuel-diesel: #38bdf8;
+  --color-fuel-petrol: #a78bfa;
+  --color-fuel-octane: #f472b6;
+  --color-state-healthy: #22c55e;
+  --color-state-degraded: #eab308;
+  --color-state-down: #ef4444;
+  --color-state-unknown: #64748b;
+  --color-surface: #17223a;
+  --color-panel: #111a2e;
+  --color-panel-border: #24314f;
+  --color-card: #111a2e;
+  --color-background: #17223a;
+  --color-border: #24314f;
+  --color-foreground: #e6edf7;
+  --color-muted: #17223a;
+  --color-muted-foreground: #93a4c3;
+  --color-primary: #3b82f6;
+  --color-primary-foreground: #ffffff;
+  --shadow-panel: 0 8px 24px rgba(0, 0, 0, 0.35);
+  --app-atmosphere: none;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  font-feature-settings: "tnum" 1;
+  font-family: "Sora", ui-sans-serif, system-ui, sans-serif;
+  background-color: var(--color-bg);
+  background-image: var(--app-atmosphere);
+  background-attachment: fixed;
+  color: var(--color-ink);
+}
+
+input,
+select,
+textarea {
+  color-scheme: inherit;
+}
+
+/* Dawn: quieter cards, less neon chrome */
+html[data-theme="dawn"] .rounded-xl.border.bg-bg-panel,
+html[data-theme="dawn"] .rounded-lg.border.bg-panel {
+  box-shadow: var(--shadow-panel);
+}
+
+html[data-theme="dawn"] h1 {
+  letter-spacing: -0.02em;
+}

@@ -133,10 +133,24 @@ async def test_invalid_preset(auth_headers):
 
 
 @pytest.mark.asyncio
+async def test_chaos_fault_accepts_empty_body(auth_headers):
+    """Bare POST /control/chaos/{fault} should use duration/parameter defaults (no 422)."""
+    with patch("app.routers.control._call_simulator", new_callable=AsyncMock) as mock_sim, \
+         patch("app.routers.control._record_audit", new_callable=AsyncMock):
+        mock_sim.return_value = {"status": "ok", "type": "latency"}
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+            res = await client.post("/api/control/chaos/latency", headers=auth_headers)
+            assert res.status_code == 200, res.text
+            body = res.json()
+            assert body["fault"] == "latency"
+            assert body["duration_seconds"] == 60
+            assert body["parameters"]["delay_ms"] == 1500
+
+
+@pytest.mark.asyncio
 async def test_chaos_faults_and_clear(auth_headers):
     """Test injecting 5 supported fault types and clearing faults."""
     faults = ["unavailable", "error_rate", "latency", "stale_data", "stream_disconnect"]
-
     with patch("app.routers.control._call_simulator", new_callable=AsyncMock) as mock_sim, \
          patch("app.routers.control._record_audit", new_callable=AsyncMock):
 

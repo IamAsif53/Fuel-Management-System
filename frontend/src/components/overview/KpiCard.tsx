@@ -35,11 +35,11 @@ export function KpiCard({
   return (
     <div
       data-testid={testId || `kpi-${label.toLowerCase().replace(/\s+/g, "-")}`}
-      className="flex min-w-0 flex-col justify-between rounded-xl border border-bg-border bg-bg-panel p-3 sm:p-3.5 transition hover:border-bg-border/80 shadow-sm"
+      className="flex min-w-0 flex-col justify-between rounded-2xl border border-bg-border bg-bg-panel/95 p-3 sm:p-3.5 shadow-panel transition hover:border-brand/25"
     >
       <div
         title={label}
-        className="h-7 flex items-center text-[11px] font-semibold uppercase tracking-wider text-ink-muted leading-tight truncate"
+        className="h-7 flex items-center text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted leading-tight truncate"
       >
         {label}
       </div>

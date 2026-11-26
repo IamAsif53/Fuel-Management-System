@@ -3,8 +3,10 @@ import { render, screen } from "@testing-library/react";
 import { ConnectionDot } from "@/components/layout/ConnectionDot";
 import { ClockBadge } from "@/components/layout/ClockBadge";
 import { DegradedBanner } from "@/components/layout/DegradedBanner";
+import { AutopilotStatusBanner } from "@/components/layout/AutopilotStatusBanner";
 import { EngineModeBadge } from "@/components/layout/EngineModeBadge";
 import type { WorldState } from "@/api/types";
+import { domainSloBudget } from "@/lib/sloBudget";
 
 describe("Application Shell Components", () => {
   it("renders ConnectionDot with LIVE, POLLING, and OFFLINE states", () => {
@@ -79,5 +81,37 @@ describe("Application Shell Components", () => {
     expect(screen.getByTestId("degraded-banner")).toHaveTextContent(
       "Prediction service down – fallback"
     );
+  });
+
+  it("computes domain SLO budget for autopilot resume gate", () => {
+    expect(domainSloBudget(1).exhausted).toBe(false);
+    expect(domainSloBudget(0.995).remaining).toBeCloseTo(0.5);
+    expect(domainSloBudget(0.99).exhausted).toBe(true);
+    expect(domainSloBudget(0.98).remaining).toBeLessThan(0);
+  });
+
+  it("renders AutopilotStatusBanner only in autopilot mode with freeze/SLO cues", () => {
+    const advisory = {
+      operating_mode: "advisory",
+      tick: 10,
+      metrics: { service_level: 1 },
+      degraded_reasons: [],
+      pending_recommendations: [],
+    } as unknown as WorldState;
+    const { rerender } = render(<AutopilotStatusBanner state={advisory} />);
+    expect(screen.queryByTestId("autopilot-status-banner")).toBeNull();
+
+    const frozen = {
+      operating_mode: "autopilot",
+      tick: 42,
+      metrics: { service_level: 0.97 },
+      degraded_reasons: ["error_budget_exhausted"],
+      pending_recommendations: [{ decision_id: 1, total_liters: 23000 }],
+    } as unknown as WorldState;
+    rerender(<AutopilotStatusBanner state={frozen} />);
+    const banner = screen.getByTestId("autopilot-status-banner");
+    expect(banner).toHaveTextContent("AUTOPILOT FROZEN");
+    expect(banner).toHaveTextContent("7,000");
+    expect(banner).toHaveTextContent("t=42");
   });
 });

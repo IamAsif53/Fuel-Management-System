@@ -91,7 +91,7 @@ export default function AlertsPage() {
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">Alerts & Incidents</h1>
+          <h1 className="font-display text-2xl font-semibold tracking-tight text-ink">Alerts & Incidents</h1>
           <p className="text-sm text-muted-foreground">
             Active operational alerts, automated deduplication, severity escalation, and incident timelines
           </p>

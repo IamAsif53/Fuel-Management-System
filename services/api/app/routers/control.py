@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import Annotated, Any
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from fsip_common.logging import get_logger
 from pydantic import BaseModel, Field
 
@@ -449,6 +449,101 @@ async def control_trigger_preset(
     }
 
 
+# ---------------------------------------------------------------- Demo helpers
+@router.post("/demo/prepare-autopilot")
+async def control_prepare_autopilot_demo(
+    request: Request,
+    user: Annotated[dict[str, Any], Depends(require_operator)],
+    settings: Annotated[ApiSettings, Depends(get_settings)],
+) -> dict[str, Any]:
+    """Reset to a healthy baseline and arm Autopilot for a visible demo cycle.
+
+    Steps: clear chaos → reset sim → step 2 ticks → enable autopilot → plan-now.
+    Does not weaken production guards; large plans still require four-eyes, but
+    Autopilot may auto-dispatch a ≤7k L subset once domain SLO budget recovers.
+    """
+    _check_demo_enabled(settings)
+    actor = user.get("actor") or user.get("sub") or "operator"
+    steps: dict[str, Any] = {}
+
+    try:
+        steps["chaos_clear"] = await _call_simulator(
+            request, settings, "POST", "/admin/faults/clear"
+        )
+    except HTTPException as exc:
+        steps["chaos_clear"] = {"skipped": True, "detail": str(exc.detail)}
+
+    steps["reset"] = await _call_simulator(request, settings, "POST", "/admin/reset")
+
+    last_step: dict[str, Any] = {}
+    for _ in range(2):
+        last_step = await _call_simulator(request, settings, "POST", "/admin/step")
+    steps["step"] = last_step
+
+    engine_url = getattr(settings, "engine_internal_url", None)
+    engine_token = getattr(settings, "engine_internal_token", None)
+    mode_res: dict[str, Any] = {"skipped": True}
+    plan_res: dict[str, Any] = {"skipped": True}
+    if engine_url and engine_token:
+        http_client: httpx.AsyncClient = getattr(request.app.state, "http", None) or httpx.AsyncClient(
+            timeout=15.0
+        )
+        headers = {"X-Internal-Token": engine_token}
+        try:
+            mode_resp = await http_client.request(
+                "POST",
+                f"{engine_url.rstrip('/')}/engine/control/mode",
+                json={"mode": "autopilot"},
+                headers=headers,
+                timeout=15.0,
+            )
+            mode_res = (
+                mode_resp.json()
+                if mode_resp.headers.get("content-type", "").startswith("application/json")
+                else {"status_code": mode_resp.status_code, "body": mode_resp.text[:200]}
+            )
+            plan_resp = await http_client.request(
+                "POST",
+                f"{engine_url.rstrip('/')}/engine/plan-now",
+                json={},
+                headers=headers,
+                timeout=30.0,
+            )
+            plan_res = (
+                plan_resp.json()
+                if plan_resp.headers.get("content-type", "").startswith("application/json")
+                else {"status_code": plan_resp.status_code, "body": plan_resp.text[:200]}
+            )
+        except Exception as exc:
+            mode_res = {"error": str(exc)}
+            plan_res = {"error": str(exc)}
+
+    steps["autopilot_mode"] = mode_res
+    steps["plan_now"] = plan_res
+
+    await _record_audit(
+        actor=actor,
+        action="control.demo.prepare_autopilot",
+        payload={
+            "status": "SUCCESS",
+            "result": "Autopilot demo baseline prepared (reset + step + mode + plan)",
+            "steps": steps,
+        },
+    )
+
+    return {
+        "status": "ok",
+        "action": "prepare_autopilot_demo",
+        "tick": last_step.get("tick"),
+        "steps": steps,
+        "hint": (
+            "Autopilot is armed on a healthy baseline. Plans >7k L may auto-dispatch a "
+            "≤7k L subset; remainder stays for four-eyes review. Watch the header banner "
+            "for SLO budget / freeze reasons."
+        ),
+    }
+
+
 # ---------------------------------------------------------------- Chaos Controls
 @router.post("/chaos/clear")
 async def control_clear_chaos_faults(
@@ -474,14 +569,18 @@ async def control_clear_chaos_faults(
 @router.post("/chaos/{fault}")
 async def control_inject_chaos_fault(
     fault: str,
-    req: ChaosFaultRequest,
     request: Request,
     user: Annotated[dict[str, Any], Depends(require_operator)],
     settings: Annotated[ApiSettings, Depends(get_settings)],
+    req: Annotated[ChaosFaultRequest, Body()] = ChaosFaultRequest(),
 ) -> dict[str, Any]:
-    """Inject a resilience drill fault into the simulator (POST /admin/faults)."""
+    """Inject a resilience drill fault into the simulator (POST /admin/faults).
+
+    Body is optional — omitted payloads use duration_seconds=60 and fault defaults.
+    """
     _check_demo_enabled(settings)
     actor = user.get("actor") or user.get("sub") or "operator"
+    req = req or ChaosFaultRequest()
 
     if fault not in SUPPORTED_FAULTS:
         raise HTTPException(
@@ -493,7 +592,7 @@ async def control_inject_chaos_fault(
         )
 
     # Set fault-specific default parameters if omitted and normalize legacy latency_ms alias
-    params = dict(req.parameters)
+    params = dict(req.parameters or {})
     if fault == "error_rate" and "rate" not in params:
         params["rate"] = 0.3
     elif fault == "latency":

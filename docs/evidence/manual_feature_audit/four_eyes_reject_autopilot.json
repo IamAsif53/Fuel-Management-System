@@ -1,0 +1,37 @@
+{
+  "pending": 1,
+  "selected": {
+    "ids": [
+      4989,
+      4990
+    ],
+    "total": 9350.0
+  },
+  "first": {
+    "http": 200,
+    "status": "AWAITING_SECOND_APPROVAL",
+    "approved_by": "operator"
+  },
+  "same_actor": {
+    "http": 403,
+    "code": "FOUR_EYES_SAME_ACTOR"
+  },
+  "second": {
+    "http": 200,
+    "status": "PARTIAL",
+    "approved_by": "operator, supervisor"
+  },
+  "reject": {
+    "http": 200,
+    "status": "REJECTED",
+    "err": null
+  },
+  "autopilot_after_reset": {
+    "mode": "autopilot",
+    "sl": 1.0,
+    "pending": 0,
+    "auto_audit": 0,
+    "auto_decisions": 0,
+    "pending_sample": []
+  }
+}
