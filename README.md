@@ -264,7 +264,21 @@ Poridhi **Load Balancer** can only reach apps running **inside a Poridhi Lab VM*
 
 ---
 
-## 10. Application Screenshots
+## 10. Demo Walkthrough Video
+
+Full console walkthrough recorded from the running FSIP application:
+
+**[Download / view demo video](docs/demo/fsip-demo-walkthrough.mp4)**
+
+```text
+docs/demo/fsip-demo-walkthrough.mp4
+```
+
+> Stored with **Git LFS**. After clone, run `git lfs pull` if the video file is a small pointer instead of the full MP4.
+
+---
+
+## 11. Application Screenshots
 
 Genuine captures from the **running** Fuel Ops Console (`http://127.0.0.1:8088`, Playwright, desktop 1440×900 / mobile 390×844). Capture report: [`docs/screenshots/CAPTURE_REPORT.md`](docs/screenshots/CAPTURE_REPORT.md).
 
@@ -356,6 +370,6 @@ FSIP_BASE_URL=http://127.0.0.1:8088 node ../scripts/capture_readme_screenshots.m
 
 ---
 
-## 11. License
+## 12. License
 
 This project is developed for the **BUP CSE FEST 2026 Hackathon** and is licensed under the MIT License.
