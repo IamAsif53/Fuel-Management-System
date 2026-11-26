@@ -469,6 +469,46 @@ async def test_alert_upsert_dedup_and_resolve(db_session: AsyncSession):
     assert await resolve_alert(db_session, alert_id=999_999) is None
 
 
+async def test_alert_upsert_across_runs_resolves_prior_run(db_session: AsyncSession):
+    """Verify DEF-009: upserting same fingerprint in a new sim_run_id resolves prior run cleanly."""
+    from app.db.repo import create_sim_run
+
+    run1 = await create_sim_run(db_session, scenario_id="default", seed=1, tick_minutes=15)
+    run2 = await create_sim_run(db_session, scenario_id="default", seed=2, tick_minutes=15)
+    fp = "stockout_risk:station-mirpur:DIESEL"
+
+    a1 = await upsert_alert(
+        db_session,
+        {
+            "sim_run_id": run1.id,
+            "fingerprint": fp,
+            "category": "STOCKOUT_RISK",
+            "severity": "WARNING",
+            "title": "Run 1 warning",
+            "status": "OPEN",
+            "opened_tick": 0,
+        },
+    )
+    a2 = await upsert_alert(
+        db_session,
+        {
+            "sim_run_id": run2.id,
+            "fingerprint": fp,
+            "category": "STOCKOUT_RISK",
+            "severity": "WARNING",
+            "title": "Run 2 warning",
+            "status": "OPEN",
+            "opened_tick": 0,
+        },
+    )
+    assert a2.id != a1.id
+    assert a2.sim_run_id == run2.id
+    assert a2.status == "OPEN"
+    await db_session.refresh(a1)
+    assert a1.status == "RESOLVED"
+
+
+
 # =============================================================================
 # 7. Incident Operations
 # =============================================================================

@@ -16,17 +16,70 @@ export class ApiError extends Error {
   }
 }
 
-let operatorToken: string | null = typeof window !== "undefined"
-  ? localStorage.getItem("fsip_operator_token") || "change-me-operator"
-  : "change-me-operator";
+export type AuthRole = "viewer" | "operator" | "supervisor";
 
-export const setToken = (t: string | null) => {
-  operatorToken = t;
-  if (typeof window !== "undefined") {
-    if (t) localStorage.setItem("fsip_operator_token", t);
-    else localStorage.removeItem("fsip_operator_token");
+export interface AuthUser {
+  username: string;
+  actor: string;
+  role: AuthRole;
+}
+
+const TOKEN_KEY = "fsip_auth_token";
+const USER_KEY = "fsip_auth_user";
+
+function purgeLegacyAuthStorage(): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.removeItem("fsip_operator_token");
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(USER_KEY);
+  } catch {
+    /* ignore */
   }
+}
+
+purgeLegacyAuthStorage();
+
+/** Open hackathon mode: no bearer token / no Sign-In. */
+const DEMO_OPERATOR: AuthUser = {
+  username: "operator",
+  actor: "operator",
+  role: "operator",
 };
+let authUser: AuthUser | null = DEMO_OPERATOR;
+const authListeners = new Set<(user: AuthUser | null) => void>();
+
+export function getToken(): string | null {
+  return null;
+}
+
+export function getAuthUser(): AuthUser | null {
+  return authUser;
+}
+
+export function subscribeAuth(cb: (user: AuthUser | null) => void): () => void {
+  authListeners.add(cb);
+  return () => {
+    authListeners.delete(cb);
+  };
+}
+
+/** No-op stubs kept so older callers compile after Sign-In removal. */
+export function subscribeAuthModal(_cb: () => void): () => void {
+  return () => undefined;
+}
+
+export function requestAuthModal(): void {
+  /* intentionally empty */
+}
+
+export const setToken = (_t: string | null, _user: AuthUser | null = null) => {
+  authUser = DEMO_OPERATOR;
+  purgeLegacyAuthStorage();
+  authListeners.forEach((cb) => cb(authUser));
+};
+
+export const clearAuth = () => setToken(null, null);
 
 export interface RequestOptions extends RequestInit {
   timeoutMs?: number;
@@ -83,9 +136,7 @@ export async function apiWithMeta<T>(
     headers["Content-Type"] = "application/json";
   }
 
-  if (operatorToken) {
-    headers.Authorization = `Bearer ${operatorToken}`;
-  }
+  // No Authorization header — open hackathon mode (brief §19: no frontend secrets / no Sign-In).
 
   if (etag) {
     headers["If-None-Match"] = etag;
@@ -350,12 +401,16 @@ export async function fetchAlerts(params?: {
   status?: string;
   category?: string;
   severity?: string;
+  sim_run_id?: number;
+  all_runs?: boolean;
   limit?: number;
 }): Promise<AlertsResponse> {
   const sp = new URLSearchParams();
   if (params?.status) sp.set("status", params.status);
   if (params?.category) sp.set("category", params.category);
   if (params?.severity) sp.set("severity", params.severity);
+  if (params?.sim_run_id !== undefined) sp.set("sim_run_id", String(params.sim_run_id));
+  if (params?.all_runs) sp.set("all_runs", "true");
   if (params?.limit !== undefined) sp.set("limit", String(params.limit));
   const query = sp.toString() ? `?${sp.toString()}` : "";
   return api<AlertsResponse>(`/alerts${query}`);

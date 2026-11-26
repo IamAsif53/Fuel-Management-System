@@ -3,9 +3,10 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
+from app.auth import require_operator
 from app.services.notifier import NotificationService, get_notification_history
 
 router = APIRouter(prefix="/api/notifications", tags=["notifications"])
@@ -26,6 +27,7 @@ class NotificationRequest(BaseModel):
 
 @router.post("/test")
 async def trigger_test_notification(
+    _user: Annotated[dict[str, Any], Depends(require_operator)],
     recipient: Annotated[str | None, Query(description="Optional custom recipient email")] = None,
 ) -> dict[str, Any]:
     """Trigger a synthetic P1 test notification through Mailpit SMTP."""
@@ -46,7 +48,10 @@ async def trigger_test_notification(
 
 
 @router.post("/dispatch")
-async def dispatch_notification(req: NotificationRequest) -> dict[str, Any]:
+async def dispatch_notification(
+    req: NotificationRequest,
+    _user: Annotated[dict[str, Any], Depends(require_operator)],
+) -> dict[str, Any]:
     """Dispatch a custom operational alert notification."""
     res = await _service.send_p1_alert(
         alert_id=req.alert_id,

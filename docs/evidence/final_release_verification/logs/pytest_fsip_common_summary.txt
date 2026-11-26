@@ -1,0 +1,7 @@
+suite=pytest_fsip_common
+exit_code=0
+total=107
+passed=107
+failed=0
+skipped=0
+log_file=pytest_fsip_common.log

@@ -1,0 +1,7 @@
+suite=frontend_tsc
+exit_code=0
+total=1
+passed=1
+failed=0
+skipped=0
+log_file=frontend_tsc.log

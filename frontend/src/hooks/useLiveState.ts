@@ -35,6 +35,7 @@ class LiveStateManager {
   private reconnectTimer: NodeJS.Timeout | null = null;
   private backoffMs = INITIAL_BACKOFF_MS;
   private currentEtag: string | null = null;
+  private latestSimRunId: number | null = null;
   private latestTick = -1;
   private currentConnection: ConnectionState = "polling";
   private lastError: Error | null = null;
@@ -141,18 +142,26 @@ class LiveStateManager {
       });
 
       const sseEvents = [
+        "reset.detected",
         "decision.created",
         "decision.approved",
         "decision.rejected",
         "allocation.submitted",
         "allocation.delivered",
         "allocation.failed",
+        "alert.raised",
+        "alert.updated",
+        "alert.acknowledged",
+        "alert.resolved",
         "engine.mode_changed",
         "engine.policy_changed",
       ];
 
       for (const evName of sseEvents) {
         es.addEventListener(evName, (e: MessageEvent) => {
+          if (evName === "reset.detected") {
+            this.currentEtag = null;
+          }
           this.fetchLatestState();
           if (typeof window !== "undefined") {
             try {
@@ -245,9 +254,28 @@ class LiveStateManager {
 
       if (meta.data) {
         const newState = meta.data;
-        // Monotonic check: do not overwrite newer state with an older response
-        if (newState.tick !== undefined && newState.tick >= this.latestTick) {
-          this.latestTick = newState.tick;
+        const incomingRun = newState.sim_run_id;
+        const incomingTick = newState.tick;
+        const isNewerRun =
+          incomingRun !== undefined &&
+          this.latestSimRunId !== null &&
+          incomingRun > this.latestSimRunId;
+        const isSameOrUnscopedRun =
+          incomingRun === undefined ||
+          this.latestSimRunId === null ||
+          incomingRun === this.latestSimRunId;
+
+        // Monotonic (sim_run_id, tick) check: allow lower tick when sim_run_id increments on reset
+        if (
+          isNewerRun ||
+          (isSameOrUnscopedRun && (incomingTick === undefined || incomingTick >= this.latestTick))
+        ) {
+          if (incomingRun !== undefined) {
+            this.latestSimRunId = incomingRun;
+          }
+          if (incomingTick !== undefined) {
+            this.latestTick = incomingTick;
+          }
           if (this.queryClientSetter) {
             this.queryClientSetter(() => newState);
           }
@@ -277,6 +305,7 @@ class LiveStateManager {
     this.currentConnection = "polling";
     this.lastError = null;
     this.currentEtag = null;
+    this.latestSimRunId = null;
     this.latestTick = -1;
     this.backoffMs = INITIAL_BACKOFF_MS;
     this.isFetching = false;

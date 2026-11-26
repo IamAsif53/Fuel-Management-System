@@ -17,12 +17,12 @@ import time
 from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fsip_common.logging import configure_logging, get_logger
 from prometheus_client import Counter, Gauge, make_asgi_app
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -432,6 +432,7 @@ async def approve_decision(decision_id: int, req: ApproveDecisionRequest):
     except DecisionInvalidStateError as exc:
         raise HTTPException(status_code=409, detail={"code": "INVALID_STATE", "message": str(exc)}) from exc
     except DecisionConstraintViolationError as exc:
+        raw_violations = getattr(exc, "violations", None) or []
         raise HTTPException(
             status_code=422,
             detail={
@@ -439,7 +440,7 @@ async def approve_decision(decision_id: int, req: ApproveDecisionRequest):
                 "message": exc.message,
                 "violations": [
                     {"rule": getattr(v, "rule", str(v)), "message": getattr(v, "message", str(v))}
-                    for v in exc.violations
+                    for v in raw_violations
                 ],
             },
         ) from exc
@@ -523,10 +524,36 @@ async def control_mode(req: EngineModeRequest):
     store: WorldState = getattr(app.state, "store", None)
     dec_engine: DecisionEngine = getattr(app.state, "decision_engine", None)
     publisher: Publisher = getattr(app.state, "publisher", None)
+    sim_client: SimClient = getattr(app.state, "client", None)
+    sync_loop: SyncLoop = getattr(app.state, "sync_loop", None)
 
     # 21_API_CONTRACTS.md §2.8 & 05_INTELLIGENCE_DESIGN.md §4.5:
-    # 409 STALE_DATA if turning autopilot on while degraded, stale, or non-NORMAL engine mode
-    if mode == "autopilot" and store:
+    # 409 STALE_DATA if turning autopilot on while degraded, stale, or non-NORMAL engine mode.
+    # Probe live simulator /v1/instance immediately so paused stale_data/faults cannot slip past poll intervals.
+    if mode == "autopilot" and store is not None:
+        if sim_client is not None:
+            try:
+                inst_res = await sim_client.instance()
+                if bool(getattr(inst_res, "stale", False)):
+                    store.stale = True
+                    store.degraded_reasons.add("stale_data")
+                    if sync_loop is not None and hasattr(sync_loop, "_evaluate_mode"):
+                        sync_loop._evaluate_mode(cycle_failed=False)
+                    if publisher is not None and hasattr(publisher, "publish_state"):
+                        try:
+                            await publisher.publish_state(store)
+                        except Exception:
+                            pass
+            except Exception:
+                store.degraded_reasons.add("sim_unavailable")
+                if sync_loop is not None and hasattr(sync_loop, "_evaluate_mode"):
+                    sync_loop._evaluate_mode(cycle_failed=True)
+                if publisher is not None and hasattr(publisher, "publish_state"):
+                    try:
+                        await publisher.publish_state(store)
+                    except Exception:
+                        pass
+
         is_stale = bool(getattr(store, "stale", False))
         is_degraded = bool(getattr(store, "degraded", False))
         resilience_mode = str(getattr(store, "engine_mode", "NORMAL")).upper()
@@ -723,22 +750,50 @@ async def internal_policy(req: dict[str, Any]):
     return {"policy": policy, "scarcity_policy": scarcity_policy}
 
 
+class InternalWhatIfLine(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    route_id: str = ""
+    fuel_type: str = ""
+    quantity: float = 0.0
+
+
+class InternalWhatIfEvent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal[
+        "demand_spike",
+        "route_disruption",
+        "station_outage",
+        "depot_constraint",
+        "shipment_delay",
+        "supply_shortfall",
+    ]
+    start_offset: int = Field(default=0, ge=0, le=96)
+    duration_ticks: int = Field(default=24, ge=1, le=240)
+    parameters: dict[str, Any] = Field(default_factory=dict)
+
+
+class InternalWhatIfRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    horizon_ticks: int = Field(default=48, ge=1, le=96)
+    lines: list[InternalWhatIfLine] = Field(default_factory=list, max_length=20)
+    events: list[InternalWhatIfEvent] = Field(default_factory=list, max_length=5)
+    compare: list[Literal["do_nothing", "recommended", "custom"]] | None = None
+
+
 @app.post("/internal/whatif", dependencies=[Depends(require_internal)])
-async def internal_whatif(req: dict[str, Any]):
+async def internal_whatif(req: InternalWhatIfRequest):
     """Forward-looking scenario projection with ShadowTwin per 21 §4 (Task 8.7)."""
     import copy
 
     from app.decision.optimizer import OptimizerPolicy
     from app.decision.twin import ShadowTwin
 
-    horizon = min(96, int(req.get("horizon_ticks", 48)))
-    raw_lines = req.get("lines", []) or []
-    events = req.get("events", []) or []
-
-    if len(raw_lines) > 20:
-        raise HTTPException(status_code=422, detail="Maximum 20 lines allowed for what-if simulation")
-    if len(events) > 5:
-        raise HTTPException(status_code=422, detail="Maximum 5 hypothetical events allowed")
+    horizon = min(96, int(req.horizon_ticks))
+    raw_lines = req.lines
+    events = req.events
 
     store: WorldState = getattr(app.state, "store", None)
     if not store:
@@ -760,7 +815,7 @@ async def internal_whatif(req: dict[str, Any]):
     # Validate candidate custom dispatch lines (reject invalid/infeasible, explain clearly)
     validated_lines = []
     for line in raw_lines:
-        r_id = str(line.get("route_id", "")).strip()
+        r_id = str(line.route_id).strip()
         if not r_id or r_id not in routes_dict:
             avail = sorted(routes_dict.keys())
             raise HTTPException(
@@ -771,7 +826,7 @@ async def internal_whatif(req: dict[str, Any]):
                 },
             )
 
-        f_type = str(line.get("fuel_type", "")).strip().upper()
+        f_type = str(line.fuel_type).strip().upper()
         if f_type not in ("DIESEL", "PETROL", "OCTANE"):
             raise HTTPException(
                 status_code=422,
@@ -781,14 +836,7 @@ async def internal_whatif(req: dict[str, Any]):
                 },
             )
 
-        try:
-            qty = float(line.get("quantity", 0.0))
-        except (ValueError, TypeError) as exc:
-            raise HTTPException(
-                status_code=422,
-                detail={"code": "INVALID_QUANTITY", "message": "Quantity must be a valid number"},
-            ) from exc
-
+        qty = float(line.quantity)
         if qty <= 0.0:
             raise HTTPException(
                 status_code=422,
@@ -838,13 +886,13 @@ async def internal_whatif(req: dict[str, Any]):
     # Format hypothetical events
     formatted_events = []
     for ev in events:
-        st_offset = int(ev.get("start_offset", 0))
-        dur = int(ev.get("duration_ticks", 24))
+        st_offset = int(ev.start_offset)
+        dur = int(ev.duration_ticks)
         formatted_events.append({
-            "type": ev.get("type", "demand_spike"),
+            "type": ev.type,
             "start_tick": current_tick + st_offset,
             "end_tick": current_tick + st_offset + dur,
-            "parameters": ev.get("parameters", {}),
+            "parameters": ev.parameters,
         })
 
     # Scenarios: do_nothing, recommended, custom

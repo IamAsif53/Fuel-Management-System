@@ -62,6 +62,44 @@ class Publisher:
     def _get_client(self) -> aioredis.Redis | None:
         return self._client
 
+    def _build_health_json(self, store: WorldState, now_iso: str) -> str:
+        """Serialize current engine health snapshot for Redis hash `fsip:health`."""
+        last_sync = max(store.last_good_at.values()) if store.last_good_at else None
+        age_s = round(time.time() - last_sync, 2) if last_sync is not None else None
+        is_ready = age_s is not None and age_s <= 30.0 and not store.degraded
+        health_dict = {
+            "status": "ready" if is_ready else "degraded",
+            "last_sync_age_s": age_s,
+            "engine_mode": store.engine_mode,
+            "tick": store.tick,
+            "sim_run_id": store.sim_run_id,
+            "service_level": float(getattr(store.metrics, "service_level", 1.0)) if store.metrics else 1.0,
+            "degraded": store.degraded,
+            "degraded_reasons": sorted(list(store.degraded_reasons)),
+            "updated_at": now_iso,
+        }
+        return orjson.dumps(health_dict).decode("utf-8")
+
+    async def publish_health(self, store: WorldState, include_state: bool = True) -> None:
+        """Refresh `fsip:health` (and optionally `fsip:state` freshness) without emitting SSE events."""
+        client = self._get_client()
+        if client is None:
+            return
+        try:
+            now_iso = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+            health_json = self._build_health_json(store, now_iso)
+            async with client.pipeline(transaction=False) as pipe:
+                pipe.hset(self.health_key, "engine", health_json)
+                if include_state:
+                    state_json = orjson.dumps(store.to_public_json()).decode("utf-8")
+                    pipe.set(self.state_key, state_json)
+                    pipe.set(self.tick_key, str(store.tick))
+                await pipe.execute()
+        except Exception as exc:
+            if FSIP_REDIS_ERRORS_TOTAL is not None:
+                FSIP_REDIS_ERRORS_TOTAL.inc()
+            self._log.error("redis.publish_health.failed", error=str(exc))
+
     async def publish_state(self, store: WorldState) -> None:
         """Publish the current public WorldState projection, tick, health, and state.updated event to Redis."""
         client = self._get_client()
@@ -74,22 +112,7 @@ class Publisher:
             tick_str = str(store.tick)
             now_dt = datetime.now(UTC)
             now_iso = now_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
-
-            last_sync = max(store.last_good_at.values()) if store.last_good_at else None
-            age_s = round(time.time() - last_sync, 2) if last_sync is not None else None
-            is_ready = age_s is not None and age_s <= 30.0 and not store.degraded
-            health_dict = {
-                "status": "ready" if is_ready else "degraded",
-                "last_sync_age_s": age_s,
-                "engine_mode": store.engine_mode,
-                "tick": store.tick,
-                "sim_run_id": store.sim_run_id,
-                "service_level": float(getattr(store.metrics, "service_level", 1.0)) if store.metrics else 1.0,
-                "degraded": store.degraded,
-                "degraded_reasons": sorted(list(store.degraded_reasons)),
-                "updated_at": now_iso,
-            }
-            health_json = orjson.dumps(health_dict).decode("utf-8")
+            health_json = self._build_health_json(store, now_iso)
 
             etag = f"{store.sim_run_id or 0}-{store.tick}"
             event_data_json = orjson.dumps({"tick": store.tick, "etag": etag}).decode("utf-8")

@@ -1,0 +1,2 @@
+{"detail":{"code":"VALIDATION_ERROR","message":"Invalid request parameters","errors":[{"type":"greater_than_equal","loc":["body","horizon_ticks"],"msg":"Input should be greater than or equal to 1","input":-1,"ctx":{"ge":1}}]}}
+whatif_status=422

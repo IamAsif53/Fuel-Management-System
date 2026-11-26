@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useParams } from "react-router-dom";
 import {
   History,
   CheckCircle2,
@@ -24,38 +25,88 @@ import { ExplainPanel } from "@/components/ExplainPanel";
 import { exportToCSV, exportToJSON } from "@/lib/export";
 
 export default function Decisions() {
-  const { state } = useLiveState();
+  const { decisionId: decisionIdParam } = useParams<{ decisionId?: string }>();
+  const focusDecisionId = decisionIdParam ? Number(decisionIdParam) : null;
+  const { state, error: liveError, isLoading: liveLoading } = useLiveState();
   const [decisions, setDecisions] = useState<Decision[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const requestSeqRef = useRef(0);
+  const scrolledDecisionRef = useRef<number | null>(null);
 
   // Filters
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [policyFilter, setPolicyFilter] = useState<string>("ALL");
+  const [runScope, setRunScope] = useState<"ACTIVE" | "ALL">(
+    focusDecisionId != null && !Number.isNaN(focusDecisionId) ? "ALL" : "ACTIVE"
+  );
 
   // Expanded rows: decisionId -> boolean
-  const [expandedDecisions, setExpandedDecisions] = useState<Record<number, boolean>>({});
+  const [expandedDecisions, setExpandedDecisions] = useState<Record<number, boolean>>(
+    focusDecisionId != null && !Number.isNaN(focusDecisionId)
+      ? { [focusDecisionId]: true }
+      : {}
+  );
 
-  const loadDecisions = async () => {
+  const loadDecisions = useCallback(async () => {
+    if (runScope === "ACTIVE" && state?.sim_run_id == null) {
+      requestSeqRef.current += 1;
+      setDecisions([]);
+      setTotalCount(0);
+      if (liveLoading || (!liveError && state === null)) {
+        setIsLoading(true);
+        setError(null);
+      } else {
+        setIsLoading(false);
+        setError(liveError ? liveError.message : null);
+      }
+      return;
+    }
+
+    const reqId = ++requestSeqRef.current;
     try {
       setIsLoading(true);
       setError(null);
       const res = await fetchDecisions({
-        sim_run_id: state?.sim_run_id,
+        sim_run_id: runScope === "ACTIVE" ? state?.sim_run_id : undefined,
         status: statusFilter === "ALL" ? undefined : statusFilter,
         policy: policyFilter === "ALL" ? undefined : policyFilter,
         limit: 50,
         offset: 0,
       });
+      if (reqId !== requestSeqRef.current) return;
       setDecisions(res.items);
       setTotalCount(res.total);
     } catch (err: unknown) {
+      if (reqId !== requestSeqRef.current) return;
       setError(err instanceof Error ? err.message : "Failed to load decisions");
     } finally {
-      setIsLoading(false);
+      if (reqId === requestSeqRef.current) {
+        setIsLoading(false);
+      }
     }
-  };
+  }, [runScope, state?.sim_run_id, state, liveLoading, liveError, statusFilter, policyFilter]);
+
+  useEffect(() => {
+    if (focusDecisionId == null || Number.isNaN(focusDecisionId)) return;
+    setRunScope("ALL");
+    setExpandedDecisions((prev) => ({ ...prev, [focusDecisionId]: true }));
+  }, [focusDecisionId]);
+
+  useEffect(() => {
+    if (focusDecisionId == null || Number.isNaN(focusDecisionId)) return;
+    if (scrolledDecisionRef.current === focusDecisionId) return;
+    if (!decisions.some((d) => d.id === focusDecisionId)) return;
+    const t = window.setTimeout(() => {
+      const el = document.querySelector(`[data-testid="decision-row-${focusDecisionId}"]`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        scrolledDecisionRef.current = focusDecisionId;
+      }
+    }, 150);
+    return () => window.clearTimeout(t);
+  }, [focusDecisionId, decisions]);
 
   useEffect(() => {
     loadDecisions();
@@ -66,8 +117,11 @@ export default function Decisions() {
         custom.detail?.type === "decision.created" ||
         custom.detail?.type === "decision.approved" ||
         custom.detail?.type === "decision.rejected" ||
+        custom.detail?.type === "decision.executed" ||
+        custom.detail?.type === "decision.expired" ||
         custom.detail?.type === "allocation.delivered" ||
-        custom.detail?.type === "allocation.failed"
+        custom.detail?.type === "allocation.failed" ||
+        custom.detail?.type === "reset.detected"
       ) {
         loadDecisions();
       }
@@ -75,7 +129,7 @@ export default function Decisions() {
 
     window.addEventListener("fsip-event", handleEvent);
     return () => window.removeEventListener("fsip-event", handleEvent);
-  }, [state?.sim_run_id, statusFilter, policyFilter]);
+  }, [loadDecisions]);
 
   const toggleExpand = (id: number) => {
     setExpandedDecisions((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -188,6 +242,20 @@ export default function Decisions() {
         </div>
 
         <div className="flex items-center gap-2">
+          <label className="text-ink-faint">Scope:</label>
+          <select
+            value={runScope}
+            onChange={(e) => setRunScope(e.target.value as "ACTIVE" | "ALL")}
+            className="rounded border border-bg-border bg-bg-raised px-2.5 py-1 text-xs text-ink focus:border-brand focus:outline-none"
+          >
+            <option value="ACTIVE">
+              Active Run {state?.sim_run_id ? `(#${state.sim_run_id})` : ""}
+            </option>
+            <option value="ALL">All Runs (Cross-run history)</option>
+          </select>
+        </div>
+
+        <div className="flex items-center gap-2">
           <label className="text-ink-faint">Status:</label>
           <select
             value={statusFilter}
@@ -259,12 +327,27 @@ export default function Decisions() {
       <div className="space-y-3">
         {decisions.map((dec) => {
           const isExpanded = expandedDecisions[dec.id] ?? false;
-          const totalLiters = (dec.lines || []).reduce((acc, ln) => acc + ln.quantity, 0);
+          const lines = dec.lines || [];
+          const nonCancelledLines = lines.filter((ln) => ln.status !== "CANCELLED");
+          const effectiveLines = nonCancelledLines.length > 0 ? nonCancelledLines : lines;
+          const totalLiters =
+            lines.length > 0
+              ? effectiveLines.reduce((acc, ln) => acc + ln.quantity, 0)
+              : (dec.total_liters ?? 0);
+          const lineCount = dec.line_count ?? lines.length;
+          const activeLineCount =
+            nonCancelledLines.length > 0
+              ? nonCancelledLines.length
+              : (dec.active_line_count ?? lineCount);
 
           return (
             <div
               key={dec.id}
-              className="rounded-xl border border-bg-border bg-bg-panel shadow-sm transition-all overflow-hidden"
+              data-testid={`decision-row-${dec.id}`}
+              className={clsx(
+                "rounded-xl border border-bg-border bg-bg-panel shadow-sm transition-all overflow-hidden",
+                focusDecisionId === dec.id && "ring-2 ring-brand"
+              )}
             >
               {/* Row Summary (Click to expand) */}
               <div
@@ -279,6 +362,20 @@ export default function Decisions() {
                   <span className="font-mono text-xs font-bold text-ink">
                     #DEC-{dec.id}
                   </span>
+
+                  {dec.sim_run_id !== undefined && dec.sim_run_id !== null && (
+                    <span
+                      className={clsx(
+                        "rounded px-2 py-0.5 font-mono text-[11px] font-semibold",
+                        state?.sim_run_id && dec.sim_run_id === state.sim_run_id
+                          ? "bg-brand/15 text-brand border border-brand/30"
+                          : "bg-bg-raised text-ink-muted border border-bg-border"
+                      )}
+                    >
+                      Run #{dec.sim_run_id}
+                      {state?.sim_run_id && dec.sim_run_id === state.sim_run_id ? " (Active)" : " (Past)"}
+                    </span>
+                  )}
 
                   <span className="rounded bg-bg-raised px-2 py-0.5 font-mono text-[11px] text-ink-muted">
                     Tick {dec.tick}
@@ -296,7 +393,9 @@ export default function Decisions() {
                     <Truck size={14} className="text-brand shrink-0" />
                     <span>
                       <strong className="text-ink">{formatNumber(totalLiters)} L</strong> across{" "}
-                      {(dec.lines || []).length} lines
+                      {activeLineCount > 0 && activeLineCount < lineCount
+                        ? `${activeLineCount} of ${lineCount} lines`
+                        : `${lineCount} ${lineCount === 1 ? "line" : "lines"}`}
                     </span>
                   </div>
 

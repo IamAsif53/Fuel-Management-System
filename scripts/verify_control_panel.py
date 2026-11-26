@@ -8,20 +8,19 @@ Executes end-to-end tests against live Docker API on port 18080:
 5. All 5 chaos fault vectors
 6. Clear active faults
 7. Audit log persistence
-8. Authorization enforcement
+8. Open-mode control actions without Sign-In
 """
 from __future__ import annotations
 
+import os
 import httpx
 
-API_BASE = "http://localhost:18080/api"
-HEADERS = {
-    "Authorization": "Bearer change-me-operator",
-    "Content-Type": "application/json",
-}
+API_BASE = os.environ.get("FSIP_API_BASE", "http://localhost:18080/api")
 
 print("=== Running Live Control Panel End-to-End Verification ===")
 client = httpx.Client(base_url=API_BASE, timeout=15.0)
+# Open hackathon mode: no Sign-In / bearer required
+HEADERS = {"Content-Type": "application/json"}
 
 # 1. Status Check
 r = client.get("/control/status")
@@ -102,10 +101,9 @@ logs = r_logs.json().get("logs", [])
 assert len(logs) >= 5, f"Expected at least 5 audit logs, got {len(logs)}"
 print(f"   Retrieved {len(logs)} audit action records (newest: {logs[0]['action']} by {logs[0]['actor']})")
 
-# 9. Authorization Protection
-r_unauth = client.post("/control/sim/run")
-print(f"9. Unauthorized check -> HTTP {r_unauth.status_code}")
-assert r_unauth.status_code == 401
-assert r_unauth.json()["detail"]["code"] == "UNAUTHORIZED"
+# 9. Open mode: control actions succeed without Sign-In (brief-aligned)
+r_open = client.post("/control/sim/run", headers=HEADERS)
+print(f"9. Open-mode control action (no bearer) -> HTTP {r_open.status_code}")
+assert r_open.status_code == 200, f"Expected open-mode success, got {r_open.status_code}: {r_open.text}"
 
-print("\n>>> ALL 9 LIVE CONTROL PANEL CHECKS VERIFIED SUCCESSFULLY! <<<")
+print("\n>>> ALL LIVE CONTROL PANEL CHECKS VERIFIED SUCCESSFULLY! <<<")

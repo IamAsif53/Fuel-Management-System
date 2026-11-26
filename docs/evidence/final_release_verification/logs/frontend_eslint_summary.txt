@@ -1,0 +1,8 @@
+suite=frontend_eslint
+exit_code=0
+total=0
+passed=0
+failed=0
+skipped=0
+log_file=frontend_eslint.log
+note=NOT_CONFIGURED — package.json has no eslint script or dependency; suite skipped.

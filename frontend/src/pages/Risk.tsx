@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { fetchRisk, fetchN1Contingency, fetchConformalPrediction } from "@/api/client";
 import type { RiskLevel, RiskRow } from "@/api/types";
 import { FUELS } from "@/api/types";
@@ -37,8 +37,10 @@ export default function RiskPage() {
   const [regionFilter, setRegionFilter] = useState<string>("");
   const [fuelFilter, setFuelFilter] = useState<string>("");
   const [minLevelFilter, setMinLevelFilter] = useState<string>("");
+  const riskReqSeq = useRef(0);
 
   const loadRiskData = async () => {
+    const seq = ++riskReqSeq.current;
     setIsLoading(true);
     setError(null);
     try {
@@ -47,11 +49,15 @@ export default function RiskPage() {
         fuel: fuelFilter || undefined,
         min_level: minLevelFilter || undefined,
       });
+      if (seq !== riskReqSeq.current) return;
       setRows(res.rows || []);
     } catch (err: any) {
+      if (seq !== riskReqSeq.current) return;
       setError(err?.message || "Failed to load risk assessments");
     } finally {
-      setIsLoading(false);
+      if (seq === riskReqSeq.current) {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -139,13 +145,14 @@ export default function RiskPage() {
           {/* Filters */}
           <div className="flex flex-wrap items-center gap-2">
             <select
+              data-testid="risk-region-filter"
               value={regionFilter}
               onChange={(e) => setRegionFilter(e.target.value)}
               className="rounded-md border border-border bg-background px-2.5 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
             >
               <option value="">All Regions</option>
-              <option value="dhaka">Dhaka</option>
-              <option value="chattogram">Chattogram</option>
+              <option value="region-dhaka">Dhaka</option>
+              <option value="region-chattogram">Chattogram</option>
             </select>
 
             <select
@@ -212,7 +219,7 @@ export default function RiskPage() {
                               {row.station_name || row.station_id}
                             </td>
                             <td className="py-3 px-3 capitalize text-muted-foreground">
-                              {row.region_id || "—"}
+                              {(row.region_id || "—").replace(/^region-/, "")}
                             </td>
                             <td className="py-3 px-3 font-semibold text-foreground">
                               {row.fuel_type}

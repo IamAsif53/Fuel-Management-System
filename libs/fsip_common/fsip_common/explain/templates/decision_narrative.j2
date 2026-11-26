@@ -1,5 +1,5 @@
 {% if lines and lines | length > 0 -%}
-Recommendation for tick {{ tick }}: Ship {{ total_liters | round | int }} L across {{ lines | length }} allocation(s). Primary risk at {{ primary_station or 'network' }}: {{ primary_risk_signal or 'stockout prevention' }}{% if primary_risk_value %} ({{ primary_risk_value }}){% endif %}.
+Recommendation for tick {{ tick }}: Ship {{ total_liters | round | int }} L across {{ lines | length }} allocation{% if lines | length != 1 %}s{% endif %}. Primary risk at {{ primary_station or 'network' }}: {{ primary_risk_signal or 'stockout prevention' }}{% if primary_risk_value %} ({{ primary_risk_value }}){% endif %}.
 {%- if expected_impact %}
  Expected impact: reduces stockout probability from {{ ((expected_impact.stockout_prob_before or 0) * 100) | round(1) }}% to {{ ((expected_impact.stockout_prob_after or 0) * 100) | round(1) }}%{% if expected_impact.unmet_before is defined and expected_impact.unmet_after is defined %}, preventing {{ ((expected_impact.unmet_before - expected_impact.unmet_after) | round | int) }} L unmet demand{% endif %}.
 {%- endif %}

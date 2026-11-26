@@ -72,18 +72,22 @@ function getWorstRisk(risk: Record<Fuel, { level: RiskLevel }> | undefined): Ris
   return "LOW";
 }
 
-function formatStationNodeName(name: string): string {
-  return name
+function formatStationNodeName(name: string, maxLen = 18): string {
+  const shortened = name
     .replace(/\s+Fuel\s+Station/i, " Stn")
+    .replace(/\s+Highway\s+Station/i, " Hwy")
+    .replace(/\s+Regional\s+Station/i, " Reg.")
     .replace(/\s+Industrial\s+Station/i, " Ind.")
     .replace(/\s+Terminal/i, " Term.")
     .replace(/\s+Station/i, " Stn");
+  if (shortened.length <= maxLen) return shortened;
+  return `${shortened.slice(0, Math.max(0, maxLen - 1)).trimEnd()}…`;
 }
 
 function computeCurve(p0: Point, p3: Point, isCrossRegion: boolean) {
-  const startX = p0.x + 80;
+  const startX = p0.x + 96;
   const startY = p0.y;
-  const endX = p3.x - 80;
+  const endX = p3.x - 96;
   const endY = p3.y;
 
   if (!isCrossRegion) {
@@ -454,12 +458,12 @@ export function NetworkGraph({ state, onSelectEntity }: NetworkGraphProps) {
                 <g
                   key={station.id}
                   data-testid={`node-${station.id}`}
-                  transform={`translate(${pos.x - 82}, ${pos.y - 28})`}
+                  transform={`translate(${pos.x - 96}, ${pos.y - 28})`}
                   onClick={() => onSelectEntity?.(station)}
                   className="cursor-pointer group"
                 >
                   <rect
-                    width="164"
+                    width="192"
                     height="56"
                     rx="8"
                     fill="#17223A"
@@ -470,20 +474,20 @@ export function NetworkGraph({ state, onSelectEntity }: NetworkGraphProps) {
                     <title>{`${station.name} (${station.status}) · Risk: ${worstRisk}`}</title>
                   </rect>
 
-                  {/* Header text */}
+                  {/* Header text — clipped so it never overlaps the risk badge */}
                   <text
                     x="10"
                     y="18"
                     className="fill-ink text-xs font-semibold tracking-tight"
                   >
-                    {formatStationNodeName(station.name)}
+                    {formatStationNodeName(station.name, 18)}
                   </text>
 
-                  {/* Risk Badge on Node */}
+                  {/* Risk Badge on Node (right edge of wider card) */}
                   <rect
-                    x="122"
+                    x="148"
                     y="6"
-                    width="34"
+                    width="36"
                     height="14"
                     rx="3"
                     fill={`${strokeColor}25`}
@@ -491,13 +495,13 @@ export function NetworkGraph({ state, onSelectEntity }: NetworkGraphProps) {
                     strokeWidth="0.8"
                   />
                   <text
-                    x="139"
+                    x="166"
                     y="16.5"
                     textAnchor="middle"
                     fill={strokeColor}
                     className="text-[9px] font-bold tracking-wider font-mono uppercase"
                   >
-                    {worstRisk}
+                    {worstRisk === "CRITICAL" ? "CRIT" : worstRisk}
                   </text>
 
                   {/* 3 Fuel Fill Bars */}

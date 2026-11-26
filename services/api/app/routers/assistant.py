@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth import require_viewer
 from app.config import ApiSettings, get_settings
 from app.db import (
     fetch_alerts,
@@ -176,16 +177,26 @@ async def _build_assistant_context(
             "status": dp.get("status", "OPEN"),
         })
 
-    # 2. Open alerts
+    sim_run_id = int(state.get("sim_run_id") or 0)
+    active_run_filter = sim_run_id if sim_run_id > 0 else None
+
+    # 2. Open alerts (active run)
     try:
-        alerts_data = await fetch_alerts(session, status="OPEN", limit=15)
+        alerts_res = await fetch_alerts(
+            session,
+            status="OPEN",
+            sim_run_id=active_run_filter,
+            limit=15,
+        )
+        alerts_data = alerts_res[0] if isinstance(alerts_res, tuple) else alerts_res
         alerts_compact = [
             {
                 "id": a.get("id"),
                 "severity": a.get("severity"),
-                "station_id": a.get("station_id"),
+                "station_id": a.get("station_id") or a.get("entity_id"),
                 "fuel_type": a.get("fuel_type"),
                 "title": a.get("title"),
+                "category": a.get("category"),
             }
             for a in alerts_data
         ]
@@ -193,9 +204,14 @@ async def _build_assistant_context(
         log.warning("assistant.fetch_alerts_failed", error=str(exc))
         alerts_compact = []
 
-    # 3. Last 10 decisions
+    # 3. Last 10 decisions (active run)
     try:
-        decisions_data = await fetch_decisions(session, limit=10)
+        decisions_res = await fetch_decisions(
+            session,
+            sim_run_id=active_run_filter,
+            limit=10,
+        )
+        decisions_data = decisions_res[0] if isinstance(decisions_res, tuple) else decisions_res
         decisions_compact = [
             {
                 "id": d.get("id"),
@@ -228,6 +244,8 @@ async def _build_assistant_context(
 
     cur_tick = tick if tick else state.get("tick", 0)
     metrics = state.get("metrics", {})
+    engine_mode = str(state.get("engine_mode", "NORMAL") or "NORMAL").upper()
+    overall_degraded = bool(is_degraded or state.get("degraded") or engine_mode != "NORMAL")
 
     return {
         "state_summary": {
@@ -246,7 +264,7 @@ async def _build_assistant_context(
         "incidents": incidents_compact,
         "events": state.get("events", []),
         "health": {
-            "overall": "Degraded" if is_degraded or state.get("degraded") else "Healthy",
+            "overall": "Degraded" if overall_degraded else "Healthy",
             "engine_mode": state.get("engine_mode", "NORMAL"),
             "tick": cur_tick,
         },
@@ -260,6 +278,7 @@ async def ask_assistant(
     request: Request,
     session: Annotated[AsyncSession, Depends(get_session)],
     settings: Annotated[ApiSettings, Depends(get_settings)],
+    _user: Annotated[dict[str, Any], Depends(require_viewer)],
 ) -> AskResponse:
     """Grounded control-room assistant query endpoint (rate-limited 20/min)."""
     # 1. Enforce rate limit

@@ -1,0 +1,7 @@
+suite=pytest_intelligence
+exit_code=0
+total=8
+passed=8
+failed=0
+skipped=0
+log_file=pytest_intelligence.log

@@ -125,6 +125,7 @@ def _make_dummy_state(
             self.depots = [DummyDepot()]
             self.routes = {"route-gazipur-mirpur": DummyRoute()}
             self.events = []
+            self.pending = []
 
         def inflight(self):
             return []
@@ -282,3 +283,140 @@ async def test_cannot_approve_expired_decision(session_factory, test_sim_run_id)
     state_future = _make_dummy_state(tick=63, sim_run_id=test_sim_run_id)
     with pytest.raises(DecisionExpiredError):
         await engine.approve_decision(dec.id, current_state=state_future)
+
+
+async def test_expire_stale_decisions_handles_multi_run_and_second_approval(session_factory, test_sim_run_id):
+    """Expire overdue current-run decisions and pending decisions from ended prior runs only."""
+    from datetime import UTC, datetime
+
+    engine = DecisionEngine(session_factory)
+
+    async with session_factory() as session:
+        old_run = SimRun(
+            scenario_id="old-scenario",
+            tick_minutes=15,
+            first_tick=0,
+            ended_at=datetime.now(UTC),
+        )
+        open_parallel = SimRun(scenario_id="open-parallel", tick_minutes=15, first_tick=0)
+        session.add_all([old_run, open_parallel])
+        await session.commit()
+        old_run_id = old_run.id
+        open_run_id = open_parallel.id
+
+        old_dec = Decision(
+            sim_run_id=old_run_id,
+            tick=100,
+            status="PENDING_APPROVAL",
+            expires_at_tick=102,
+        )
+        open_dec = Decision(
+            sim_run_id=open_run_id,
+            tick=100,
+            status="PENDING_APPROVAL",
+            expires_at_tick=999,
+        )
+        cur_dec_awaiting = Decision(
+            sim_run_id=test_sim_run_id,
+            tick=10,
+            status="AWAITING_SECOND_APPROVAL",
+            expires_at_tick=12,
+        )
+        session.add_all([old_dec, open_dec, cur_dec_awaiting])
+        await session.commit()
+        old_dec_id = old_dec.id
+        open_dec_id = open_dec.id
+        cur_dec_id = cur_dec_awaiting.id
+
+    try:
+        expired = await engine.expire_stale_decisions(current_tick=15, sim_run_id=test_sim_run_id)
+        assert old_dec_id in expired
+        assert cur_dec_id in expired
+        assert open_dec_id not in expired
+
+        async with session_factory() as session:
+            d_old = (await session.execute(select(Decision).where(Decision.id == old_dec_id))).scalar_one()
+            d_open = (await session.execute(select(Decision).where(Decision.id == open_dec_id))).scalar_one()
+            d_cur = (await session.execute(select(Decision).where(Decision.id == cur_dec_id))).scalar_one()
+            assert d_old.status == "EXPIRED"
+            assert "ended" in d_old.rejected_reason
+            assert d_open.status == "PENDING_APPROVAL"
+            assert d_cur.status == "EXPIRED"
+            assert "Expired at tick 15" in d_cur.rejected_reason
+    finally:
+        async with session_factory() as session:
+            await session.execute(delete(Decision).where(Decision.sim_run_id.in_([old_run_id, open_run_id])))
+            await session.execute(delete(SimRun).where(SimRun.id.in_([old_run_id, open_run_id])))
+            await session.commit()
+
+
+async def test_store_pending_synchronized_on_cycle(session_factory, test_sim_run_id):
+    """Verify on_cycle synchronizes store.pending with active decisions."""
+    engine = DecisionEngine(session_factory)
+    state = _make_dummy_state(tick=5, sim_run_id=test_sim_run_id, mode="advisory", station_inv=2000.0)
+
+    # Initially store.pending is empty
+    assert state.pending == []
+
+    # on_cycle produces a decision in advisory mode (PENDING_APPROVAL)
+    dec = await engine.on_cycle(state, force_plan=True)
+    assert dec is not None
+
+    # Verify store.pending now contains the newly created pending recommendation
+    assert len(state.pending) == 1
+    assert state.pending[0]["decision_id"] == dec.id
+    assert state.pending[0]["expires_at_tick"] == dec.expires_at_tick
+
+    # Now simulate advancing past expiry tick
+    state_expired = _make_dummy_state(
+        tick=dec.expires_at_tick + 1,
+        sim_run_id=test_sim_run_id,
+        mode="advisory",
+        station_inv=10000.0,
+    )
+    await engine.on_cycle(state_expired, force_plan=False)
+
+    # After expiry, store.pending is cleared
+    assert state_expired.pending == []
+
+
+async def test_store_pending_and_redis_snapshot_synchronized_after_supersession(session_factory, test_sim_run_id):
+    """Verify store.pending and publisher.publish_state reflect only the fresh decision after supersession."""
+    publisher = MockPublisher()
+    # Mock publish_state method on publisher to verify it gets called
+    published_stores = []
+    async def mock_publish_state(store):
+        published_stores.append(list(store.pending))
+    publisher.publish_state = mock_publish_state
+
+    engine = DecisionEngine(session_factory, publisher=publisher)
+
+    # Tick 9: produces decision 1 (expires_at_tick=11)
+    state_t9 = _make_dummy_state(tick=9, sim_run_id=test_sim_run_id, mode="advisory", station_inv=2000.0)
+    dec1 = await engine.on_cycle(state_t9, force_plan=True)
+    assert dec1 is not None
+    assert dec1.expires_at_tick == 11
+    assert len(state_t9.pending) == 1
+    assert state_t9.pending[0]["decision_id"] == dec1.id
+
+    # Tick 10: produces decision 2 (expires_at_tick=12) -> dec1 must be superseded
+    state_t10 = _make_dummy_state(tick=10, sim_run_id=test_sim_run_id, mode="advisory", station_inv=2000.0)
+    dec2 = await engine.on_cycle(state_t10, force_plan=True)
+    assert dec2 is not None
+    assert dec2.expires_at_tick == 12
+
+    # Verify dec1 in DB is EXPIRED with reason 'Superseded by fresh plan at tick 10'
+    async with session_factory() as session:
+        d1_db = (await session.execute(select(Decision).where(Decision.id == dec1.id))).scalar_one()
+        assert d1_db.status == "EXPIRED"
+        assert "Superseded" in d1_db.rejected_reason
+        assert d1_db.expires_at_tick == 11  # unchanged natural expiry boundary
+
+    # Verify state_t10.pending contains ONLY dec2, NOT dec1
+    assert len(state_t10.pending) == 1
+    assert state_t10.pending[0]["decision_id"] == dec2.id
+
+    # Verify publisher.publish_state was called and latest published pending list matches dec2
+    assert len(published_stores) >= 2
+    assert published_stores[-1][0]["decision_id"] == dec2.id
+

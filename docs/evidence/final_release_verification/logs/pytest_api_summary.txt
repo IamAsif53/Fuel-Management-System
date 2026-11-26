@@ -1,0 +1,8 @@
+suite=pytest_api
+exit_code=0
+total=80
+passed=79
+failed=0
+skipped=1
+log_file=pytest_api_rerun.log
+note=Initial run in pytest_api.log reported 3 auth-expectation failures; rerun after current open-mode tests matches 79 passed.

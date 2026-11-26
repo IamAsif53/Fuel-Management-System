@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useLiveState } from "@/hooks/useLiveState";
 import { LoadingSkeleton } from "@/components/LoadingSkeleton";
 import { ErrorState } from "@/components/ErrorState";
@@ -9,12 +10,19 @@ import { TimeTravelSlider } from "@/components/network/TimeTravelSlider";
 import { Fuel, Building2, GitFork } from "lucide-react";
 import { api } from "@/api/client";
 import type { WorldState } from "@/api/types";
+import clsx from "clsx";
 
 type TabType = "stations" | "depots" | "routes";
 
 export default function Network() {
   const { state, error, refetch, isLoading } = useLiveState();
-  const [activeTab, setActiveTab] = useState<TabType>("stations");
+  const [searchParams] = useSearchParams();
+  const highlightStation = searchParams.get("station");
+  const highlightDepot = searchParams.get("depot");
+  const [activeTab, setActiveTab] = useState<TabType>(
+    highlightDepot ? "depots" : "stations"
+  );
+  const scrolledRef = useRef<string | null>(null);
 
   // Phase 17: Simulation Time-Travel Replay State
   const [isReplaying, setIsReplaying] = useState(false);
@@ -33,6 +41,31 @@ export default function Network() {
       })
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (highlightDepot) {
+      setActiveTab("depots");
+    } else if (highlightStation) {
+      setActiveTab("stations");
+    }
+  }, [highlightStation, highlightDepot]);
+
+  useEffect(() => {
+    const targetId = highlightDepot
+      ? `depot-card-${highlightDepot}`
+      : highlightStation
+        ? `station-card-${highlightStation}`
+        : null;
+    if (!targetId || scrolledRef.current === targetId) return;
+    const t = window.setTimeout(() => {
+      const el = document.querySelector(`[data-testid="${targetId}"]`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        scrolledRef.current = targetId;
+      }
+    }, 120);
+    return () => window.clearTimeout(t);
+  }, [highlightStation, highlightDepot, activeTab, state]);
 
   const handleSelectTick = async (tick: number) => {
     setSelectedTick(tick);
@@ -168,7 +201,15 @@ export default function Network() {
       {activeTab === "stations" && (
         <div data-testid="stations-tab-content" className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           {stations.map((st) => (
-            <StationCard key={st.id} station={st} allocations={allocations} />
+            <div
+              key={st.id}
+              className={clsx(
+                highlightStation === st.id &&
+                  "rounded-lg ring-2 ring-brand ring-offset-2 ring-offset-bg"
+              )}
+            >
+              <StationCard station={st} allocations={allocations} />
+            </div>
           ))}
         </div>
       )}
@@ -176,7 +217,15 @@ export default function Network() {
       {activeTab === "depots" && (
         <div data-testid="depots-tab-content" className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           {depots.map((dp) => (
-            <DepotCard key={dp.id} depot={dp} supplyUpcoming={supplyUpcoming} />
+            <div
+              key={dp.id}
+              className={clsx(
+                highlightDepot === dp.id &&
+                  "rounded-lg ring-2 ring-brand ring-offset-2 ring-offset-bg"
+              )}
+            >
+              <DepotCard depot={dp} supplyUpcoming={supplyUpcoming} />
+            </div>
           ))}
         </div>
       )}

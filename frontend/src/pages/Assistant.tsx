@@ -121,14 +121,14 @@ export default function Assistant() {
       case "alert":
         return `/alerts`;
       case "decision":
-        return `/decisions`;
+        return id ? `/decisions/${id}` : `/decisions`;
       default:
         return null;
     }
   };
 
   return (
-    <div className="flex h-[calc(100vh-5rem)] flex-col space-y-4">
+    <div className="flex min-h-0 max-h-[calc(100vh-5.5rem)] flex-1 flex-col space-y-4 overflow-hidden">
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-bg-border pb-3">
         <div>

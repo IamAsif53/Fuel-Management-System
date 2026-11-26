@@ -1,0 +1,101 @@
+{
+    "tick":  21,
+    "rows":  [
+                 {
+                     "station_id":  "station-tongi",
+                     "station_name":  "Tongi Industrial Station",
+                     "region_id":  "region-dhaka",
+                     "fuel_type":  "DIESEL",
+                     "risk_level":  "HIGH",
+                     "hours_to_stockout":  11.25,
+                     "stockout_prob":  0.89,
+                     "stockout_prob_lead":  0.0,
+                     "stockout_prob_horizon":  0.89,
+                     "cover_hours":  11.3,
+                     "inventory":  9627.508,
+                     "drivers":  [
+                                     "high_horizon_stockout_prob (89%)"
+                                 ]
+                 },
+                 {
+                     "station_id":  "station-mirpur",
+                     "station_name":  "Mirpur Fuel Station",
+                     "region_id":  "region-dhaka",
+                     "fuel_type":  "DIESEL",
+                     "risk_level":  "LOW",
+                     "hours_to_stockout":  999.0,
+                     "stockout_prob":  0.0,
+                     "stockout_prob_lead":  0.0,
+                     "stockout_prob_horizon":  0.0,
+                     "cover_hours":  22.45,
+                     "inventory":  7714.677,
+                     "drivers":  [
+
+                                 ]
+                 },
+                 {
+                     "station_id":  "station-mirpur",
+                     "station_name":  "Mirpur Fuel Station",
+                     "region_id":  "region-dhaka",
+                     "fuel_type":  "PETROL",
+                     "risk_level":  "LOW",
+                     "hours_to_stockout":  999.0,
+                     "stockout_prob":  0.0,
+                     "stockout_prob_lead":  0.0,
+                     "stockout_prob_horizon":  0.0,
+                     "cover_hours":  21.01,
+                     "inventory":  8877.295,
+                     "drivers":  [
+
+                                 ]
+                 },
+                 {
+                     "station_id":  "station-mirpur",
+                     "station_name":  "Mirpur Fuel Station",
+                     "region_id":  "region-dhaka",
+                     "fuel_type":  "OCTANE",
+                     "risk_level":  "LOW",
+                     "hours_to_stockout":  999.0,
+                     "stockout_prob":  0.0,
+                     "stockout_prob_lead":  0.0,
+                     "stockout_prob_horizon":  0.0,
+                     "cover_hours":  18.2,
+                     "inventory":  4149.915,
+                     "drivers":  [
+
+                                 ]
+                 },
+                 {
+                     "station_id":  "station-tongi",
+                     "station_name":  "Tongi Industrial Station",
+                     "region_id":  "region-dhaka",
+                     "fuel_type":  "PETROL",
+                     "risk_level":  "LOW",
+                     "hours_to_stockout":  999.0,
+                     "stockout_prob":  0.0,
+                     "stockout_prob_lead":  0.0,
+                     "stockout_prob_horizon":  0.0,
+                     "cover_hours":  20.6,
+                     "inventory":  5561.525,
+                     "drivers":  [
+
+                                 ]
+                 },
+                 {
+                     "station_id":  "station-tongi",
+                     "station_name":  "Tongi Industrial Station",
+                     "region_id":  "region-dhaka",
+                     "fuel_type":  "OCTANE",
+                     "risk_level":  "LOW",
+                     "hours_to_stockout":  999.0,
+                     "stockout_prob":  0.0,
+                     "stockout_prob_lead":  0.0,
+                     "stockout_prob_horizon":  0.0,
+                     "cover_hours":  23.79,
+                     "inventory":  3282.85,
+                     "drivers":  [
+
+                                 ]
+                 }
+             ]
+}

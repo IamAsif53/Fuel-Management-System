@@ -1,13 +1,14 @@
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import Network from "@/pages/Network";
 import * as liveStateHook from "@/hooks/useLiveState";
 import * as apiClient from "@/api/client";
 import { mockWorldState } from "./fixtures/mockState";
 
-function renderWithClient(ui: React.ReactElement) {
+function renderWithClient(ui: React.ReactElement, initialEntries: string[] = ["/network"]) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
@@ -15,7 +16,11 @@ function renderWithClient(ui: React.ReactElement) {
       },
     },
   });
-  return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
+  return render(
+    <MemoryRouter initialEntries={initialEntries}>
+      <QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>
+    </MemoryRouter>
+  );
 }
 
 describe("Network Page", () => {

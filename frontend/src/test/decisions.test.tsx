@@ -198,4 +198,94 @@ describe("Phase 04 UI — Recommendations & Decisions Workflow", () => {
       expect(client.setControlMode).toHaveBeenCalledWith("autopilot");
     });
   });
+
+  it("defers active-run fetch until sim_run_id hydrates and renders hydrated liters/line counts", async () => {
+    vi.spyOn(liveStateHook, "useLiveState").mockReturnValue({
+      state: null,
+      connection: "polling",
+      error: null,
+      refetch: vi.fn(),
+      isLoading: true,
+    });
+
+    const { rerender } = renderWithClient(<Decisions />);
+    expect(client.fetchDecisions).not.toHaveBeenCalled();
+
+    vi.mocked(client.fetchDecisions).mockResolvedValueOnce({
+      items: [
+        {
+          id: 1622,
+          sim_run_id: 2006,
+          tick: 12,
+          policy: "optimizer",
+          status: "EXECUTED",
+          confidence: 0.99,
+          narrative: "Multi-line partial",
+          approved_by: "operator",
+          lines: [
+            {
+              id: 1,
+              decision_id: 1622,
+              line_no: 1,
+              source_depot_id: "depot-gazipur",
+              destination_station_id: "station-mirpur",
+              route_id: "route-gazipur-mirpur",
+              fuel_type: "DIESEL",
+              quantity: 1500,
+              idempotency_key: "k1",
+              status: "SUBMITTED",
+            },
+            {
+              id: 2,
+              decision_id: 1622,
+              line_no: 2,
+              source_depot_id: "depot-patiya",
+              destination_station_id: "station-coxsbazar",
+              route_id: "route-patiya-coxsbazar",
+              fuel_type: "OCTANE",
+              quantity: 3990,
+              idempotency_key: "k2",
+              status: "CANCELLED",
+            },
+          ],
+          line_count: 2,
+          active_line_count: 1,
+          total_liters: 1500,
+        },
+      ],
+      total: 1,
+    });
+
+    vi.spyOn(liveStateHook, "useLiveState").mockReturnValue({
+      state: {
+        sim_run_id: 2006,
+        tick: 12,
+        sim_status: "PAUSED",
+        operating_mode: "advisory",
+        policy: "optimizer",
+        alerts_open_count: { INFO: 0, WARNING: 0, CRITICAL: 0 },
+        pending_recommendations: [],
+      } as unknown as WorldState,
+      connection: "live",
+      error: null,
+      refetch: vi.fn(),
+      isLoading: false,
+    });
+
+    rerender(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <Decisions />
+      </QueryClientProvider>
+    );
+
+    expect(await screen.findByText("#DEC-1622")).toBeInTheDocument();
+    expect(client.fetchDecisions).toHaveBeenCalledTimes(1);
+    expect(client.fetchDecisions).toHaveBeenCalledWith(
+      expect.objectContaining({ sim_run_id: 2006 })
+    );
+    expect(screen.getByText(/1,500 L/)).toBeInTheDocument();
+    expect(screen.getByText(/across 1 of 2 lines/)).toBeInTheDocument();
+  });
 });

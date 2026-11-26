@@ -14,6 +14,7 @@ Manages:
 from __future__ import annotations
 
 import asyncio
+import math
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -25,6 +26,7 @@ from sqlalchemy.orm import selectinload
 
 from app.config import EngineSettings, get_settings
 from app.db.models import AuditLog, Decision, DecisionLine, SimRun
+from app.db.repo import ledger_append
 from app.decision.constraints import PlanLine, check_line
 from app.decision.heuristic import plan_heuristic
 from app.decision.optimizer import OptimizerPolicy
@@ -68,8 +70,9 @@ class DecisionInvalidStateError(DecisionError):
 
 
 class DecisionConstraintViolationError(DecisionError):
-    def __init__(self, message: str) -> None:
+    def __init__(self, message: str, violations: list[Any] | None = None) -> None:
         super().__init__("CONSTRAINT_VIOLATION", message, status_code=422)
+        self.violations: list[Any] = list(violations or [])
 
 
 class DecisionEngine:
@@ -111,6 +114,7 @@ class DecisionEngine:
         if engine_mode in ("SAFE_HOLD", "NO_FEASIBLE_ROUTES"):
             self._log.info("decision.planning_paused", engine_mode=engine_mode, tick=cur_tick)
             await self.expire_stale_decisions(cur_tick, store.sim_run_id)
+            await self._sync_store_pending(store, cur_tick)
             return None
 
         interval = self.settings.engine_decision_interval_ticks
@@ -124,6 +128,7 @@ class DecisionEngine:
                     await self.evaluate_autopilot_pending(store)
                 except Exception as exc:
                     self._log.warning("autopilot.cycle_eval_failed", error=str(exc))
+            await self._sync_store_pending(store, cur_tick)
             return None
 
         # Check expiry of older decisions
@@ -146,6 +151,7 @@ class DecisionEngine:
                 except Exception as exc:
                     self._log.error("autopilot.execute_failed", decision_id=decision.id, error=str(exc))
 
+        await self._sync_store_pending(store, cur_tick)
         return decision
 
     async def plan_now(self, store: WorldState) -> Decision | None:
@@ -641,12 +647,12 @@ class DecisionEngine:
         sim_run_id: int | None,
         cur_tick: int,
     ) -> list[int]:
-        """Mark older PENDING_APPROVAL decisions as EXPIRED."""
+        """Mark older unfinalized decisions as EXPIRED."""
         stmt = (
             select(Decision)
             .where(
                 Decision.sim_run_id == sim_run_id,
-                Decision.status == "PENDING_APPROVAL",
+                Decision.status.in_(["PENDING_APPROVAL", "AWAITING_SECOND_APPROVAL", "PROPOSED"]),
             )
             .with_for_update()
         )
@@ -671,16 +677,52 @@ class DecisionEngine:
                     )
         return superseded_ids
 
+    async def _sync_store_pending(self, store: WorldState, current_tick: int) -> None:
+        """Keep store.pending synchronized with active pending decisions for store.sim_run_id."""
+        if store is None:
+            return
+        try:
+            async with self.session_factory() as session:
+                unfinalized_statuses = ["PENDING_APPROVAL", "AWAITING_SECOND_APPROVAL", "PROPOSED"]
+                stmt = (
+                    select(Decision)
+                    .options(selectinload(Decision.lines))
+                    .where(
+                        Decision.sim_run_id == store.sim_run_id,
+                        Decision.status.in_(unfinalized_statuses),
+                        (Decision.expires_at_tick > current_tick) | (Decision.expires_at_tick.is_(None)),
+                    )
+                    .order_by(Decision.id.desc())
+                )
+                res = await session.execute(stmt)
+                active = list(res.scalars().all())
+                store.pending = [
+                    {
+                        "decision_id": d.id,
+                        "summary": d.narrative or f"Decision #{d.id} at tick {d.tick}",
+                        "confidence": float(d.confidence) if d.confidence is not None else 0.8,
+                        "total_liters": sum(float(ln.quantity) for ln in getattr(d, "lines", [])),
+                        "expires_at_tick": d.expires_at_tick,
+                    }
+                    for d in active
+                ]
+            if self.publisher is not None and hasattr(self.publisher, "publish_state"):
+                await self.publisher.publish_state(store)
+        except Exception as exc:
+            self._log.warning("decision.sync_store_pending_failed", error=str(exc))
+
     async def expire_stale_decisions(
         self,
         current_tick: int,
         sim_run_id: int | None = None,
     ) -> list[int]:
-        """Expire decisions where current_tick >= expires_at_tick."""
+        """Expire decisions where current_tick >= expires_at_tick or from older ended runs."""
         expired_ids: list[int] = []
+        unfinalized_statuses = ["PENDING_APPROVAL", "AWAITING_SECOND_APPROVAL", "PROPOSED"]
         async with self.session_factory() as session:
+            # 1. Expire past-due decisions for the current run
             stmt = select(Decision).where(
-                Decision.status == "PENDING_APPROVAL",
+                Decision.status.in_(unfinalized_statuses),
                 Decision.expires_at_tick <= current_tick,
             )
             if sim_run_id is not None:
@@ -694,13 +736,33 @@ class DecisionEngine:
                 d.rejected_reason = f"Expired at tick {current_tick} (limit was {d.expires_at_tick})"
                 expired_ids.append(d.id)
 
+            # 2. Expire orphaned decisions only from other runs that have ended.
+            # Do not expire pending decisions belonging to still-open parallel runs
+            # (e.g. integration tests sharing the DB with a live engine).
+            if sim_run_id is not None:
+                old_stmt = (
+                    select(Decision)
+                    .join(SimRun, SimRun.id == Decision.sim_run_id)
+                    .where(
+                        Decision.status.in_(unfinalized_statuses),
+                        Decision.sim_run_id != sim_run_id,
+                        SimRun.ended_at.is_not(None),
+                    )
+                )
+                old_res = await session.execute(old_stmt.with_for_update())
+                for d in old_res.scalars().all():
+                    d.status = "EXPIRED"
+                    d.rejected_reason = f"Simulation run {d.sim_run_id} ended (active run is {sim_run_id})"
+                    expired_ids.append(d.id)
+
             if expired_ids:
                 await session.commit()
                 if self.publisher is not None:
-                    for d_id in expired_ids:
+                    # Only emit real-time expiration events for active run decisions
+                    for d in stale_decisions:
                         await self.publisher.event(
                             type="decision.expired",
-                            data={"decision_id": d_id, "reason": "ttl_expired"},
+                            data={"decision_id": d.id, "reason": "ttl_expired"},
                             sim_run_id=sim_run_id,
                             tick=current_tick,
                         )
@@ -764,8 +826,42 @@ class DecisionEngine:
                 )
 
             # Apply quantity modifications and validations
-            mod_qtys = modified_quantities or {}
-            sel_ids = set(selected_line_ids) if selected_line_ids is not None else {ln.id for ln in dec.lines}
+            line_by_id = {ln.id: ln for ln in dec.lines}
+            mod_qtys = {int(k): float(v) for k, v in (modified_quantities or {}).items()}
+
+            if selected_line_ids is not None:
+                if len(selected_line_ids) == 0:
+                    raise DecisionError(
+                        "NO_LINES_SELECTED",
+                        "At least one allocation line must be selected for approval.",
+                        status_code=422,
+                    )
+                unknown_sel = [lid for lid in selected_line_ids if lid not in line_by_id]
+                if unknown_sel:
+                    raise DecisionError(
+                        "INVALID_LINE_SELECTION",
+                        f"Selected line IDs do not belong to decision {decision_id}: {unknown_sel}",
+                        status_code=422,
+                    )
+                sel_ids = set(selected_line_ids)
+            else:
+                sel_ids = set(line_by_id.keys())
+
+            unknown_mod = [lid for lid in mod_qtys if lid not in line_by_id]
+            if unknown_mod:
+                raise DecisionError(
+                    "INVALID_LINE_SELECTION",
+                    f"Modified line IDs do not belong to decision {decision_id}: {unknown_mod}",
+                    status_code=422,
+                )
+
+            for lid, new_q in mod_qtys.items():
+                if not math.isfinite(new_q) or new_q <= 0:
+                    raise DecisionError(
+                        "INVALID_QUANTITY",
+                        f"Modified quantity for line {lid} must be a finite positive number (got {new_q}).",
+                        status_code=422,
+                    )
 
             approved_lines: list[DecisionLine] = []
             used_disp: dict[str, float] = {}
@@ -776,8 +872,7 @@ class DecisionEngine:
                     continue
 
                 if line.id in mod_qtys:
-                    new_q = float(mod_qtys[line.id])
-                    line.quantity = new_q
+                    line.quantity = mod_qtys[line.id]
 
                 # If current_state is provided, validate each approved line against constraints
                 if current_state:
@@ -797,7 +892,8 @@ class DecisionEngine:
                     if violations:
                         violation_msgs = "; ".join(f"[{v.rule}] {v.message}" for v in violations)
                         raise DecisionConstraintViolationError(
-                            f"Line {line.line_no} violated constraints: {violation_msgs}"
+                            f"Line {line.line_no} violated constraints: {violation_msgs}",
+                            violations=violations,
                         )
                     used_disp[line.source_depot_id] = used_disp.get(line.source_depot_id, 0.0) + line.quantity
 
@@ -824,53 +920,18 @@ class DecisionEngine:
                         status_code=422,
                     )
 
-            # Four-eyes supervisory sign-off check (20_FINAL_SPEC_LOCK.md §95 & 21_API_CONTRACTS.md §133):
-            # Decisions exceeding 7,000 L total require two distinct human approvals.
-            if total_qty > 7000.0 and actor != "autopilot":
-                if dec.status == "PENDING_APPROVAL":
-                    dec.status = "AWAITING_SECOND_APPROVAL"
-                    dec.approved_by = actor
-                    dec.approved_at = datetime.now(UTC)
-                    audit_entry = AuditLog(
-                        actor=actor,
-                        action="DECISION_FIRST_APPROVAL",
-                        entity_type="decision",
-                        entity_id=str(dec.id),
-                        payload={
-                            "decision_id": dec.id,
-                            "tick": cur_tick,
-                            "status": "AWAITING_SECOND_APPROVAL",
-                            "lines_approved": len(approved_lines),
-                            "total_liters": total_qty,
-                        },
-                    )
-                    session.add(audit_entry)
-                    await session.commit()
-                    await session.refresh(dec, ["lines"])
-
-                    if self.publisher is not None:
-                        await self.publisher.event(
-                            type="decision.awaiting_second_approval",
-                            data={
-                                "decision_id": dec.id,
-                                "first_approver": actor,
-                                "total_quantity": total_qty,
-                            },
-                            sim_run_id=dec.sim_run_id,
-                            tick=cur_tick,
-                        )
-                    return dec
-                elif dec.status == "AWAITING_SECOND_APPROVAL":
-                    if dec.approved_by and dec.approved_by.strip().lower() == actor.strip().lower():
-                        raise DecisionError(
-                            "FOUR_EYES_SAME_ACTOR",
-                            "Four-eyes policy violation: second approval must be by a different operator.",
-                            status_code=403,
-                        )
+            # Human-in-the-loop is the explicit Approve click (brief §26).
+            # Multi-user four-eyes login was removed to match the participant brief
+            # (no Sign-In / enterprise auth requirement).
+            if dec.status == "AWAITING_SECOND_APPROVAL":
+                # Legacy in-flight rows: complete with the current operator click.
+                if dec.approved_by and actor not in dec.approved_by:
                     dec.approved_by = f"{dec.approved_by}, {actor}"
+                else:
+                    dec.approved_by = actor
 
             dec.status = "APPROVED"
-            if total_qty <= 7000.0 or actor == "autopilot":
+            if not dec.approved_by or actor == "autopilot" or "," not in str(dec.approved_by):
                 dec.approved_by = actor
             dec.approved_at = datetime.now(UTC)
 
@@ -888,6 +949,29 @@ class DecisionEngine:
                 },
             )
             session.add(audit_entry)
+
+            # Tamper-evident ledger (DEF-019)
+            try:
+                await ledger_append(
+                    session,
+                    actor=actor,
+                    action="decision.approved",
+                    payload={
+                        "decision_id": dec.id,
+                        "tick": cur_tick,
+                        "sim_run_id": dec.sim_run_id,
+                        "lines_approved": len(approved_lines),
+                        "total_liters": total_qty,
+                        "status": dec.status,
+                    },
+                )
+            except Exception as ledger_exc:
+                self._log.warning(
+                    "ledger.append_failed",
+                    decision_id=dec.id,
+                    action="decision.approved",
+                    error=str(ledger_exc),
+                )
 
             await session.commit()
             await session.refresh(dec, ["lines"])
@@ -949,6 +1033,27 @@ class DecisionEngine:
 
             for line in dec.lines:
                 line.status = "CANCELLED"
+
+            try:
+                await ledger_append(
+                    session,
+                    actor=actor,
+                    action="decision.rejected",
+                    payload={
+                        "decision_id": dec.id,
+                        "tick": dec.tick,
+                        "sim_run_id": dec.sim_run_id,
+                        "reason": reason,
+                        "status": "REJECTED",
+                    },
+                )
+            except Exception as ledger_exc:
+                self._log.warning(
+                    "ledger.append_failed",
+                    decision_id=dec.id,
+                    action="decision.rejected",
+                    error=str(ledger_exc),
+                )
 
             await session.commit()
             await session.refresh(dec, ["lines"])

@@ -419,21 +419,23 @@ export default function SystemHealth() {
 
         <div className="flex items-center gap-4">
           <a
-            href="http://localhost:3001"
+            href={`${typeof window !== "undefined" ? window.location.protocol : "http:"}//${typeof window !== "undefined" ? window.location.hostname : "localhost"}:13001`}
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-1 text-accent hover:underline"
+            data-testid="grafana-link"
           >
-            <span>Ops Dashboard</span>
+            <span>Grafana Ops</span>
             <ExternalLink size={12} />
           </a>
           <a
-            href="http://localhost:3001/explore"
+            href={`${typeof window !== "undefined" ? window.location.protocol : "http:"}//${typeof window !== "undefined" ? window.location.hostname : "localhost"}:13001/explore`}
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-1 text-accent hover:underline"
+            data-testid="grafana-explore-link"
           >
-            <span>Service Traces</span>
+            <span>Log Explore</span>
             <ExternalLink size={12} />
           </a>
         </div>

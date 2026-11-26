@@ -189,6 +189,12 @@ class Decision(Base):
     expires_at_tick: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
+    # Indexes
+    __table_args__ = (
+        Index("ix_decisions_sim_run_tick", "sim_run_id", text("tick DESC"), text("id DESC")),
+        Index("ix_decisions_status_expiry", "status", "expires_at_tick"),
+    )
+
     # Relationships
     sim_run: Mapped[SimRun | None] = relationship("SimRun", back_populates="decisions")
     lines: Mapped[list[DecisionLine]] = relationship(

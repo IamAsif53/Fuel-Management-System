@@ -10,10 +10,10 @@ import {
   ShieldAlert,
   Bot,
   UserCheck,
-  Users,
 } from "lucide-react";
 import clsx from "clsx";
 import {
+  api,
   approveDecision,
   dispatchManualAllocation,
   fetchRecommendations,
@@ -27,11 +27,32 @@ import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { ExplainPanel } from "@/components/ExplainPanel";
 
+interface DecisionMetrics {
+  acceptance_rate: number | null;
+  override_rate: number | null;
+  avg_time_to_decision_seconds: number | null;
+  autopilot_share: number | null;
+  decided_count: number;
+  accepted_count: number;
+}
+
+function fmtPct(rate: number | null | undefined): string {
+  if (rate == null || Number.isNaN(rate)) return "—";
+  return `${(rate * 100).toFixed(1)}%`;
+}
+
+function fmtSeconds(sec: number | null | undefined): string {
+  if (sec == null || Number.isNaN(sec)) return "—";
+  if (sec < 60) return `${sec.toFixed(1)} s`;
+  return `${(sec / 60).toFixed(1)} m`;
+}
+
 export default function Recommendations() {
   const { state } = useLiveState();
   const [recommendations, setRecommendations] = useState<Decision[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [metrics, setMetrics] = useState<DecisionMetrics | null>(null);
 
   // Line selection & modification state: decisionId -> { [lineId]: boolean } and { [lineId]: number }
   const [selectedLines, setSelectedLines] = useState<Record<number, Record<number, boolean>>>({});
@@ -66,8 +87,16 @@ export default function Recommendations() {
     try {
       setIsLoading(true);
       setError(null);
-      const items = await fetchRecommendations(state?.sim_run_id);
+      const [items, metricsRes] = await Promise.all([
+        fetchRecommendations(state?.sim_run_id),
+        api<DecisionMetrics>(
+          state?.sim_run_id != null
+            ? `/decisions/metrics?sim_run_id=${state.sim_run_id}`
+            : "/decisions/metrics"
+        ).catch(() => null),
+      ]);
       setRecommendations(items);
+      if (metricsRes) setMetrics(metricsRes);
 
       // Initialize line selection and quantities
       const initialSelection: Record<number, Record<number, boolean>> = {};
@@ -211,7 +240,6 @@ export default function Recommendations() {
         quantities: modifiedPayload,
         reviewed_driver: requiresCognitiveForcing ? Boolean(reviewedDriver[decId]) : true,
       });
-      // Remove approved item from list
       setRecommendations((prev) => prev.filter((d) => d.id !== decId));
     } catch (err: unknown) {
       alert(`Approval failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -329,29 +357,42 @@ export default function Recommendations() {
         </div>
       </div>
 
-      {/* Human-AI Teaming Panel (Phase 09 §4.5) */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 rounded-xl border border-bg-border bg-bg-panel p-4 text-xs">
+      {/* Human-AI Teaming Panel — live metrics from /api/decisions/metrics (DEF-014) */}
+      <div
+        data-testid="human-ai-metrics"
+        className="grid grid-cols-2 gap-3 sm:grid-cols-4 rounded-xl border border-bg-border bg-bg-panel p-4 text-xs"
+      >
         <div className="space-y-1">
           <span className="text-[11px] font-medium text-ink-muted">Acceptance Rate</span>
-          <div className="font-mono text-base font-bold text-risk-low">92.4%</div>
-          <span className="text-[10px] text-ink-faint">Operator alignment</span>
+          <div className="font-mono text-base font-bold text-risk-low">
+            {fmtPct(metrics?.acceptance_rate)}
+          </div>
+          <span className="text-[10px] text-ink-faint">
+            {metrics?.decided_count ? `${metrics.accepted_count}/${metrics.decided_count} decided` : "No decisions yet"}
+          </span>
         </div>
         <div className="space-y-1">
           <span className="text-[11px] font-medium text-ink-muted">Override Rate</span>
-          <div className="font-mono text-base font-bold text-accent">7.6%</div>
+          <div className="font-mono text-base font-bold text-accent">
+            {fmtPct(metrics?.override_rate)}
+          </div>
           <span className="text-[10px] text-ink-faint">Quantity modified</span>
         </div>
         <div className="space-y-1">
           <span className="text-[11px] font-medium text-ink-muted">Avg Time-to-Decision</span>
-          <div className="font-mono text-base font-bold text-ink">4.2 s</div>
+          <div className="font-mono text-base font-bold text-ink">
+            {fmtSeconds(metrics?.avg_time_to_decision_seconds)}
+          </div>
           <span className="text-[10px] text-ink-faint">Review velocity</span>
         </div>
         <div className="space-y-1">
           <span className="text-[11px] font-medium text-ink-muted">Autopilot Share</span>
           <div className="font-mono text-base font-bold text-brand">
-            {operatingMode === "autopilot" ? "84.0%" : "0.0%"}
+            {fmtPct(metrics?.autopilot_share)}
           </div>
-          <span className="text-[10px] text-ink-faint">Routine cycles</span>
+          <span className="text-[10px] text-ink-faint">
+            Mode: {operatingMode === "autopilot" ? "autopilot" : "advisory"}
+          </span>
         </div>
       </div>
 
@@ -385,14 +426,16 @@ export default function Recommendations() {
             return acc;
           }, 0);
 
-          const hasLargeLine = (rec.lines || []).some(
+          const selectedLinesList = (rec.lines || []).filter((ln) => selMap[ln.id] ?? true);
+          const hasLargeLine = selectedLinesList.some(
             (ln) => (qtyMap[ln.id] ?? ln.quantity) > 5000
           );
           const requiresCognitiveForcing =
             hasLargeLine || (rec.confidence ?? 1.0) < 0.7 || Boolean(rec.degraded);
           const isReviewed = reviewedDriver[rec.id] || false;
           const isWhyOpen = whyExpanded[rec.id] || false;
-          const canApprove = !requiresCognitiveForcing || (isWhyOpen && isReviewed);
+          const canApprove =
+            selectedLinesList.length > 0 && (!requiresCognitiveForcing || (isWhyOpen && isReviewed));
 
           return (
             <div
@@ -406,9 +449,34 @@ export default function Recommendations() {
                   <span className="font-mono text-xs font-bold text-ink">
                     #DEC-{rec.id}
                   </span>
+                  {rec.sim_run_id !== undefined && rec.sim_run_id !== null && (
+                    <span
+                      className={clsx(
+                        "rounded px-2 py-0.5 font-mono text-[11px] font-semibold",
+                        state?.sim_run_id && rec.sim_run_id === state.sim_run_id
+                          ? "bg-brand/15 text-brand"
+                          : "bg-risk-high/15 text-risk-high"
+                      )}
+                    >
+                      Run #{rec.sim_run_id}
+                    </span>
+                  )}
                   <span className="rounded bg-bg-raised px-2 py-0.5 font-mono text-[11px] text-ink-muted">
                     Tick {rec.tick}
                   </span>
+                  {rec.expires_at_tick && (
+                    <span
+                      className={clsx(
+                        "rounded px-2 py-0.5 font-mono text-[11px]",
+                        state?.tick && rec.expires_at_tick <= state.tick
+                          ? "bg-risk-critical/15 text-risk-critical font-bold"
+                          : "bg-bg-raised text-ink-muted"
+                      )}
+                    >
+                      Expires t={rec.expires_at_tick}
+                      {state?.tick && rec.expires_at_tick <= state.tick ? " (Expired)" : ""}
+                    </span>
+                  )}
                   <span className="rounded bg-bg-raised px-2 py-0.5 text-[11px] font-semibold text-ink-muted capitalize">
                     {rec.policy}
                   </span>
@@ -416,12 +484,6 @@ export default function Recommendations() {
                     <span className="flex items-center gap-1 rounded bg-risk-high/15 px-2 py-0.5 text-[11px] font-semibold text-risk-high">
                       <AlertTriangle size={12} />
                       Degraded State
-                    </span>
-                  )}
-                  {rec.status === "AWAITING_SECOND_APPROVAL" && (
-                    <span className="flex items-center gap-1 rounded bg-purple-500/15 text-purple-400 px-2 py-0.5 text-[11px] font-semibold">
-                      <Users size={12} />
-                      Needs Supervisor Approval (1/2)
                     </span>
                   )}
                 </div>

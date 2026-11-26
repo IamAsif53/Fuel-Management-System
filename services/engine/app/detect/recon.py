@@ -253,6 +253,31 @@ class AllocationReconciliationTracker:
         self.reconciled_lines.clear()
         self.processed_allocation_ids.clear()
 
+    async def _resolve_decision_line_id(self, sim_allocation_id: int) -> int | None:
+        """Map simulator allocation id → decision_lines.id (FK for allocation_reconciliation)."""
+        if self.session_factory is None:
+            return None
+        try:
+            from sqlalchemy import select
+
+            from app.db.models import DecisionLine
+
+            async with self.session_factory() as session:
+                res = await session.execute(
+                    select(DecisionLine.id)
+                    .where(DecisionLine.sim_allocation_id == int(sim_allocation_id))
+                    .order_by(DecisionLine.id.desc())
+                    .limit(1)
+                )
+                return res.scalar_one_or_none()
+        except Exception as exc:
+            logger.warning(
+                "recon.resolve_line_failed",
+                sim_allocation_id=sim_allocation_id,
+                error=str(exc),
+            )
+            return None
+
     async def record_allocation(
         self,
         line_id: int,
@@ -261,10 +286,24 @@ class AllocationReconciliationTracker:
         station_capacity: float,
         station_inventory_before_arrival: float,
         tick: int,
+        *,
+        sim_allocation_id: int | None = None,
     ) -> ReconciliationLine:
-        """Reconcile an allocation once reached terminal state (ARRIVED, DELIVERED, or FAILED)."""
-        if line_id in self.reconciled_lines:
-            return self.reconciled_lines[line_id]
+        """Reconcile an allocation once reached terminal state (ARRIVED, DELIVERED, or FAILED).
+
+        `line_id` historically received the simulator allocation id. We now resolve the
+        real `decision_lines.id` for DB persistence (DEF-019) while still deduping on the
+        simulator allocation id.
+        """
+        sim_id = int(sim_allocation_id if sim_allocation_id is not None else line_id)
+        if sim_id in self.processed_allocation_ids:
+            # Return cached row if present
+            for cached in self.reconciled_lines.values():
+                if cached.line_id == sim_id or cached.line_id == line_id:
+                    return cached
+
+        decision_line_id = await self._resolve_decision_line_id(sim_id)
+        persist_id = int(decision_line_id) if decision_line_id is not None else None
 
         sent = float(sent)
         received = sent
@@ -286,8 +325,9 @@ class AllocationReconciliationTracker:
         if loss > 0 and FSIP_RECON_LOSS_LITERS_TOTAL is not None:
             FSIP_RECON_LOSS_LITERS_TOTAL.labels(loss_reason=reason).inc(loss)
 
+        memory_key = persist_id if persist_id is not None else sim_id
         line = ReconciliationLine(
-            line_id=line_id,
+            line_id=memory_key,
             sent=sent,
             received=received,
             loss=loss,
@@ -295,15 +335,15 @@ class AllocationReconciliationTracker:
             method="audit",
             tick=tick,
         )
-        self.reconciled_lines[line_id] = line
-        self.processed_allocation_ids.add(line_id)
+        self.reconciled_lines[memory_key] = line
+        self.processed_allocation_ids.add(sim_id)
 
-        # Persist to database if session factory provided
-        if self.session_factory is not None:
+        # Persist only when we have a valid decision_lines FK
+        if self.session_factory is not None and persist_id is not None:
             try:
                 async with self.session_factory() as session:
                     db_row = AllocationReconciliation(
-                        decision_line_id=line_id,
+                        decision_line_id=persist_id,
                         sent=sent,
                         received=received,
                         loss=loss,
@@ -315,7 +355,8 @@ class AllocationReconciliationTracker:
             except Exception as exc:
                 logger.error(
                     "recon.db_persist_failed",
-                    line_id=line_id,
+                    line_id=persist_id,
+                    sim_allocation_id=sim_id,
                     error=str(exc),
                 )
 

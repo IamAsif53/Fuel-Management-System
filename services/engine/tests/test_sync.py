@@ -672,3 +672,49 @@ async def test_notice_non_reset_ignored(fixtures_data: dict[str, Any]):
     assert store.sim_run_id == 3
     assert sync.last_tick == 20
 
+
+@pytest.mark.asyncio
+async def test_paused_poll_detects_stale_and_recovers_to_normal(fixtures_data: dict[str, Any]):
+    """Verify DEF-003 & DEF-004: paused polls detect res.stale, publish health, and recover DEGRADED -> NORMAL."""
+    client = make_mock_client(fixtures_data)
+    store = WorldState()
+    mock_pub = AsyncMock()
+    mock_pub.publish_state = AsyncMock()
+    mock_pub.publish_health = AsyncMock()
+
+    sync = SyncLoop(client=client, store=store, publisher=mock_pub, poll_interval=0.02)
+
+    # Initial sync at tick 12 -> NORMAL
+    inst12 = copy.deepcopy(fixtures_data["instance"])
+    inst12["tick"] = 12
+    inst12["status"] = "PAUSED"
+    client.instance.return_value = SimResult(data=inst12, stale=False, status=200, latency_ms=5.0)
+    await sync.full_sync(tick=12)
+    assert store.engine_mode == "NORMAL"
+    assert store.stale is False
+
+    # 1. Inject stale_data while simulator remains PAUSED at tick 12 (DEF-003)
+    client.instance.return_value = SimResult(data=inst12, stale=True, status=200, latency_ms=5.0)
+    await sync._handle_paused_poll(12, client.instance.return_value, inst12)
+    assert store.stale is True
+    assert "stale_data" in store.degraded_reasons
+    assert store.engine_mode == "DEGRADED"
+    assert mock_pub.publish_state.await_count >= 2
+
+    # 2. Clear stale_data while still PAUSED at tick 12 -> clean_cycles advances 1 then 2 -> NORMAL (DEF-004)
+    client.instance.return_value = SimResult(data=inst12, stale=False, status=200, latency_ms=5.0)
+    await sync._handle_paused_poll(12, client.instance.return_value, inst12)
+    # Wait for coalesced full_sync cycle 1 -> still DEGRADED (recovery cycle 1)
+    assert store.stale is False
+    assert store.engine_mode == "DEGRADED"
+
+    await sync._handle_paused_poll(12, client.instance.return_value, inst12)
+    # Recovery cycle 2 while still PAUSED -> NORMAL!
+    assert store.engine_mode == "NORMAL"
+
+    # 3. Subsequent healthy paused poll uses lightweight publish_health heartbeat
+    prev_state_calls = mock_pub.publish_state.await_count
+    await sync._handle_paused_poll(12, client.instance.return_value, inst12)
+    assert mock_pub.publish_state.await_count == prev_state_calls
+    assert mock_pub.publish_health.await_count >= 1
+

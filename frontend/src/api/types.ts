@@ -318,6 +318,9 @@ export interface Decision {
   impact?: Record<string, unknown> | null;
   objective?: Record<string, unknown> | null;
   lines: DecisionLine[];
+  line_count?: number;
+  active_line_count?: number;
+  total_liters?: number;
   outcome?: DecisionOutcome | null;
 }
 

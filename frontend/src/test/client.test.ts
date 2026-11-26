@@ -33,8 +33,8 @@ describe("api client", () => {
     );
   });
 
-  it("handles Authorization token header", async () => {
-    setToken("secret-token-123");
+  it("does not send Authorization header in open hackathon mode", async () => {
+    setToken("secret-token-123"); // ignored — Sign-In removed
 
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
@@ -44,14 +44,8 @@ describe("api client", () => {
     });
 
     await api("/secure");
-    expect(global.fetch).toHaveBeenCalledWith(
-      "/api/secure",
-      expect.objectContaining({
-        headers: expect.objectContaining({
-          Authorization: "Bearer secret-token-123",
-        }),
-      })
-    );
+    const [, init] = (global.fetch as any).mock.calls[0];
+    expect(init.headers.Authorization).toBeUndefined();
   });
 
   it("handles 304 Not Modified correctly in apiWithMeta", async () => {
@@ -115,5 +109,22 @@ describe("api client", () => {
       expect(apiErr.code).toBe("NETWORK_ERROR");
       expect(apiErr.message).toBe("Failed to fetch");
     }
+  });
+
+  it("does not ship a default operator token when signed out", async () => {
+    setToken(null, null);
+    let capturedHeaders: HeadersInit | undefined;
+    global.fetch = vi.fn().mockImplementation(async (_url: RequestInfo | URL, init?: RequestInit) => {
+      capturedHeaders = init?.headers;
+      return {
+        ok: true,
+        status: 200,
+        headers: new Headers({ "Content-Type": "application/json" }),
+        json: async () => ({ status: "ok" }),
+      } as Response;
+    });
+
+    await api("/state");
+    expect((capturedHeaders as Record<string, string>)["Authorization"]).toBeUndefined();
   });
 });

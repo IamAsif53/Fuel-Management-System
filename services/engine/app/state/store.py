@@ -125,6 +125,10 @@ class WorldState:
     risk_results: dict[Any, Any] = field(default_factory=dict)
     depot_risk: dict[tuple[str, str], Any] = field(default_factory=dict)
     pending: list[Any] = field(default_factory=list)
+    alerts_open_count: dict[str, int] = field(
+        default_factory=lambda: {"INFO": 0, "WARNING": 0, "CRITICAL": 0}
+    )
+    alerts_open: list[dict[str, Any]] = field(default_factory=list)
     bottleneck: dict[str, Any] | None = None
     forecaster_label: str = "seasonal@builtin"
     forecast_bundle: Any = None
@@ -360,6 +364,8 @@ class WorldState:
         self.risk.clear()
         self.depot_risk.clear()
         self.pending.clear()
+        self.alerts_open_count = {"INFO": 0, "WARNING": 0, "CRITICAL": 0}
+        self.alerts_open.clear()
         self.bottleneck = None
 
     # ---------------------------------------------------------------- Public JSON Projection
@@ -600,7 +606,8 @@ class WorldState:
             "events": events_view,
             "supply_upcoming": supply_upcoming,
             "allocations_active": allocations_active,
-            "alerts_open_count": {"INFO": 0, "WARNING": 0, "CRITICAL": 0},
+            "alerts_open_count": copy.deepcopy(self.alerts_open_count),
+            "alerts_open": copy.deepcopy(self.alerts_open),
             "pending_recommendations": copy.deepcopy(self.pending),
             "bottleneck": copy.deepcopy(self.bottleneck),
             "system": system_view,

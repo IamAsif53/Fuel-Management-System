@@ -260,11 +260,26 @@ def assess_station_fuel(
     arrivals = np.zeros(HORIZON_TICKS)
     total_inflight = 0.0
     for a in all_inflight:
-        dest_id = a.destination_station_id if hasattr(a, "destination_station_id") else a.get("destination_station_id")
-        f_type = a.fuel_type if hasattr(a, "fuel_type") else a.get("fuel_type")
-        status = a.status if hasattr(a, "status") else a.get("status")
-        arr_tick = a.expected_arrival_tick if hasattr(a, "expected_arrival_tick") else a.get("expected_arrival_tick")
-        qty = float(a.quantity if hasattr(a, "quantity") else a.get("quantity", 0.0))
+        if isinstance(a, tuple | list):
+            dest_id = a[0] if len(a) > 0 else None
+            f_type = a[1] if len(a) > 1 else None
+            arr_tick = a[2] if len(a) > 2 else None
+            qty = float(a[3]) if len(a) > 3 and a[3] is not None else 0.0
+            status = "IN_TRANSIT"
+        else:
+            dest_id = (
+                a.destination_station_id
+                if hasattr(a, "destination_station_id")
+                else a.get("destination_station_id")
+            )
+            f_type = a.fuel_type if hasattr(a, "fuel_type") else a.get("fuel_type")
+            status = a.status if hasattr(a, "status") else a.get("status")
+            arr_tick = (
+                a.expected_arrival_tick
+                if hasattr(a, "expected_arrival_tick")
+                else a.get("expected_arrival_tick")
+            )
+            qty = float(a.quantity if hasattr(a, "quantity") else a.get("quantity", 0.0))
 
         if dest_id == st_id and f_type == fuel_type and status in ("PENDING", "IN_TRANSIT"):
             total_inflight += qty

@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
 import clsx from "clsx";
 import {
@@ -13,38 +14,61 @@ import {
   Settings2,
   type LucideIcon,
 } from "lucide-react";
+import { api } from "@/api/client";
 
 export interface NavItem {
   to: string;
   label: string;
   Icon: LucideIcon;
-  phase: number;
+  demoOnly?: boolean;
 }
 
 export const NAV_ITEMS: NavItem[] = [
-  { to: "/overview", label: "Overview", Icon: Gauge, phase: 3 },
-  { to: "/network", label: "Network", Icon: Network, phase: 3 },
-  { to: "/risk", label: "Risk", Icon: ShieldAlert, phase: 6 },
-  { to: "/recommendations", label: "Recommendations", Icon: Inbox, phase: 4 },
-  { to: "/decisions", label: "Decisions", Icon: History, phase: 4 },
-  { to: "/alerts", label: "Alerts", Icon: Bell, phase: 6 },
-  { to: "/whatif", label: "What-if", Icon: FlaskConical, phase: 8 },
-  { to: "/assistant", label: "Assistant", Icon: Bot, phase: 9 },
-  { to: "/health", label: "System Health", Icon: HeartPulse, phase: 3 },
-  { to: "/control", label: "Control (demo)", Icon: Settings2, phase: 10 },
+  { to: "/overview", label: "Overview", Icon: Gauge },
+  { to: "/network", label: "Network", Icon: Network },
+  { to: "/risk", label: "Risk", Icon: ShieldAlert },
+  { to: "/recommendations", label: "Recommendations", Icon: Inbox },
+  { to: "/decisions", label: "Decisions", Icon: History },
+  { to: "/alerts", label: "Alerts", Icon: Bell },
+  { to: "/whatif", label: "What-if", Icon: FlaskConical },
+  { to: "/assistant", label: "Assistant", Icon: Bot },
+  { to: "/health", label: "System Health", Icon: HeartPulse },
+  { to: "/control", label: "Control (demo)", Icon: Settings2, demoOnly: true },
 ];
 
 export function Sidebar() {
+  const [demoControlsEnabled, setDemoControlsEnabled] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    api<{ demo_controls_enabled?: boolean }>("/control/status")
+      .then((res) => {
+        if (!cancelled) {
+          setDemoControlsEnabled(res?.demo_controls_enabled !== false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setDemoControlsEnabled(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const items = NAV_ITEMS.filter((item) => !item.demoOnly || demoControlsEnabled);
+
   return (
     <nav
       className="flex w-14 shrink-0 flex-col gap-1 border-r border-bg-border bg-bg-panel p-2 transition-all xl:w-56"
       aria-label="Main Navigation"
+      data-testid="sidebar-nav"
     >
-      {NAV_ITEMS.map(({ to, label, Icon, phase }) => (
+      {items.map(({ to, label, Icon }) => (
         <NavLink
           key={to}
           to={to}
-          title={`${label} (Phase ${String(phase).padStart(2, "0")})`}
+          title={label}
+          data-testid={`nav-${to.replace("/", "") || "overview"}`}
           className={({ isActive }) =>
             clsx(
               "flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors",
@@ -56,11 +80,6 @@ export function Sidebar() {
         >
           <Icon size={18} aria-hidden className="shrink-0" />
           <span className="hidden truncate xl:inline">{label}</span>
-          {phase > 6 && (
-            <span className="ml-auto hidden rounded bg-bg-raised px-1.5 py-0.2 text-[10px] text-ink-faint xl:inline">
-              P{phase}
-            </span>
-          )}
         </NavLink>
       ))}
     </nav>

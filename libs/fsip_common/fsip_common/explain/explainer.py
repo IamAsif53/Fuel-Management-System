@@ -294,35 +294,73 @@ def build_explanation(
 
 def generate_decision_narrative(explanation: dict[str, Any], tick: int = 0) -> str:
     """Generate a clean human-readable narrative using Jinja2 decision_narrative.j2."""
-    headline = explanation.get("headline", "")
-    expected_impact = explanation.get("expected_impact", {})
+    import re
+
+    headline = explanation.get("headline", "") or ""
+    expected_impact = explanation.get("expected_impact", {}) or {}
     confidence = explanation.get("confidence", 0.8)
     policy = explanation.get("policy", "optimizer@1.0.0")
-    why_at_risk = explanation.get("why_at_risk", [])
+    why_at_risk = explanation.get("why_at_risk", []) or []
 
     primary_risk_signal = why_at_risk[0].get("signal") if why_at_risk else "stockout prevention"
     primary_risk_value = why_at_risk[0].get("value") if why_at_risk else ""
 
+    # Prefer structured line payloads; never invent fake line counts or stations.
+    raw_lines = explanation.get("lines") or explanation.get("proposed_lines") or []
+    if isinstance(raw_lines, list) and raw_lines:
+        lines_ctx: list[Any] = list(raw_lines)
+        total_liters = float(
+            explanation.get("total_liters")
+            or sum(float(ln.get("quantity", 0) if isinstance(ln, dict) else 0) for ln in raw_lines)
+        )
+        first = raw_lines[0] if isinstance(raw_lines[0], dict) else {}
+        primary_station = (
+            explanation.get("primary_station")
+            or first.get("destination_station_id")
+            or first.get("station_id")
+            or "network"
+        )
+    else:
+        line_count = int(explanation.get("line_count") or explanation.get("active_line_count") or 0)
+        m_count = re.search(r"across\s+(\d+)\s+allocation", headline, flags=re.IGNORECASE)
+        if m_count:
+            line_count = int(m_count.group(1))
+        lines_ctx = list(range(max(line_count, 0)))
+        total_liters = float(explanation.get("total_liters") or 0.0)
+        primary_station = explanation.get("primary_station") or "network"
+
+    m_liters = re.search(r"Ship\s+([0-9,]+)\s+L", headline, flags=re.IGNORECASE)
+    if m_liters and total_liters <= 0:
+        total_liters = float(m_liters.group(1).replace(",", ""))
+
+    m_st = re.search(
+        r"\b(?:to|at)\s+(station-[a-z0-9_-]+|[A-Za-z][A-Za-z\s']+?)(?:\s*:|\s*$|\s*\()",
+        headline,
+    )
+    if m_st and primary_station in ("network", "station", ""):
+        primary_station = m_st.group(1).strip()
+
+    # If why_at_risk carries a station id/name, prefer it over a bare integer.
+    if why_at_risk:
+        for key in ("station_id", "station", "entity_id", "entity"):
+            cand = why_at_risk[0].get(key) if isinstance(why_at_risk[0], dict) else None
+            if isinstance(cand, str) and cand and not cand.isdigit():
+                primary_station = cand
+                break
+
+    if isinstance(primary_station, int) or (isinstance(primary_station, str) and primary_station.isdigit()):
+        primary_station = "network"
+
     ctx = {
         "tick": tick,
-        "lines": [1] if "Ship" in headline else [],
-        "total_liters": 5000,
-        "primary_station": "station",
+        "lines": lines_ctx,
+        "total_liters": total_liters,
+        "primary_station": primary_station,
         "primary_risk_signal": primary_risk_signal,
         "primary_risk_value": primary_risk_value,
         "expected_impact": expected_impact,
         "confidence": confidence,
         "policy": policy,
     }
-
-    # Extract liters from headline if present
-    import re
-    m_liters = re.search(r'Ship\s+([0-9,]+)\s+L', headline)
-    if m_liters:
-        ctx["total_liters"] = int(m_liters.group(1).replace(",", ""))
-
-    m_st = re.search(r'to\s+([a-zA-Z0-9_-]+)', headline)
-    if m_st:
-        ctx["primary_station"] = m_st.group(1)
 
     return render_template("decision_narrative.j2", ctx)

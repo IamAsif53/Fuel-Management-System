@@ -6,6 +6,7 @@ and entity history retrieval.
 
 from __future__ import annotations
 
+import inspect
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
 from typing import Any
@@ -241,18 +242,25 @@ async def fetch_station_demand_history(
     session: AsyncSession,
     station_id: str,
     limit: int = 96,
+    sim_run_id: int | None = None,
 ) -> list[dict[str, Any]]:
-    """Fetch recent demand observations for a station."""
+    """Fetch recent demand observations for a station (scoped to active sim_run when provided)."""
+    params: dict[str, Any] = {"station_id": station_id, "limit": limit}
+    run_filter = ""
+    if sim_run_id is not None:
+        run_filter = "AND sim_run_id = :sim_run_id"
+        params["sim_run_id"] = sim_run_id
     query = text(
-        """
+        f"""
         SELECT tick, sim_time, station_id, fuel_type, demand_liters, served_liters, unmet_liters
         FROM demand_observations
         WHERE station_id = :station_id
+          {run_filter}
         ORDER BY sim_time DESC, tick DESC
         LIMIT :limit
         """
     )
-    result = await session.execute(query, {"station_id": station_id, "limit": limit})
+    result = await session.execute(query, params)
     rows = result.mappings().all()
     demand_list = []
     for r in rows:
@@ -274,17 +282,24 @@ async def fetch_station_demand_history(
 async def fetch_recent_snapshots(
     session: AsyncSession,
     limit: int = 96,
+    sim_run_id: int | None = None,
 ) -> list[dict[str, Any]]:
-    """Fetch recent snapshots to build entity inventory history."""
+    """Fetch recent snapshots to build entity inventory history (active-run scoped)."""
+    params: dict[str, Any] = {"limit": limit}
+    run_filter = ""
+    if sim_run_id is not None:
+        run_filter = "WHERE sim_run_id = :sim_run_id"
+        params["sim_run_id"] = sim_run_id
     query = text(
-        """
+        f"""
         SELECT id, sim_run_id, tick, sim_time, depots, stations
         FROM world_snapshots
+        {run_filter}
         ORDER BY id DESC
         LIMIT :limit
         """
     )
-    result = await session.execute(query, {"limit": limit})
+    result = await session.execute(query, params)
     rows = result.mappings().all()
     return [dict(r) for r in reversed(rows)]
 
@@ -325,17 +340,177 @@ async def fetch_decisions(
     select_q = text(
         f"""
         SELECT id, sim_run_id, tick, policy, policy_version, trigger, status, mode,
-               confidence, degraded, fallback_reason, narrative, approved_by, approved_at,
-               rejected_reason, expires_at_tick, created_at
+               confidence, degraded, fallback_reason, objective, impact, explanation,
+               narrative, approved_by, approved_at, rejected_reason, expires_at_tick,
+               created_at
         FROM decisions
         {where_clause}
-        ORDER BY tick DESC, id DESC
+        ORDER BY sim_run_id DESC NULLS LAST, tick DESC, id DESC
         LIMIT :limit OFFSET :offset
         """
     )
     res = await session.execute(select_q, params)
     rows = [dict(r) for r in res.mappings().all()]
+    if not rows:
+        return rows, int(total)
+
+    decision_ids = [int(r["id"]) for r in rows]
+    lines_q = text(
+        """
+        SELECT id, decision_id, line_no, source_depot_id, destination_station_id,
+               route_id, fuel_type, quantity, idempotency_key, status,
+               sim_allocation_id, sim_error_code, expected_arrival_tick,
+               actual_arrival_tick, received_liters, reason, created_at
+        FROM decision_lines
+        WHERE decision_id = ANY(:decision_ids)
+        ORDER BY decision_id ASC, line_no ASC
+        """
+    )
+    lines_res = await session.execute(lines_q, {"decision_ids": decision_ids})
+    lines_by_dec: dict[int, list[dict[str, Any]]] = {did: [] for did in decision_ids}
+    for ln in lines_res.mappings().all():
+        d_id = int(ln["decision_id"])
+        if d_id in lines_by_dec:
+            lines_by_dec[d_id].append(dict(ln))
+
+    outcomes_q = text(
+        """
+        SELECT decision_id, evaluated_tick, predicted, realised, hit, created_at
+        FROM decision_outcomes
+        WHERE decision_id = ANY(:decision_ids)
+        """
+    )
+    outcomes_res = await session.execute(outcomes_q, {"decision_ids": decision_ids})
+    outcomes_by_dec: dict[int, dict[str, Any]] = {
+        int(out["decision_id"]): dict(out)
+        for out in outcomes_res.mappings().all()
+    }
+
+    for r in rows:
+        did = int(r["id"])
+        dec_lines = lines_by_dec.get(did, [])
+        non_cancelled = [ln for ln in dec_lines if ln.get("status") != "CANCELLED"]
+        effective_lines = non_cancelled if non_cancelled else dec_lines
+        r["lines"] = dec_lines
+        r["line_count"] = len(dec_lines)
+        r["active_line_count"] = len(effective_lines)
+        r["total_liters"] = round(
+            sum(float(ln.get("quantity") or 0.0) for ln in effective_lines),
+            2,
+        )
+        r["outcome"] = outcomes_by_dec.get(did)
+
     return rows, int(total)
+
+
+async def fetch_decision_metrics(
+    session: AsyncSession,
+    sim_run_id: int | None = None,
+) -> dict[str, Any]:
+    """Compute Human-AI teaming metrics from decisions + decision_lines.
+
+    Returns rates in [0, 1] and avg_time_to_decision_seconds; nulls when no data.
+    """
+    params: dict[str, Any] = {}
+    run_filter = ""
+    if sim_run_id is not None:
+        run_filter = "AND d.sim_run_id = :sim_run_id"
+        params["sim_run_id"] = sim_run_id
+
+    q = text(
+        f"""
+        SELECT
+          COUNT(*) FILTER (
+            WHERE d.status IN (
+              'APPROVED', 'EXECUTED', 'PARTIAL', 'REJECTED',
+              'AWAITING_SECOND_APPROVAL', 'EXPIRED', 'FAILED'
+            )
+          ) AS decided_count,
+          COUNT(*) FILTER (
+            WHERE d.status IN ('APPROVED', 'EXECUTED', 'PARTIAL')
+          ) AS accepted_count,
+          COUNT(*) FILTER (
+            WHERE d.status IN ('APPROVED', 'EXECUTED', 'PARTIAL')
+              AND LOWER(COALESCE(d.approved_by, '')) = 'autopilot'
+          ) AS autopilot_count,
+          AVG(
+            EXTRACT(EPOCH FROM (d.approved_at - d.created_at))
+          ) FILTER (
+            WHERE d.approved_at IS NOT NULL AND d.created_at IS NOT NULL
+              AND d.status IN ('APPROVED', 'EXECUTED', 'PARTIAL')
+          ) AS avg_tt_seconds
+        FROM decisions d
+        WHERE 1=1 {run_filter}
+        """
+    )
+    row = (await session.execute(q, params)).mappings().first() or {}
+    decided = int(row.get("decided_count") or 0)
+    accepted = int(row.get("accepted_count") or 0)
+    autopilot = int(row.get("autopilot_count") or 0)
+    avg_tt = row.get("avg_tt_seconds")
+
+    override_q = text(
+        f"""
+        SELECT
+          COUNT(*) FILTER (WHERE dl.status IS NOT NULL) AS line_count,
+          COUNT(*) FILTER (
+            WHERE dl.reason IS NOT NULL
+              AND (
+                LOWER(dl.reason) LIKE '%modif%'
+                OR LOWER(dl.reason) LIKE '%override%'
+                OR LOWER(dl.reason) LIKE '%operator%'
+              )
+          ) AS override_hint_count
+        FROM decision_lines dl
+        JOIN decisions d ON d.id = dl.decision_id
+        WHERE d.status IN ('APPROVED', 'EXECUTED', 'PARTIAL')
+          {run_filter}
+        """
+    )
+    o_row = (await session.execute(override_q, params)).mappings().first() or {}
+    line_count = int(o_row.get("line_count") or 0)
+    override_hint = int(o_row.get("override_hint_count") or 0)
+
+    # Prefer audit-log quantity overrides when available
+    audit_override_q = text(
+        f"""
+        SELECT COUNT(*) AS cnt
+        FROM audit_log a
+        WHERE a.action IN ('decision.override', 'decision.modified', 'line.modified')
+          {('AND a.sim_run_id = :sim_run_id' if sim_run_id is not None else '')}
+        """
+    )
+    try:
+        audit_cnt = int(
+            (await session.execute(audit_override_q, params)).scalar() or 0
+        )
+    except Exception:
+        audit_cnt = 0
+
+    override_rate: float | None
+    if audit_cnt > 0 and accepted > 0:
+        override_rate = min(1.0, audit_cnt / max(accepted, 1))
+    elif line_count > 0:
+        override_rate = override_hint / line_count
+    else:
+        override_rate = None
+
+    acceptance_rate = (accepted / decided) if decided > 0 else None
+    autopilot_share = (autopilot / accepted) if accepted > 0 else None
+
+    return {
+        "sim_run_id": sim_run_id,
+        "decided_count": decided,
+        "accepted_count": accepted,
+        "acceptance_rate": round(acceptance_rate, 4) if acceptance_rate is not None else None,
+        "override_rate": round(override_rate, 4) if override_rate is not None else None,
+        "avg_time_to_decision_seconds": (
+            round(float(avg_tt), 2) if avg_tt is not None else None
+        ),
+        "autopilot_share": round(autopilot_share, 4) if autopilot_share is not None else None,
+        "autopilot_count": autopilot,
+        "line_count": line_count,
+    }
 
 
 async def fetch_decision_by_id(session: AsyncSession, decision_id: int) -> dict[str, Any] | None:
@@ -386,13 +561,69 @@ async def fetch_decision_by_id(session: AsyncSession, decision_id: int) -> dict[
     return dec_dict
 
 
-async def fetch_recommendations(session: AsyncSession, sim_run_id: int | None = None) -> list[dict[str, Any]]:
+async def fetch_recommendations(
+    session: AsyncSession,
+    sim_run_id: int | None = None,
+    current_tick: int | None = None,
+) -> list[dict[str, Any]]:
     """Fetch active pending recommendations (decisions pending approval with lines)."""
+    # 1. Self-healing expiry: if current_tick is provided, expire overdue decisions
+    if current_tick is not None:
+        try:
+            expire_params: dict[str, Any] = {"current_tick": current_tick}
+            run_filter = ""
+            if sim_run_id is not None:
+                run_filter = "AND sim_run_id = :sim_run_id"
+                expire_params["sim_run_id"] = sim_run_id
+
+            exp_q = text(
+                f"""
+                UPDATE decisions
+                SET status = 'EXPIRED',
+                    rejected_reason = (
+                        'Expired at tick ' || :current_tick
+                        || ' (limit was ' || COALESCE(expires_at_tick::text, 'unknown') || ')'
+                    )
+                WHERE status IN ('PENDING_APPROVAL', 'PROPOSED', 'AWAITING_SECOND_APPROVAL')
+                  AND expires_at_tick IS NOT NULL
+                  AND expires_at_tick <= :current_tick
+                  {run_filter}
+                """
+            )
+            await session.execute(exp_q, expire_params)
+
+            # Also expire older runs' decisions if scoped to an active sim_run_id
+            if sim_run_id is not None:
+                old_run_q = text(
+                    """
+                    UPDATE decisions
+                    SET status = 'EXPIRED',
+                        rejected_reason = (
+                            'Simulation run ' || COALESCE(sim_run_id::text, '0')
+                            || ' ended (active run is ' || :sim_run_id || ')'
+                        )
+                    WHERE status IN ('PENDING_APPROVAL', 'PROPOSED', 'AWAITING_SECOND_APPROVAL')
+                      AND sim_run_id < :sim_run_id
+                    """
+                )
+                await session.execute(old_run_q, {"sim_run_id": sim_run_id})
+
+            await session.commit()
+        except Exception as exc:
+            log.warning("db.fetch_recommendations.expire_cleanup_failed", error=str(exc))
+            try:
+                await session.rollback()
+            except Exception:
+                pass
+
     conditions = ["status IN ('PENDING_APPROVAL', 'PROPOSED', 'AWAITING_SECOND_APPROVAL')"]
     params: dict[str, Any] = {}
     if sim_run_id is not None:
         conditions.append("sim_run_id = :sim_run_id")
         params["sim_run_id"] = sim_run_id
+    if current_tick is not None:
+        conditions.append("(expires_at_tick IS NULL OR expires_at_tick > :current_tick)")
+        params["current_tick"] = current_tick
 
     where_clause = "WHERE " + " AND ".join(conditions)
 
@@ -510,6 +741,7 @@ async def fetch_alerts(
     status: str | None = "OPEN",
     category: str | None = None,
     severity: str | None = None,
+    sim_run_id: int | None = None,
     limit: int = 100,
 ) -> tuple[list[dict[str, Any]], int]:
     """Fetch alerts with optional filtering, returning (items, total_count)."""
@@ -525,6 +757,9 @@ async def fetch_alerts(
     if severity:
         conditions.append("severity = :severity")
         params["severity"] = severity.upper()
+    if sim_run_id is not None:
+        conditions.append("sim_run_id = :sim_run_id")
+        params["sim_run_id"] = sim_run_id
 
     where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
@@ -554,6 +789,36 @@ async def fetch_alerts(
             d["resolved_at"] = d["resolved_at"].isoformat()
         rows.append(d)
     return rows, int(total)
+
+
+async def fetch_open_alert_counts(
+    session: AsyncSession,
+    sim_run_id: int,
+) -> dict[str, int] | None:
+    """Fetch active OPEN alert counts by severity for a simulation run."""
+    counts = {"INFO": 0, "WARNING": 0, "CRITICAL": 0}
+    q = text(
+        """
+        SELECT severity, COUNT(*) AS cnt
+        FROM alerts
+        WHERE sim_run_id = :sim_run_id AND status = 'OPEN'
+        GROUP BY severity
+        """
+    )
+    res = await session.execute(q, {"sim_run_id": sim_run_id})
+    mappings = res.mappings()
+    if inspect.iscoroutine(mappings):
+        mappings = await mappings
+    rows = mappings.all()
+    if inspect.iscoroutine(rows):
+        rows = await rows
+    if not isinstance(rows, list):
+        return None
+    for r in rows:
+        sev = str(r.get("severity") or "").upper()
+        if sev in counts:
+            counts[sev] = int(r.get("cnt") or 0)
+    return counts
 
 
 async def ack_alert(

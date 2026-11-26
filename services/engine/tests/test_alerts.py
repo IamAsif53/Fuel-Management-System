@@ -271,3 +271,51 @@ async def test_incident_manager_lifecycle_and_timeline():
     assert len(rec.timeline) == 3
     assert "recovered: Health probe" in rec.timeline[2]["event"]
     assert "fsip-intelligence" not in mgr.active_incidents
+
+
+@pytest.mark.asyncio
+async def test_alert_manager_open_counts_reset_and_world_state_projection():
+    """Verify DEF-009: AlertManager tracks OPEN counts accurately, resets on new run, and WorldState publishes them."""
+    redis_mock = AsyncMock()
+    mgr = AlertManager(redis_client=redis_mock)
+
+    await mgr.raise_(
+        AlertSpec(
+            fingerprint="fp-w",
+            category="INVENTORY_VARIANCE",
+            severity="WARNING",
+            title="Variance at Mirpur",
+            opened_tick=3,
+            sim_run_id=10,
+        )
+    )
+    a2 = await mgr.raise_(
+        AlertSpec(
+            fingerprint="fp-c",
+            category="STOCKOUT_RISK",
+            severity="CRITICAL",
+            title="Critical Tongi",
+            opened_tick=4,
+            sim_run_id=10,
+        )
+    )
+    assert mgr.get_open_counts() == {"INFO": 0, "WARNING": 1, "CRITICAL": 1}
+
+    store = WorldState(sim_run_id=10)
+    store.alerts_open_count = mgr.get_open_counts()
+    store.alerts_open = mgr.get_open_alerts_summary()
+    pub = store.to_public_json()
+    assert pub["alerts_open_count"] == {"INFO": 0, "WARNING": 1, "CRITICAL": 1}
+    assert len(pub["alerts_open"]) == 2
+
+    # Acknowledging decrements OPEN count cleanly
+    a2.id = 99
+    await mgr.ack(99, actor="operator")
+    assert mgr.get_open_counts() == {"INFO": 0, "WARNING": 1, "CRITICAL": 0}
+
+    # Simulation reset clears open counts and active alerts
+    mgr.reset()
+    store.reset(new_sim_run_id=11)
+    assert mgr.get_open_counts() == {"INFO": 0, "WARNING": 0, "CRITICAL": 0}
+    assert store.to_public_json()["alerts_open_count"] == {"INFO": 0, "WARNING": 0, "CRITICAL": 0}
+

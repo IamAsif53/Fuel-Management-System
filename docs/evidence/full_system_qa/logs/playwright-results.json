@@ -1,0 +1,187 @@
+{
+  "config": {
+    "configFile": "f:\\NewTask\\fuel-platform\\docs\\evidence\\full_system_qa\\playwright\\playwright.qa.config.mjs",
+    "rootDir": "f:/NewTask/fuel-platform/docs/evidence/full_system_qa/playwright",
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "reporter": [
+      [
+        "list",
+        null
+      ],
+      [
+        "html",
+        {
+          "outputFolder": "f:\\NewTask\\fuel-platform\\docs\\evidence\\full_system_qa\\playwright\\html-report",
+          "open": "never"
+        }
+      ],
+      [
+        "json",
+        {
+          "outputFile": "f:\\NewTask\\fuel-platform\\docs\\evidence\\full_system_qa\\logs\\playwright-results.json"
+        }
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 15000
+    },
+    "quiet": false,
+    "projects": [
+      {
+        "outputDir": "f:/NewTask/fuel-platform/docs/evidence/full_system_qa/playwright/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {},
+        "id": "",
+        "name": "",
+        "testDir": "f:/NewTask/fuel-platform/docs/evidence/full_system_qa/playwright",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.spec.mjs"
+        ],
+        "timeout": 180000
+      }
+    ],
+    "shard": null,
+    "updateSnapshots": "missing",
+    "version": "1.49.1",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "wf_deep_checks.spec.mjs",
+      "file": "wf_deep_checks.spec.mjs",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "Stage 5 Deep Verification — Specific Bug & Lifecycle Reproduction",
+          "file": "wf_deep_checks.spec.mjs",
+          "line": 33,
+          "column": 6,
+          "specs": [
+            {
+              "title": "DEEP-01: Risk page <main> Dhaka filter & /api/risk payload",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 180000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "status": "passed",
+                      "duration": 7051,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-26T07:00:50.330Z",
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "0fae3b3608b74f35ce64-28f9489f94221bc4a91c",
+              "file": "wf_deep_checks.spec.mjs",
+              "line": 41,
+              "column": 3
+            },
+            {
+              "title": "DEEP-02: Control Presets simulator parameter mismatch & Chaos latency/stale Autopilot 409",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 180000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "status": "passed",
+                      "duration": 29426,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-26T07:00:58.672Z",
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "0fae3b3608b74f35ce64-213ad51b7b42c6d18aed",
+              "file": "wf_deep_checks.spec.mjs",
+              "line": 95,
+              "column": 3
+            },
+            {
+              "title": "DEEP-03: Decision Approve / Modify / Reject / Manual / Autopilot / SSE Reset Sync",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 180000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "status": "passed",
+                      "duration": 44054,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-26T07:01:28.168Z",
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "0fae3b3608b74f35ce64-0eedfa072d8ce9f9612d",
+              "file": "wf_deep_checks.spec.mjs",
+              "line": 172,
+              "column": 3
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-11-26T07:00:48.726Z",
+    "duration": 84352.618,
+    "expected": 3,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

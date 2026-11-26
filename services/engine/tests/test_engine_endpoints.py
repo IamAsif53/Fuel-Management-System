@@ -122,6 +122,12 @@ def test_world_state(test_sim_run_id: int) -> WorldState:
 @pytest.fixture
 def client_app(session_factory, test_world_state: WorldState):
     mock_sim = AsyncMock()
+    mock_sim.instance.return_value = SimResult(
+        data={"id": 1, "tick": 10, "status": "RUNNING"},
+        stale=False,
+        status=200,
+        latency_ms=5.0,
+    )
     mock_sim.create_allocation.return_value = SimResult(
         data={"id": 901, "status": "PENDING"},
         stale=False,
@@ -135,16 +141,17 @@ def client_app(session_factory, test_world_state: WorldState):
     mock_sync = AsyncMock()
     mock_sync.stop = MagicMock()
     mock_sync.add_hook = MagicMock()
-    app.state.sync_loop = mock_sync
+    mock_sync._evaluate_mode = MagicMock(return_value="NORMAL")
     mock_sse = AsyncMock()
     mock_sse.stop = MagicMock()
-    app.state.sse_listener = mock_sse
-
-    app.state.store = test_world_state
-    app.state.decision_engine = decision_engine
-    app.state.executor = executor
 
     with TestClient(app) as test_client:
+        app.state.sync_loop = mock_sync
+        app.state.sse_listener = mock_sse
+        app.state.client = mock_sim
+        app.state.store = test_world_state
+        app.state.decision_engine = decision_engine
+        app.state.executor = executor
         yield test_client
 
 
@@ -244,6 +251,147 @@ async def test_approve_and_reject_decision(
         json={"operator": "lead_op"},
     )
     assert resp.status_code == 404
+
+
+async def test_approve_decision_partial_lines_and_constraint_422(
+    client_app: TestClient,
+    session_factory,
+    test_sim_run_id: int,
+):
+    """Verify DEF-002: line subset & modified_quantities work and constraint violation returns 422 (not 500)."""
+    async with session_factory() as session:
+        dec = Decision(
+            sim_run_id=test_sim_run_id,
+            tick=10,
+            policy="optimizer",
+            status="PENDING_APPROVAL",
+            confidence=0.95,
+        )
+        session.add(dec)
+        await session.flush()
+
+        ln1 = DecisionLine(
+            decision_id=dec.id,
+            line_no=1,
+            source_depot_id="depot-gazipur",
+            destination_station_id="station-mirpur",
+            route_id="route-gazipur-mirpur",
+            fuel_type="DIESEL",
+            quantity=6400.0,
+            idempotency_key=f"fsip-def002-{dec.id}-1",
+            status="PLANNED",
+        )
+        ln2 = DecisionLine(
+            decision_id=dec.id,
+            line_no=2,
+            source_depot_id="depot-gazipur",
+            destination_station_id="station-mirpur",
+            route_id="route-gazipur-mirpur",
+            fuel_type="PETROL",
+            quantity=3000.0,
+            idempotency_key=f"fsip-def002-{dec.id}-2",
+            status="PLANNED",
+        )
+        session.add_all([ln1, ln2])
+        await session.commit()
+        dec_id, ln1_id, ln2_id = dec.id, ln1.id, ln2.id
+
+    # 1. Quantity violating route max_shipment (50000L) must return 422 CONSTRAINT_VIOLATION, NOT 500
+    bad_resp = client_app.post(
+        f"/engine/decisions/{dec_id}/approve",
+        headers=INTERNAL_HEADERS,
+        json={
+            "operator": "lead_op",
+            "selected_line_ids": [ln1_id],
+            "modified_quantities": {str(ln1_id): 50000.0},
+            "reviewed_driver": True,
+        },
+    )
+    assert bad_resp.status_code == 422, bad_resp.text
+    assert bad_resp.json()["detail"]["code"] == "CONSTRAINT_VIOLATION"
+    assert len(bad_resp.json()["detail"]["violations"]) >= 1
+
+    # 2. Invalid quantity (<= 0) returns 422 INVALID_QUANTITY
+    zero_resp = client_app.post(
+        f"/engine/decisions/{dec_id}/approve",
+        headers=INTERNAL_HEADERS,
+        json={
+            "operator": "lead_op",
+            "selected_line_ids": [ln1_id],
+            "modified_quantities": {str(ln1_id): -10.0},
+            "reviewed_driver": True,
+        },
+    )
+    assert zero_resp.status_code == 422
+    assert zero_resp.json()["detail"]["code"] == "INVALID_QUANTITY"
+
+    # 3. Unknown line ID returns 422 INVALID_LINE_SELECTION
+    unk_resp = client_app.post(
+        f"/engine/decisions/{dec_id}/approve",
+        headers=INTERNAL_HEADERS,
+        json={
+            "operator": "lead_op",
+            "selected_line_ids": [999999],
+            "reviewed_driver": True,
+        },
+    )
+    assert unk_resp.status_code == 422
+    assert unk_resp.json()["detail"]["code"] == "INVALID_LINE_SELECTION"
+
+    # 4. Valid subset + reduction below 7000 L bypasses Four-Eyes cleanly and cancels unselected lines
+    ok_resp = client_app.post(
+        f"/engine/decisions/{dec_id}/approve",
+        headers=INTERNAL_HEADERS,
+        json={
+            "operator": "lead_op",
+            "selected_line_ids": [ln1_id],
+            "modified_quantities": {str(ln1_id): 1200.0},
+            "reviewed_driver": True,
+        },
+    )
+    assert ok_resp.status_code == 200, ok_resp.text
+    assert ok_resp.json()["decision_status"] == "EXECUTED"
+    assert ok_resp.json()["approved_by"] == "lead_op"
+
+    async with session_factory() as session:
+        refreshed = (
+            await session.execute(select(DecisionLine).where(DecisionLine.decision_id == dec_id))
+        ).scalars().all()
+        by_id = {ln.id: ln for ln in refreshed}
+        assert by_id[ln1_id].quantity == 1200.0
+        assert by_id[ln1_id].status == "SUBMITTED"
+        assert by_id[ln2_id].status == "CANCELLED"
+
+
+async def test_control_mode_autopilot_live_probe_rejects_paused_stale_data(client_app: TestClient):
+    """Verify DEF-003: enabling autopilot probes simulator freshness immediately and rejects 409 STALE_DATA."""
+    mock_sim_probe = AsyncMock()
+    mock_sim_probe.instance.return_value = SimResult(
+        data={"id": 1, "tick": 12, "status": "PAUSED"},
+        stale=True,
+        status=200,
+        latency_ms=4.0,
+    )
+    old_client = getattr(app.state, "client", None)
+    app.state.client = mock_sim_probe
+    app.state.store.stale = False
+    app.state.store.degraded_reasons.clear()
+    app.state.store.engine_mode = "NORMAL"
+
+    try:
+        resp = client_app.post(
+            "/engine/control/mode",
+            headers=INTERNAL_HEADERS,
+            json={"mode": "autopilot"},
+        )
+        assert resp.status_code == 409, resp.text
+        assert resp.json()["detail"]["code"] == "STALE_DATA"
+        assert app.state.store.stale is True
+    finally:
+        app.state.client = old_client
+        app.state.store.stale = False
+        app.state.store.degraded_reasons.clear()
+        app.state.store.engine_mode = "NORMAL"
 
 
 async def test_manual_allocation_valid_and_invalid(client_app: TestClient):

@@ -15,6 +15,8 @@ export default function WhatIfPage() {
   const [eventOffset, setEventOffset] = useState<number>(4);
   const [eventDuration, setEventDuration] = useState<number>(24);
   const [eventMultiplier, setEventMultiplier] = useState<number>(1.8);
+  const [delayTicks, setDelayTicks] = useState<number>(4);
+  const [shortfallFactor, setShortfallFactor] = useState<number>(0.5);
   const [targetEntity, setTargetEntity] = useState<string>("");
 
   const [includeCustomDispatch, setIncludeCustomDispatch] = useState<boolean>(true);
@@ -52,7 +54,10 @@ export default function WhatIfPage() {
       } else if (eventType === "depot_constraint") {
         if (targetEntity) params.depot_id = targetEntity;
       } else if (eventType === "shipment_delay") {
-        params.delay_ticks = 4;
+        params.delay_ticks = delayTicks;
+        if (targetEntity) params.depot_id = targetEntity;
+      } else if (eventType === "supply_shortfall") {
+        params.factor = shortfallFactor;
         if (targetEntity) params.depot_id = targetEntity;
       }
 
@@ -134,6 +139,7 @@ export default function WhatIfPage() {
                 <option value="station_outage" className="bg-bg-raised text-ink">Station Outage (Closed)</option>
                 <option value="depot_constraint" className="bg-bg-raised text-ink">Depot Constraint (Constrained)</option>
                 <option value="shipment_delay" className="bg-bg-raised text-ink">Shipment Delay</option>
+                <option value="supply_shortfall" className="bg-bg-raised text-ink">Supply Shortfall</option>
               </select>
             </div>
             <div>
@@ -241,7 +247,9 @@ export default function WhatIfPage() {
               </div>
             )}
 
-            {(eventType === "depot_constraint" || eventType === "shipment_delay") && (
+            {(eventType === "depot_constraint" ||
+              eventType === "shipment_delay" ||
+              eventType === "supply_shortfall") && (
               <div className="col-span-2">
                 <label className="text-ink-muted block mb-1 text-xs font-medium">Target Depot</label>
                 <select
@@ -258,7 +266,39 @@ export default function WhatIfPage() {
                 </select>
               </div>
             )}
+
+            {eventType === "shipment_delay" && (
+              <div>
+                <label className="text-ink-muted block mb-1 text-xs font-medium">Delay Ticks</label>
+                <input
+                  type="number"
+                  value={delayTicks}
+                  onChange={(e) => setDelayTicks(Number(e.target.value))}
+                  className="w-full rounded-lg border border-bg-border bg-bg-raised px-3 py-2 text-xs text-ink focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand transition-colors"
+                  min={1}
+                  max={48}
+                />
+              </div>
+            )}
+
+            {eventType === "supply_shortfall" && (
+              <div>
+                <label className="text-ink-muted block mb-1 text-xs font-medium">Shortfall Factor (×)</label>
+                <input
+                  type="number"
+                  step="0.05"
+                  value={shortfallFactor}
+                  onChange={(e) => setShortfallFactor(Number(e.target.value))}
+                  className="w-full rounded-lg border border-bg-border bg-bg-raised px-3 py-2 text-xs text-ink focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand transition-colors"
+                  min={0.1}
+                  max={0.95}
+                />
+              </div>
+            )}
           </div>
+          <p className="text-[11px] text-ink-faint border-t border-bg-border/40 pt-3">
+            Projection only — nothing is executed against the live simulator until you approve a real recommendation.
+          </p>
         </div>
 
         {/* Candidate Dispatch Line Builder */}

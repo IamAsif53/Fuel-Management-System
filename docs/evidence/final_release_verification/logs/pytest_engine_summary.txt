@@ -1,0 +1,8 @@
+suite=pytest_engine
+exit_code=1
+total=333
+passed=327
+failed=6
+skipped=32
+deselected=32
+log_file=pytest_engine.log

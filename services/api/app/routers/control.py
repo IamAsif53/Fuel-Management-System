@@ -27,7 +27,7 @@ SUPPORTED_PRESETS = {
             {
                 "type": "demand_spike",
                 "duration_ticks": 24,
-                "parameters": {"multiplier": 1.8, "region": "dhaka"},
+                "parameters": {"multiplier": 1.8, "region_ids": ["region-dhaka"]},
             }
         ],
     },
@@ -49,7 +49,7 @@ SUPPORTED_PRESETS = {
             {
                 "type": "depot_constraint",
                 "duration_ticks": 24,
-                "parameters": {"depot_id": "depot-patiya", "max_throughput_ratio": 0.5, "capacity_ratio": 0.5},
+                "parameters": {"depot_ids": ["depot-patiya"]},
             }
         ],
     },
@@ -60,7 +60,7 @@ SUPPORTED_PRESETS = {
             {
                 "type": "shipment_delay",
                 "duration_ticks": 24,
-                "parameters": {"depot_id": "depot-gazipur", "delay_ticks": 8},
+                "parameters": {"depot_ids": ["depot-gazipur"], "delay_ticks": 8},
             }
         ],
     },
@@ -71,7 +71,7 @@ SUPPORTED_PRESETS = {
             {
                 "type": "supply_shortfall",
                 "duration_ticks": 24,
-                "parameters": {"multiplier": 0.5},
+                "parameters": {"factor": 0.5},
             }
         ],
     },
@@ -104,7 +104,7 @@ SUPPORTED_PRESETS = {
             {
                 "type": "demand_spike",
                 "duration_ticks": 24,
-                "parameters": {"multiplier": 1.8, "region": "dhaka"},
+                "parameters": {"multiplier": 1.8, "region_ids": ["region-dhaka"]},
             },
             {
                 "type": "route_disruption",
@@ -114,7 +114,7 @@ SUPPORTED_PRESETS = {
             {
                 "type": "shipment_delay",
                 "duration_ticks": 24,
-                "parameters": {"depot_id": "depot-gazipur", "delay_ticks": 8},
+                "parameters": {"depot_ids": ["depot-gazipur"], "delay_ticks": 8},
             },
         ],
     },
@@ -492,12 +492,15 @@ async def control_inject_chaos_fault(
             },
         )
 
-    # Set fault-specific default parameters if omitted
+    # Set fault-specific default parameters if omitted and normalize legacy latency_ms alias
     params = dict(req.parameters)
     if fault == "error_rate" and "rate" not in params:
         params["rate"] = 0.3
-    elif fault == "latency" and "latency_ms" not in params:
-        params["latency_ms"] = 1500
+    elif fault == "latency":
+        if "latency_ms" in params and "delay_ms" not in params:
+            params["delay_ms"] = params.pop("latency_ms")
+        elif "delay_ms" not in params:
+            params["delay_ms"] = 1500
 
     fault_payload = {
         "type": fault,

@@ -44,49 +44,37 @@ export function ExplainPanel({
   const confidence = decision.confidence ?? 0.8;
   const confPct = Math.round(confidence * 100);
 
-  // Extract why at risk
-  const whyAtRisk = expl?.why_at_risk || [
-    {
-      signal: "projected_stockout",
-      value: "6.2 h",
-      detail: "inventory vs expected demand in lead time",
-    },
-  ];
+  // Extract why at risk — never invent demo numbers when explanation is missing
+  const whyAtRisk = expl?.why_at_risk?.length
+    ? expl.why_at_risk
+    : [
+        {
+          signal: "explanation_pending",
+          value: "—",
+          detail: "Structured risk drivers will appear once the engine attaches an explanation.",
+        },
+      ];
 
   // Extract constraints
-  const constraints = expl?.constraints || [
-    "Depot dispatch capacity verified this tick",
-    "Station ullage room accommodates planned delivery",
-  ];
+  const constraints = expl?.constraints?.length
+    ? expl.constraints
+    : ["Constraints will be listed when the decision engine provides them."];
 
   // Extract alternatives
-  const alternatives = expl?.alternatives || [
-    {
-      name: "do nothing",
-      stockout_prob_after: 0.72,
-      why_not: "Leaves station vulnerable to projected stockout peak",
-    },
-    {
-      name: "alternative route",
-      stockout_prob_after: 0.34,
-      why_not: "Longer transit arrives after demand peak",
-    },
-  ];
+  const alternatives = expl?.alternatives?.length ? expl.alternatives : [];
 
-  // Impact values
+  // Impact values — only show numbers that came from the API
+  const stationImpact = impact?.stations
+    ? Object.values(impact.stations as Record<string, any>)[0]
+    : undefined;
   const beforeProb =
-    expl?.expected_impact?.stockout_prob_before ??
-    (impact?.stations
-      ? Object.values(impact.stations as Record<string, any>)[0]?.stockout_prob_before
-      : 0.72);
+    expl?.expected_impact?.stockout_prob_before ?? stationImpact?.stockout_prob_before ?? null;
   const afterProb =
-    expl?.expected_impact?.stockout_prob_after ??
-    (impact?.stations
-      ? Object.values(impact.stations as Record<string, any>)[0]?.stockout_prob_after
-      : 0.19);
+    expl?.expected_impact?.stockout_prob_after ?? stationImpact?.stockout_prob_after ?? null;
+  const unmetBefore = expl?.expected_impact?.unmet_before ?? (impact?.unmet_before as number | undefined);
+  const unmetAfter = expl?.expected_impact?.unmet_after ?? (impact?.unmet_after as number | undefined);
   const unmetSaved =
-    (expl?.expected_impact?.unmet_before ?? (impact?.unmet_before as number) ?? 2300) -
-    (expl?.expected_impact?.unmet_after ?? (impact?.unmet_after as number) ?? 150);
+    unmetBefore != null && unmetAfter != null ? unmetBefore - unmetAfter : null;
 
   return (
     <div className="mt-3 overflow-hidden rounded-lg border border-bg-border/80 bg-bg-base/60 text-xs">
@@ -154,22 +142,35 @@ export function ExplainPanel({
                   <div className="flex justify-between text-[11px]">
                     <span className="text-ink-muted">Stockout Probability</span>
                     <span className="font-mono font-bold text-ink">
-                      {Math.round(beforeProb * 100)}% <ArrowRight size={10} className="inline mx-1" />{" "}
-                      <span className="text-risk-low">{Math.round(afterProb * 100)}%</span>
+                      {beforeProb != null && afterProb != null ? (
+                        <>
+                          {Math.round(Number(beforeProb) * 100)}%{" "}
+                          <ArrowRight size={10} className="inline mx-1" />{" "}
+                          <span className="text-risk-low">
+                            {Math.round(Number(afterProb) * 100)}%
+                          </span>
+                        </>
+                      ) : (
+                        <span className="text-ink-muted">— (awaiting twin impact)</span>
+                      )}
                     </span>
                   </div>
-                  <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-bg-raised">
-                    <div
-                      className="h-full bg-risk-low transition-all"
-                      style={{ width: `${Math.max(10, Math.round((1 - afterProb) * 100))}%` }}
-                    />
-                  </div>
+                  {afterProb != null && (
+                    <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-bg-raised">
+                      <div
+                        className="h-full bg-risk-low transition-all"
+                        style={{
+                          width: `${Math.max(10, Math.round((1 - Number(afterProb)) * 100))}%`,
+                        }}
+                      />
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex justify-between border-t border-bg-border/40 pt-2 text-[11px]">
                   <span className="text-ink-muted">Unmet Demand Prevented</span>
                   <span className="font-mono font-bold text-risk-low">
-                    {formatNumber(Math.max(0, unmetSaved))} L
+                    {unmetSaved != null ? `${formatNumber(Math.max(0, unmetSaved))} L` : "—"}
                   </span>
                 </div>
 
@@ -205,6 +206,9 @@ export function ExplainPanel({
                 <span>Evaluated Alternatives</span>
               </div>
               <div className="space-y-1.5">
+                {alternatives.length === 0 && (
+                  <p className="text-[11px] text-ink-muted">No alternatives attached to this decision.</p>
+                )}
                 {alternatives.map((alt, i) => (
                   <div key={i} className="text-[11px]">
                     <div className="flex items-center justify-between font-semibold text-ink">

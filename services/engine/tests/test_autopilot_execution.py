@@ -14,7 +14,7 @@ import pytest_asyncio
 from app.config import EngineSettings
 from app.db.models import AuditLog, Decision, DecisionLine, SimRun
 from app.db.session import check_db_health, resolve_database_url
-from app.decision.engine import DecisionEngine, DecisionError
+from app.decision.engine import DecisionEngine
 from app.decision.executor import Executor
 from app.sim.client import SimClient, SimResult
 from app.state.store import WorldState
@@ -235,12 +235,11 @@ async def test_autopilot_ineligible_safety_cases(session_factory, autopilot_sim_
 
 
 @pytest.mark.asyncio
-async def test_four_eyes_approval_requirement(session_factory, autopilot_sim_run):
-    """Decisions exceeding 7,000 L require two distinct human operator signoffs."""
+async def test_large_decision_approves_with_single_operator_click(session_factory, autopilot_sim_run):
+    """Large allocations (>7k L) approve with one operator click — no Sign-In / four-eyes."""
     publisher = MockPublisher()
     engine = DecisionEngine(session_factory, publisher=publisher)
 
-    # Create a decision with total quantity > 7,000 L (e.g. 8,000 L)
     async with session_factory() as session:
         dec = Decision(
             sim_run_id=autopilot_sim_run,
@@ -271,19 +270,6 @@ async def test_four_eyes_approval_requirement(session_factory, autopilot_sim_run
         await session.commit()
         dec_id = dec.id
 
-    # 1. First approval by operator-1
-    approved_first = await engine.approve_decision(dec_id, actor="operator-alice", reviewed_driver=True)
-    assert approved_first.status == "AWAITING_SECOND_APPROVAL"
-    assert approved_first.approved_by == "operator-alice"
-
-    # 2. Second approval by SAME operator -> 403 Forbidden
-    with pytest.raises(DecisionError) as exc_info:
-        await engine.approve_decision(dec_id, actor="operator-alice", reviewed_driver=True)
-    assert exc_info.value.code == "FOUR_EYES_SAME_ACTOR"
-    assert exc_info.value.status_code == 403
-
-    # 3. Second approval by DIFFERENT supervisor/operator -> APPROVED
-    approved_second = await engine.approve_decision(dec_id, actor="supervisor-bob", reviewed_driver=True)
-    assert approved_second.status == "APPROVED"
-    assert "operator-alice" in approved_second.approved_by
-    assert "supervisor-bob" in approved_second.approved_by
+    approved = await engine.approve_decision(dec_id, actor="operator", reviewed_driver=True)
+    assert approved.status == "APPROVED"
+    assert approved.approved_by == "operator"

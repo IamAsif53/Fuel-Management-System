@@ -101,8 +101,25 @@ async def system_status(request: Request) -> dict[str, Any]:
         "error_rate": err_rate,
     }
 
-    # Notifier component
-    comps["notifier"] = {"status": "Healthy"}
+    # Notifier component — honest status (DEF-016)
+    settings = get_settings()
+    smtp_host = (
+        getattr(settings, "notify_smtp_host", None)
+        or os.getenv("NOTIFY_SMTP_HOST")
+        or os.getenv("FSIP_SMTP_HOST")
+    )
+    webhook = getattr(settings, "notify_webhook_url", None) or os.getenv("NOTIFY_WEBHOOK_URL")
+    if smtp_host or webhook:
+        comps["notifier"] = {
+            "status": "Healthy",
+            "smtp_configured": bool(smtp_host),
+            "webhook_configured": bool(webhook),
+        }
+    else:
+        comps["notifier"] = {
+            "status": "Unconfigured",
+            "message": "No NOTIFY_SMTP_HOST / NOTIFY_WEBHOOK_URL configured",
+        }
 
     # 5. Fetch recent incidents from database
     recent_incidents: list[dict[str, Any]] = []
@@ -164,7 +181,32 @@ async def system_status(request: Request) -> dict[str, Any]:
             {
                 "name": "Decision Freshness",
                 "target": 0.99,
-                "current": 0.998,
+                "current": round(
+                    max(
+                        0.0,
+                        min(
+                            1.0,
+                            1.0
+                            - min(
+                                1.0,
+                                (
+                                    (
+                                        time.time()
+                                        - float(
+                                            (engine_health or {}).get("published_at_ts")
+                                            or (engine_health or {}).get("last_sync_ts")
+                                            or time.time()
+                                        )
+                                    )
+                                    / 120.0
+                                ),
+                            ),
+                        ),
+                    ),
+                    4,
+                )
+                if isinstance(engine_health, dict)
+                else 0.0,
                 "budget_remaining": 1.0,
             },
             {

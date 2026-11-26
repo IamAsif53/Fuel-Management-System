@@ -9,9 +9,44 @@ import redis.asyncio as aioredis
 from fsip_common.logging import get_logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db import fetch_latest_world_snapshot
+from app.db import (
+    fetch_latest_world_snapshot,
+    fetch_open_alert_counts,
+    fetch_recommendations,
+)
 
 log = get_logger()
+
+
+async def _reconcile_live_state(
+    session: AsyncSession,
+    state: dict[str, Any],
+    sim_run_id: int,
+    tick: int,
+) -> None:
+    """Reconcile Redis/snapshot derived collections against PostgreSQL source of truth."""
+    try:
+        active_recs = await fetch_recommendations(session, sim_run_id=sim_run_id, current_tick=tick)
+        state["pending_recommendations"] = [
+            {
+                "decision_id": r["id"],
+                "summary": r.get("narrative") or f"Decision #{r['id']} at tick {r['tick']}",
+                "confidence": float(r.get("confidence") or 0.8),
+                "total_liters": sum(float(line.get("quantity", 0)) for line in r.get("lines", [])),
+                "expires_at_tick": r.get("expires_at_tick"),
+            }
+            for r in active_recs
+        ]
+    except Exception as db_exc:
+        log.warning("api.state.pending_recs_reconcile_skipped", error=str(db_exc))
+
+    if sim_run_id > 0:
+        try:
+            counts = await fetch_open_alert_counts(session, sim_run_id=sim_run_id)
+            if counts is not None:
+                state["alerts_open_count"] = counts
+        except Exception as db_exc:
+            log.warning("api.state.alerts_count_reconcile_skipped", error=str(db_exc))
 
 
 async def get_current_state(
@@ -33,6 +68,8 @@ async def get_current_state(
                 sim_run_id = int(state.get("sim_run_id", 0))
                 is_degraded = bool(state.get("degraded", False))
                 etag = f'"{sim_run_id}-{tick}"'
+
+                await _reconcile_live_state(session, state, sim_run_id=sim_run_id, tick=tick)
                 return state, tick, is_degraded, etag
         except Exception as exc:
             log.warning("api.state.redis_read_failed_falling_back_to_db", error=str(exc))
@@ -44,6 +81,7 @@ async def get_current_state(
             tick = int(db_state.get("tick", 0))
             sim_run_id = int(db_state.get("sim_run_id", 0))
             etag = f'"{sim_run_id}-{tick}"'
+            await _reconcile_live_state(session, db_state, sim_run_id=sim_run_id, tick=tick)
             return db_state, tick, True, etag
     except Exception as exc:
         log.error("api.state.db_fallback_failed", error=str(exc))

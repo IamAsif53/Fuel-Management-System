@@ -398,6 +398,14 @@ async def upsert_alert(
     )
     res = await session.execute(stmt)
     existing = res.scalar_one_or_none()
+    run_id = fields.get("sim_run_id")
+
+    if existing and run_id is not None and existing.sim_run_id != run_id:
+        # Close prior/stale run's open alert before opening a fresh alert for the new run
+        existing.status = "RESOLVED"
+        existing.resolved_at = datetime.now(UTC)
+        await session.flush()
+        existing = None
 
     if existing:
         for k, v in fields.items():
@@ -406,6 +414,13 @@ async def upsert_alert(
         await session.flush()
         return existing
     else:
+        if run_id is not None:
+            await session.execute(
+                text(
+                    "INSERT INTO sim_runs (id, started_at) VALUES (:id, NOW()) ON CONFLICT (id) DO NOTHING"
+                ),
+                {"id": run_id},
+            )
         new_alert = Alert(**fields)
         session.add(new_alert)
         await session.flush()
@@ -443,6 +458,32 @@ async def resolve_alert(
 
     await session.flush()
     return alert
+
+
+async def resolve_stale_run_alerts(
+    session: AsyncSession,
+    active_sim_run_id: int,
+    resolved_tick: int | None = None,
+) -> int:
+    """Resolve any non-resolved alerts belonging to previous simulation runs (or sim_run_id IS NULL)."""
+    q = text(
+        """
+        UPDATE alerts
+        SET status = 'RESOLVED',
+            resolved_at = NOW(),
+            resolved_tick = COALESCE(resolved_tick, :resolved_tick)
+        WHERE status != 'RESOLVED'
+          AND (sim_run_id IS NULL OR sim_run_id != :active_sim_run_id)
+        """
+    )
+    res = await session.execute(
+        q,
+        {
+            "active_sim_run_id": active_sim_run_id,
+            "resolved_tick": resolved_tick,
+        },
+    )
+    return int(res.rowcount or 0)
 
 
 # =============================================================================

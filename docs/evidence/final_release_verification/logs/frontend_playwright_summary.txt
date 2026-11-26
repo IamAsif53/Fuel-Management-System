@@ -1,0 +1,8 @@
+suite=frontend_playwright
+exit_code=1
+total=4
+passed=0
+failed=4
+skipped=0
+log_file=frontend_playwright.log
+note=Browsers available (chromium); failures are ERR_CONNECTION_REFUSED to http://localhost:3000 — frontend dev server not reachable from Playwright baseURL.

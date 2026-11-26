@@ -163,6 +163,13 @@ describe("Phase 06 UI — Risk and Alerts Components & Pages", () => {
       expect(screen.getByText("2.0 h")).toBeInTheDocument();
       expect(screen.getByText("low_inventory")).toBeInTheDocument();
     });
+
+    fireEvent.change(screen.getByTestId("risk-region-filter"), { target: { value: "region-dhaka" } });
+    await waitFor(() => {
+      expect(client.fetchRisk).toHaveBeenCalledWith(
+        expect.objectContaining({ region_id: "region-dhaka" })
+      );
+    });
   });
 
   it("renders AlertsPage and allows acknowledging an open alert", async () => {
@@ -209,6 +216,14 @@ describe("Phase 06 UI — Risk and Alerts Components & Pages", () => {
 
     await waitFor(() => {
       expect(client.acknowledgeAlert).toHaveBeenCalledWith(101);
+    });
+
+    // Switching scope to All Runs passes all_runs=true to fetchAlerts
+    fireEvent.change(screen.getByTestId("alert-scope-filter"), { target: { value: "ALL" } });
+    await waitFor(() => {
+      expect(client.fetchAlerts).toHaveBeenCalledWith(
+        expect.objectContaining({ all_runs: true })
+      );
     });
   });
 });

@@ -390,3 +390,17 @@ async def test_i_station_outage_impact_and_determinism(mock_world_state: WorldSt
     assert run1.total_unmet_liters == run2.total_unmet_liters
     assert run1.total_overflow_liters == run2.total_overflow_liters
     assert run1.min_station_service_level == run2.min_station_service_level
+
+
+async def test_j_invalid_schema_bounds_return_422(mock_world_state: WorldState):
+    """Verify DEF-007: invalid horizon_ticks, unknown scenario_type, or bad event types return 422."""
+    app.state.store = mock_world_state
+    client = TestClient(app)
+
+    for bad_payload in (
+        {"scenario_type": "nonexistent_type", "horizon_ticks": -5},
+        {"horizon_ticks": -5},
+        {"events": [{"type": "bogus_event", "start_offset": 0, "duration_ticks": 10}]},
+    ):
+        res = client.post("/internal/whatif", headers=INTERNAL_HEADERS, json=bad_payload)
+        assert res.status_code == 422, f"Expected 422 for {bad_payload}, got {res.status_code}"

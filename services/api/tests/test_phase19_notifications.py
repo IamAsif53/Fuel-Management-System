@@ -60,6 +60,7 @@ async def test_notifications_api_test_endpoint():
     mock_smtp_instance = MagicMock()
     with patch("smtplib.SMTP", return_value=mock_smtp_instance):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+            # Open mode: no Sign-In required for operator actions
             res = await client.post("/api/notifications/test")
             assert res.status_code == 200
             data = res.json()

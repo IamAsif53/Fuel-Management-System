@@ -316,4 +316,65 @@ describe("useLiveState Hook & Connection Semantics", () => {
     // Stale response must NOT overwrite tick 50
     expect(result.current.state?.tick).toBe(50);
   });
+
+  it("9. accepts tick reset when sim_run_id increments (reset.detected SSE) and rejects older runs", async () => {
+    const apiSpy = vi.spyOn(apiClient, "apiWithMeta");
+    const { result } = renderHook(() => useLiveState(), { wrapper });
+
+    await waitFor(() => {
+      expect(MockEventSource.instances.length).toBe(1);
+    });
+    const es = MockEventSource.instances[0];
+    act(() => {
+      es.simulateOpen();
+    });
+
+    // Advance current run to sim_run_id=10, tick=50
+    apiSpy.mockResolvedValueOnce({
+      data: { ...mockWorldState, sim_run_id: 10, tick: 50 },
+      status: 200,
+      notModified: false,
+      etag: '"10-50"',
+      tick: 50,
+      degraded: false,
+    });
+    await act(async () => {
+      await result.current.refetch();
+    });
+    expect(result.current.state?.sim_run_id).toBe(10);
+    expect(result.current.state?.tick).toBe(50);
+
+    // Simulator reset increments sim_run_id to 11 with tick=0 -> SSE reset.detected triggers live update
+    apiSpy.mockResolvedValueOnce({
+      data: { ...mockWorldState, sim_run_id: 11, tick: 0 },
+      status: 200,
+      notModified: false,
+      etag: '"11-0"',
+      tick: 0,
+      degraded: false,
+    });
+    act(() => {
+      es.simulateEvent("reset.detected", JSON.stringify({ sim_run_id: 11, tick: 0 }));
+    });
+
+    await waitFor(() => {
+      expect(result.current.state?.sim_run_id).toBe(11);
+      expect(result.current.state?.tick).toBe(0);
+    });
+
+    // Late message from old sim_run_id=10 must NOT overwrite sim_run_id=11
+    apiSpy.mockResolvedValueOnce({
+      data: { ...mockWorldState, sim_run_id: 10, tick: 55 },
+      status: 200,
+      notModified: false,
+      etag: '"10-55"',
+      tick: 55,
+      degraded: false,
+    });
+    await act(async () => {
+      await result.current.refetch();
+    });
+    expect(result.current.state?.sim_run_id).toBe(11);
+    expect(result.current.state?.tick).toBe(0);
+  });
 });

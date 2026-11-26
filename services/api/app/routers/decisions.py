@@ -3,14 +3,14 @@ from __future__ import annotations
 
 import os
 import time
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import require_operator
+from app.auth import require_operator, require_supervisor, require_viewer
 from app.config import ApiSettings, get_settings
 from app.db import (
     fetch_audit_logs,
@@ -20,6 +20,7 @@ from app.db import (
     get_session,
     insert_audit_entry,
 )
+from app.services.state_service import get_current_state
 
 router = APIRouter(prefix="/api", tags=["decisions"])
 
@@ -50,7 +51,42 @@ def _invalidate_cache() -> None:
 class ApproveRequest(BaseModel):
     line_ids: list[int] | None = None
     quantities: dict[str, float] | None = None
+    selected_line_ids: list[int] | None = None
+    modified_quantities: dict[str, float] | None = None
     reviewed_driver: bool | None = None
+
+
+class WhatIfLineRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    route_id: str
+    fuel_type: str
+    quantity: float
+
+
+class WhatIfEventRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal[
+        "demand_spike",
+        "route_disruption",
+        "station_outage",
+        "depot_constraint",
+        "shipment_delay",
+        "supply_shortfall",
+    ]
+    start_offset: int = Field(default=0, ge=0, le=96)
+    duration_ticks: int = Field(default=24, ge=1, le=240)
+    parameters: dict[str, Any] = Field(default_factory=dict)
+
+
+class WhatIfRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    horizon_ticks: int = Field(default=48, ge=1, le=96)
+    lines: list[WhatIfLineRequest] = Field(default_factory=list, max_length=20)
+    events: list[WhatIfEventRequest] = Field(default_factory=list, max_length=5)
+    compare: list[Literal["do_nothing", "recommended", "custom"]] | None = None
 
 
 class RejectRequest(BaseModel):
@@ -123,17 +159,28 @@ async def get_recommendations(
     request: Request,
     session: Annotated[AsyncSession, Depends(get_session)],
     sim_run_id: int | None = Query(None, description="Optional sim_run_id filter"),
+    all_runs: bool = Query(False, description="Set True to return recommendations across all historical runs"),
 ) -> dict[str, Any]:
     """Fetch active pending recommendations (decisions pending approval with lines)."""
-    cache_key = f"recs:{sim_run_id}"
-    cached = _get_cached(cache_key)
-    if cached is not None:
-        return cached
+    target_run_id = sim_run_id
+    current_tick: int | None = None
 
-    items = await fetch_recommendations(session, sim_run_id=sim_run_id)
-    res = {"items": items}
-    _set_cached(cache_key, res, ttl=4.0)
-    return res
+    if target_run_id is None and not all_runs:
+        redis_client = getattr(request.app.state, "redis", None)
+        try:
+            state, tick, _, _ = await get_current_state(redis_client, session)
+            if state and state.get("sim_run_id"):
+                target_run_id = int(state["sim_run_id"])
+            current_tick = tick
+        except Exception:
+            pass
+
+    items = await fetch_recommendations(
+        session,
+        sim_run_id=target_run_id if not all_runs else None,
+        current_tick=current_tick,
+    )
+    return {"items": items}
 
 
 @router.get("/decisions")
@@ -148,11 +195,6 @@ async def list_decisions(
     offset: int = Query(0, ge=0),
 ) -> dict[str, Any]:
     """Fetch paginated decisions with optional filters."""
-    cache_key = f"decs:{sim_run_id}:{status}:{policy}:{from_tick}:{limit}:{offset}"
-    cached = _get_cached(cache_key)
-    if cached is not None:
-        return cached
-
     items, total = await fetch_decisions(
         session=session,
         sim_run_id=sim_run_id,
@@ -162,9 +204,18 @@ async def list_decisions(
         limit=limit,
         offset=offset,
     )
-    res = {"items": items, "total": total}
-    _set_cached(cache_key, res, ttl=4.0)
-    return res
+    return {"items": items, "total": total}
+
+
+@router.get("/decisions/metrics")
+async def decision_metrics(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    sim_run_id: int | None = Query(None),
+) -> dict[str, Any]:
+    """Human-AI teaming metrics for the Recommendations panel (DEF-014)."""
+    from app.db import fetch_decision_metrics
+
+    return await fetch_decision_metrics(session, sim_run_id=sim_run_id)
 
 
 @router.get("/decisions/{decision_id}")
@@ -194,19 +245,86 @@ async def approve_decision(
     """Approve a decision recommendation, forward to engine, and record audit log."""
     actor = user.get("actor") or user.get("sub") or "operator"
 
+    sel_line_ids = req.selected_line_ids if req.selected_line_ids is not None else req.line_ids
+    raw_quantities = req.modified_quantities if req.modified_quantities is not None else req.quantities
+
+    parsed_quantities: dict[int, float] | None = None
+    if raw_quantities is not None:
+        parsed_quantities = {}
+        for k, v in raw_quantities.items():
+            try:
+                lid = int(k)
+            except (TypeError, ValueError) as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail={"code": "INVALID_LINE_SELECTION", "message": f"Invalid line ID '{k}'"},
+                ) from exc
+            try:
+                qty = float(v)
+            except (TypeError, ValueError) as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail={"code": "INVALID_QUANTITY", "message": f"Invalid quantity for line {lid}: {v}"},
+                ) from exc
+            if qty != qty or qty in (float("inf"), float("-inf")) or qty <= 0.0:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail={
+                        "code": "INVALID_QUANTITY",
+                        "message": f"Modified quantity for line {lid} must be a positive finite number (got {qty})",
+                    },
+                )
+            parsed_quantities[lid] = qty
+
+    if sel_line_ids is not None and len(sel_line_ids) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "NO_LINES_SELECTED",
+                "message": "At least one allocation line must be selected for approval.",
+            },
+        )
+
     # F-TRUST Cognitive Forcing check (12_ADVANCED_FEATURES.md / Phase 09 §4.5)
     existing = await fetch_decision_by_id(session, decision_id=decision_id)
     if existing:
         lines = existing.get("lines") or []
+        valid_line_ids = {int(ln["id"]) for ln in lines if ln.get("id") is not None}
+
+        if sel_line_ids is not None and valid_line_ids:
+            unknown_sel = [lid for lid in sel_line_ids if lid not in valid_line_ids]
+            if unknown_sel:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail={
+                        "code": "INVALID_LINE_SELECTION",
+                        "message": f"Selected line IDs do not belong to decision {decision_id}: {unknown_sel}",
+                    },
+                )
+
+        if parsed_quantities is not None and valid_line_ids:
+            unknown_mod = [lid for lid in parsed_quantities if lid not in valid_line_ids]
+            if unknown_mod:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail={
+                        "code": "INVALID_LINE_SELECTION",
+                        "message": f"Modified line IDs do not belong to decision {decision_id}: {unknown_mod}",
+                    },
+                )
+
         conf = existing.get("confidence")
         conf_val = float(conf) if conf is not None else 1.0
         is_deg = bool(existing.get("degraded", False))
+        selected_set = set(sel_line_ids) if sel_line_ids is not None else None
         max_q = 0.0
         for ln in lines:
-            lid = str(ln.get("id"))
+            lid_int = ln.get("id")
+            if selected_set is not None and lid_int not in selected_set:
+                continue
             q = float(ln.get("quantity", 0.0))
-            if req.quantities and lid in req.quantities:
-                q = float(req.quantities[lid])
+            if parsed_quantities and lid_int in parsed_quantities:
+                q = parsed_quantities[int(lid_int)]
             max_q = max(max_q, q)
         if (max_q > 5000.0 or conf_val < 0.7 or is_deg) and not req.reviewed_driver:
             msg = (
@@ -223,8 +341,8 @@ async def approve_decision(
 
     engine_payload: dict[str, Any] = {
         "operator": actor,
-        "selected_line_ids": req.line_ids,
-        "modified_quantities": {int(k): float(v) for k, v in req.quantities.items()} if req.quantities else None,
+        "selected_line_ids": sel_line_ids,
+        "modified_quantities": parsed_quantities,
         "reviewed_driver": req.reviewed_driver,
     }
 
@@ -237,7 +355,8 @@ async def approve_decision(
     )
 
     try:
-        is_awaiting = engine_res.get("status") == "AWAITING_SECOND_APPROVAL"
+        dec_status = engine_res.get("decision_status") or engine_res.get("status")
+        is_awaiting = dec_status == "AWAITING_SECOND_APPROVAL"
         action_name = "DECISION_FIRST_APPROVAL" if is_awaiting else "DECISION_APPROVED"
         await insert_audit_entry(
             session=session,
@@ -245,7 +364,7 @@ async def approve_decision(
             action=action_name,
             entity_type="decision",
             entity_id=str(decision_id),
-            payload={**req.model_dump(exclude_none=True), "status": engine_res.get("status")},
+            payload={**req.model_dump(exclude_none=True), "status": dec_status},
         )
         await session.commit()
     except Exception:
@@ -375,7 +494,7 @@ async def set_operating_policy(
     req: ControlPolicyRequest,
     request: Request,
     session: Annotated[AsyncSession, Depends(get_session)],
-    user: Annotated[dict[str, Any], Depends(require_operator)],
+    user: Annotated[dict[str, Any], Depends(require_supervisor)],
     settings: Annotated[ApiSettings, Depends(get_settings)],
 ) -> dict[str, Any]:
     """Switch decision policy (heuristic vs optimizer)."""
@@ -468,9 +587,10 @@ async def get_audit_logs(
 @router.post("/whatif")
 @router.post("/decisions/what-if")
 async def post_whatif(
-    req: dict[str, Any],
+    req: WhatIfRequest,
     request: Request,
     settings: Annotated[ApiSettings, Depends(get_settings)],
+    _user: Annotated[dict, Depends(require_viewer)],
 ) -> dict[str, Any]:
     """Execute what-if forward scenario simulations via ShadowTwin (Task 8.7)."""
     return await _call_engine(
@@ -478,7 +598,7 @@ async def post_whatif(
         settings=settings,
         method="POST",
         path="/internal/whatif",
-        json_data=req,
+        json_data=req.model_dump(exclude_none=True),
     )
 
 

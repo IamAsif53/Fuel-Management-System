@@ -152,6 +152,7 @@ class SyncLoop:
         self.supply_delay_detector = SupplyDelayDetector()
         self.disruption_detector = DisruptionDetector()
         self.bottleneck_detector = BottleneckDetector()
+        self._stale_alert_cleanup_needed: bool = True
         self.regional_risk_detector = RegionalRiskDetector()
         self.data_quality_detector = DataQualityDetector()
         self.mode_manager = EngineModeManager()
@@ -201,6 +202,9 @@ class SyncLoop:
         self.reconciliation_tracker.reset()
         self.bottleneck_detector.reset()
         self.data_quality_detector.reset()
+        if self.alert_manager is not None:
+            self.alert_manager.reset()
+        self._stale_alert_cleanup_needed = True
 
     async def on_notice(self, payload: dict[str, Any]) -> None:
         """Handle simulator.notice SSE event payloads (e.g. simulation reset)."""
@@ -375,6 +379,12 @@ class SyncLoop:
         # Evaluate risk-originated alerts and clear check
         if self.alert_manager is not None:
             try:
+                if getattr(self, "_stale_alert_cleanup_needed", False):
+                    await self.alert_manager.resolve_stale_runs(
+                        active_sim_run_id=self.store.sim_run_id,
+                        resolved_tick=self.store.tick,
+                    )
+                    self._stale_alert_cleanup_needed = False
                 specs, active_fps = generate_risk_alert_specs(
                     store=self.store,
                     station_risks=self.store.risk_results,
@@ -573,11 +583,17 @@ class SyncLoop:
                                 station_capacity=st_cap,
                                 station_inventory_before_arrival=st_cur_inv,
                                 tick=current_tick,
+                                sim_allocation_id=int(alloc_id),
                             )
 
+                current_run_id = getattr(self.store, "sim_run_id", None)
                 for spec in specs:
+                    if spec.sim_run_id is None and current_run_id is not None:
+                        spec.sim_run_id = current_run_id
                     await self.alert_manager.raise_(spec)
                 await self.alert_manager.clear_check(active_fps, current_tick=self.store.tick)
+                self.store.alerts_open_count = self.alert_manager.get_open_counts()
+                self.store.alerts_open = self.alert_manager.get_open_alerts_summary()
             except Exception as exc:
                 log.error("alerts.evaluation_failed", error=str(exc), exc_info=True)
 
@@ -666,6 +682,10 @@ class SyncLoop:
                     exc_info=True,
                 )
 
+        # Re-publish state to Redis after hooks have updated store
+        if self.publisher is not None:
+            await self.publisher.publish_state(self.store)
+
         # F-BREAKGLASS: periodically write static emergency dispatch plan every 4 ticks
         try:
             cur_plan = getattr(self.store, "pending", [])
@@ -700,12 +720,67 @@ class SyncLoop:
             async with self._lock:
                 self._is_running = False
 
+    def _evaluate_mode(self, *, cycle_failed: bool = False) -> str:
+        """Evaluate engine resilience mode using current breaker telemetry."""
+        breaker = getattr(self.client, "breaker", None)
+        is_open = (getattr(breaker, "state", "") == "OPEN") if breaker else False
+        open_dur = (time.monotonic() - getattr(breaker, "opened_at", 0.0)) if (breaker and is_open) else 0.0
+        return self.mode_manager.evaluate(
+            self.store,
+            sim_breaker_open=is_open,
+            sim_breaker_open_duration=open_dur,
+            cycle_failed=cycle_failed,
+        )
+
+    async def _publish_health_only(self) -> None:
+        """Refresh health timestamps in Redis without spamming SSE events."""
+        if self.publisher is None:
+            return
+        if hasattr(self.publisher, "publish_health"):
+            await self.publisher.publish_health(self.store)
+
+    async def _handle_paused_poll(self, cur_tick: int, res: Any, raw_inst: Any) -> None:
+        """Check simulator freshness, recover DEGRADED mode, and refresh Redis health when tick is unchanged."""
+        prev_stale = self.store.stale
+        prev_mode = self.store.engine_mode
+        res_stale = bool(getattr(res, "stale", False))
+
+        try:
+            validated_inst = validate_resource("instance", raw_inst)
+            self.store.instance = validated_inst
+            self.store.last_good_at["instance"] = time.time()
+            self.store.degraded_reasons.discard("instance_failed")
+            self.store.degraded_reasons.discard("sim_unavailable")
+        except Exception:
+            pass
+
+        if res_stale:
+            self.store.stale = True
+            self.store.degraded_reasons.add("stale_data")
+            new_mode = self._evaluate_mode(cycle_failed=False)
+            if self.publisher is not None:
+                if (not prev_stale) or (new_mode != prev_mode):
+                    await self.publisher.publish_state(self.store)
+                else:
+                    await self._publish_health_only()
+            return
+
+        # Fresh instance response while paused: recover from prior degradation/stale state via full sync
+        if prev_stale or self.store.engine_mode != "NORMAL" or bool(self.store.degraded_reasons):
+            await self.request_cycle(cur_tick)
+            return
+
+        # Steady healthy paused state: keep Redis fsip:health & fsip:state freshness updated
+        self._evaluate_mode(cycle_failed=False)
+        await self._publish_health_only()
+
     async def run(self) -> None:
         """Long-running polling loop that polls /v1/instance every poll_interval seconds.
 
         Serves as a fallback tick source when SSE is not available or disconnected.
         Detects tick changes or simulator resets and requests state synchronization.
-        Handles connection errors gracefully without crashing.
+        When tick is unchanged (paused), probes freshness, completes pending DEGRADED->NORMAL
+        recovery cycles, and keeps Redis health timestamps current.
         """
         log.info("sync.loop_started", poll_interval=self.poll_interval)
         while not self._stop_event.is_set():
@@ -722,11 +797,21 @@ class SyncLoop:
                 if cur_tick is not None:
                     if self.last_tick is None or cur_tick != self.last_tick:
                         await self.request_cycle(cur_tick)
+                    else:
+                        await self._handle_paused_poll(cur_tick, res, raw_inst)
             except asyncio.CancelledError:
                 log.info("sync.loop_cancelled")
                 break
             except Exception as exc:
                 log.warning("sync.poll_failed", error=str(exc))
+                prev_mode = self.store.engine_mode
+                self.store.degraded_reasons.add("instance_failed")
+                new_mode = self._evaluate_mode(cycle_failed=True)
+                if self.publisher is not None:
+                    if new_mode != prev_mode:
+                        await self.publisher.publish_state(self.store)
+                    else:
+                        await self._publish_health_only()
 
             try:
                 await asyncio.wait_for(self._stop_event.wait(), timeout=self.poll_interval)

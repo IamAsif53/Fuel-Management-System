@@ -1,0 +1,25 @@
+{
+    "sim_err":  "{\"detail\":\"Not Found\"}",
+    "api_health_err":  "{\"detail\":\"Not Found\"}",
+    "engine_health_err":  "{\"detail\":\"Not Found\"}",
+    "system_status":  {
+                          "keys":  [
+                                       "overall",
+                                       "engine_mode",
+                                       "components",
+                                       "versions",
+                                       "p95_latency_ms",
+                                       "error_rate",
+                                       "incidents",
+                                       "slo"
+                                   ]
+                      },
+    "state":  {
+                  "degraded":  false,
+                  "stale":  false,
+                  "operating_mode":  "advisory",
+                  "paused":  null,
+                  "tick":  0,
+                  "sim_run_id":  2248
+              }
+}

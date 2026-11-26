@@ -1,0 +1,328 @@
+{
+  "timestamp": "2026-11-26T07:00:50.316Z",
+  "riskAndForms": {
+    "rawAllCount": 12,
+    "rawAllFirstRow": {
+      "station_id": "station-mirpur",
+      "station_name": "Mirpur Fuel Station",
+      "region_id": "region-dhaka",
+      "fuel_type": "DIESEL",
+      "risk_level": "LOW",
+      "hours_to_stockout": 999,
+      "stockout_prob": 0,
+      "inventory": 12577.744,
+      "drivers": []
+    },
+    "rawDhakaCount": 0,
+    "rawRealDhakaCount": 6,
+    "regionOptions": [
+      {
+        "text": "All Regions",
+        "value": ""
+      },
+      {
+        "text": "Dhaka",
+        "value": "dhaka"
+      },
+      {
+        "text": "Chattogram",
+        "value": "chattogram"
+      }
+    ],
+    "initialRows": 12,
+    "rowsAfterDhaka": 1,
+    "assistantInputBoundingBox": {
+      "x": 248,
+      "y": 874.5,
+      "width": 1088.46875,
+      "height": 38
+    },
+    "assistantSummaryResp": {
+      "status": 200,
+      "json": {
+        "text": "Shift Summary (Window: 96 ticks):\nOverall fuel service level: 100.0%.\nTotal unmet demand: 0 L.\nTotal volume dispatched: 1334065 L across 448 decision(s) (289 autopilot, 6 manual).\nAlerts: 4 opened, 11 resolved.\nIncidents: 0 total. Active policy: optimizer.",
+        "engine": "template",
+        "stats": {
+          "window_ticks": 96,
+          "service_level": 1,
+          "unmet_liters": 0,
+          "total_dispatched_liters": 1334065.4,
+          "decisions_count": 448,
+          "autopilot_count": 289,
+          "manual_count": 6,
+          "alerts_opened": 4,
+          "alerts_resolved": 11,
+          "incidents_count": 0,
+          "active_policy": "optimizer"
+        }
+      }
+    },
+    "whatifEventOptions": [
+      {
+        "text": "Demand Spike (+Surge)",
+        "value": "demand_spike"
+      },
+      {
+        "text": "Route Disruption (Cut)",
+        "value": "route_disruption"
+      },
+      {
+        "text": "Station Outage (Closed)",
+        "value": "station_outage"
+      },
+      {
+        "text": "Depot Constraint (Constrained)",
+        "value": "depot_constraint"
+      },
+      {
+        "text": "Shipment Delay",
+        "value": "shipment_delay"
+      }
+    ]
+  },
+  "presetsAndChaos": {
+    "simEventsAfterPresets": [
+      {
+        "id": 3,
+        "type": "supply_shortfall",
+        "start_tick": 17,
+        "end_tick": 41,
+        "status": "SCHEDULED",
+        "parameters": {
+          "multiplier": 0.5
+        }
+      },
+      {
+        "id": 2,
+        "type": "depot_constraint",
+        "start_tick": 17,
+        "end_tick": 41,
+        "status": "SCHEDULED",
+        "parameters": {
+          "depot_id": "depot-patiya",
+          "max_throughput_ratio": 0.5,
+          "capacity_ratio": 0.5
+        }
+      },
+      {
+        "id": 1,
+        "type": "demand_spike",
+        "start_tick": 17,
+        "end_tick": 41,
+        "status": "SCHEDULED",
+        "parameters": {
+          "multiplier": 1.8,
+          "region": "dhaka"
+        }
+      }
+    ],
+    "simStationsDemandMultipliers": [
+      {
+        "id": "station-mirpur",
+        "demand_multiplier": 1
+      },
+      {
+        "id": "station-tongi",
+        "demand_multiplier": 1
+      },
+      {
+        "id": "station-karnaphuli",
+        "demand_multiplier": 1
+      },
+      {
+        "id": "station-coxsbazar",
+        "demand_multiplier": 1
+      }
+    ],
+    "controlStatusLatency": [
+      {
+        "id": 64,
+        "wall_time": "2026-11-26T07:01:02.822411",
+        "sim_time": "2026-01-01T04:15:00",
+        "tick": 17,
+        "action": "fault.created",
+        "entity_type": "fault",
+        "entity_id": "2",
+        "result": "OK",
+        "metadata_json": {
+          "type": "latency"
+        }
+      },
+      {
+        "id": 59,
+        "wall_time": "2026-11-26T06:58:50.067336",
+        "sim_time": "2026-01-01T04:15:00",
+        "tick": 17,
+        "action": "fault.clear_all",
+        "entity_type": null,
+        "entity_id": null,
+        "result": "OK",
+        "metadata_json": {}
+      },
+      {
+        "id": 53,
+        "wall_time": "2026-11-26T06:58:25.419977",
+        "sim_time": "2026-01-01T03:30:00",
+        "tick": 14,
+        "action": "fault.clear_all",
+        "entity_type": null,
+        "entity_id": null,
+        "result": "OK",
+        "metadata_json": {}
+      },
+      {
+        "id": 52,
+        "wall_time": "2026-11-26T06:58:23.513556",
+        "sim_time": "2026-01-01T03:30:00",
+        "tick": 14,
+        "action": "fault.created",
+        "entity_type": "fault",
+        "entity_id": "1",
+        "result": "OK",
+        "metadata_json": {
+          "type": "stale_data"
+        }
+      },
+      {
+        "id": 51,
+        "wall_time": "2026-11-26T06:58:18.168893",
+        "sim_time": "2026-01-01T03:30:00",
+        "tick": 14,
+        "action": "fault.clear_all",
+        "entity_type": null,
+        "entity_id": null,
+        "result": "OK",
+        "metadata_json": {}
+      },
+      {
+        "id": 50,
+        "wall_time": "2026-11-26T06:58:14.688786",
+        "sim_time": "2026-01-01T03:30:00",
+        "tick": 14,
+        "action": "fault.clear_all",
+        "entity_type": null,
+        "entity_id": null,
+        "result": "OK",
+        "metadata_json": {}
+      }
+    ],
+    "stateWhileUnavailable": {
+      "engine_mode": "DEGRADED",
+      "degraded": true,
+      "degraded_reasons": [
+        "allocations_failed",
+        "demand_failed",
+        "depots_failed",
+        "events_failed",
+        "instance_failed",
+        "metrics_failed",
+        "regions_failed",
+        "routes_failed",
+        "stations_failed",
+        "supply_failed"
+      ]
+    },
+    "blockedUiCheck": {
+      "status": 409,
+      "body": "{\"detail\":{\"code\":\"STALE_DATA\",\"message\":\"Cannot enable Autopilot when data is stale or system is degraded: system is degraded (allocations_failed, demand_failed, depots_failed, events_failed, instance_failed, metrics_failed, regions_failed, routes_failed, stations_failed, supply_failed); engine mode is DEGRADED (must be NORMAL)\"}}",
+      "uiErrorDisplayed": true
+    }
+  },
+  "lifecycleAndReset": {
+    "approveResult": {
+      "status": 500,
+      "json": {
+        "detail": {
+          "code": "ENGINE_ERROR",
+          "message": "Internal Server Error"
+        }
+      },
+      "text": "{\"detail\":{\"code\":\"ENGINE_ERROR\",\"message\":\"Internal Server Error\"}}"
+    },
+    "rejectResult": null,
+    "manualRes": {
+      "status": 201,
+      "json": {
+        "status": "ok",
+        "decision_id": 1634,
+        "line_id": 2792,
+        "execution_status": "EXECUTED"
+      },
+      "text": "{\"status\":\"ok\",\"decision_id\":1634,\"line_id\":2792,\"execution_status\":\"EXECUTED\"}"
+    },
+    "resetTest": {
+      "resetStatus": 200,
+      "beforeTick": 21,
+      "beforeRun": 2006,
+      "afterResetApiTick": 0,
+      "afterResetApiRun": 2007,
+      "openOverviewHeaderBeforeReset": "Fuel Ops Console\nDay 1 05:15 · t=21\nPAUSED\nDEGRADED\nAdvisory\nHeuristic\nOptimizer\nPlan Now\n1\nLIVE",
+      "openOverviewHeaderAfterResetWithoutReload": "Fuel Ops Console\nDay 1 05:15 · t=21\nPAUSED\nDEGRADED\nAdvisory\nHeuristic\nOptimizer\nPlan Now\n1\nLIVE",
+      "sseIgnoredBackwardTickOnReset": true
+    },
+    "modeSwitchClean": {
+      "status": 200,
+      "json": {
+        "status": "ok",
+        "mode": "autopilot",
+        "operating_mode": "autopilot",
+        "auto_approved": 0
+      },
+      "text": "{\"status\":\"ok\",\"mode\":\"autopilot\",\"operating_mode\":\"autopilot\",\"auto_approved\":0}"
+    },
+    "autopilotSteps": [
+      {
+        "tick": 3,
+        "engine_mode": "NORMAL",
+        "operating_mode": "autopilot",
+        "decisions": [
+          {
+            "id": 1635,
+            "tick": 2,
+            "status": "PENDING_APPROVAL",
+            "mode": "autopilot"
+          }
+        ]
+      },
+      {
+        "tick": 4,
+        "engine_mode": "NORMAL",
+        "operating_mode": "autopilot",
+        "decisions": [
+          {
+            "id": 1635,
+            "tick": 2,
+            "status": "PENDING_APPROVAL",
+            "mode": "autopilot"
+          }
+        ]
+      },
+      {
+        "tick": 5,
+        "engine_mode": "NORMAL",
+        "operating_mode": "autopilot",
+        "decisions": [
+          {
+            "id": 1637,
+            "tick": 4,
+            "status": "PENDING_APPROVAL",
+            "mode": "autopilot"
+          },
+          {
+            "id": 1636,
+            "tick": 3,
+            "status": "EXPIRED",
+            "mode": "autopilot"
+          },
+          {
+            "id": 1635,
+            "tick": 2,
+            "status": "EXPIRED",
+            "mode": "autopilot"
+          }
+        ]
+      }
+    ],
+    "recommendationsStillShowsHardcoded924": true
+  }
+}

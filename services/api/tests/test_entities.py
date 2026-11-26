@@ -79,18 +79,27 @@ async def test_get_station_success(entity_state):
     async def override_get_session():
         yield mock_session
 
+    from unittest.mock import patch
+
     app.dependency_overrides[get_session] = override_get_session
     try:
-        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
-            res = await client.get("/api/stations/station-banani")
-            assert res.status_code == 200
-            assert res.headers["X-Data-Tick"] == "20"
-            data = res.json()
-            assert data["station"]["id"] == "station-banani"
-            assert len(data["demand"]) == 1
-            assert data["demand"][0]["demand"] == 500.0
-            assert len(data["history"]) == 1
-            assert data["history"][0]["tick"] == 19
+        with (
+            patch("app.services.state_service.fetch_recommendations", new=AsyncMock(return_value=[])),
+            patch(
+                "app.services.state_service.fetch_open_alert_counts",
+                new=AsyncMock(return_value={"INFO": 0, "WARNING": 0, "CRITICAL": 0}),
+            ),
+        ):
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+                res = await client.get("/api/stations/station-banani")
+                assert res.status_code == 200
+                assert res.headers["X-Data-Tick"] == "20"
+                data = res.json()
+                assert data["station"]["id"] == "station-banani"
+                assert len(data["demand"]) == 1
+                assert data["demand"][0]["demand"] == 500.0
+                assert len(data["history"]) == 1
+                assert data["history"][0]["tick"] == 19
     finally:
         app.dependency_overrides.pop(get_session, None)
 

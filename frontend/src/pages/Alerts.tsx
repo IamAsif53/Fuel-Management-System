@@ -12,12 +12,13 @@ const SEVERITY_STYLES: Record<Severity, { badge: string; dot: string }> = {
 };
 
 export default function AlertsPage() {
-  const { state } = useLiveState();
+  const { state, refetch } = useLiveState();
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [runScope, setRunScope] = useState<"ACTIVE" | "ALL">("ACTIVE");
   const [activeTab, setActiveTab] = useState<"OPEN" | "ACKNOWLEDGED" | "ALL">("OPEN");
   const [severityFilter, setSeverityFilter] = useState<string>("");
   const [categoryFilter, setCategoryFilter] = useState<string>("");
@@ -33,6 +34,8 @@ export default function AlertsPage() {
           status: activeTab,
           severity: severityFilter || undefined,
           category: categoryFilter || undefined,
+          sim_run_id: runScope === "ACTIVE" ? state?.sim_run_id : undefined,
+          all_runs: runScope === "ALL" ? true : undefined,
           limit: 100,
         }),
         fetchIncidents({ limit: 20 }),
@@ -48,7 +51,19 @@ export default function AlertsPage() {
 
   useEffect(() => {
     loadData();
-  }, [state?.tick, activeTab, severityFilter, categoryFilter]);
+
+    const handleEvent = (e: Event) => {
+      const custom = e as CustomEvent<{ type: string }>;
+      if (
+        custom.detail?.type?.startsWith("alert.") ||
+        custom.detail?.type === "reset.detected"
+      ) {
+        loadData();
+      }
+    };
+    window.addEventListener("fsip-event", handleEvent);
+    return () => window.removeEventListener("fsip-event", handleEvent);
+  }, [state?.sim_run_id, state?.tick, runScope, activeTab, severityFilter, categoryFilter]);
 
   const handleAck = async (id: number) => {
     setAckingId(id);
@@ -56,7 +71,7 @@ export default function AlertsPage() {
       await acknowledgeAlert(id);
       setToastMessage(`Alert #${id} acknowledged.`);
       setTimeout(() => setToastMessage(null), 3500);
-      await loadData();
+      await Promise.all([loadData(), refetch()]);
     } catch (err: any) {
       setToastMessage(`Failed to acknowledge alert #${id}: ${err.message}`);
       setTimeout(() => setToastMessage(null), 4000);
@@ -82,8 +97,20 @@ export default function AlertsPage() {
           </p>
         </div>
 
-        {/* Tab & Severity Filter */}
+        {/* Scope, Tab & Severity Filter */}
         <div className="flex flex-wrap items-center gap-2">
+          <select
+            data-testid="alert-scope-filter"
+            value={runScope}
+            onChange={(e) => setRunScope(e.target.value as "ACTIVE" | "ALL")}
+            className="rounded-md border border-border bg-background px-2.5 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+          >
+            <option value="ACTIVE">
+              Active Run {state?.sim_run_id ? `(#${state.sim_run_id})` : ""}
+            </option>
+            <option value="ALL">All Runs (History)</option>
+          </select>
+
           <div className="flex rounded-md border border-border bg-background p-0.5 text-xs">
             <button
               onClick={() => setActiveTab("OPEN")}

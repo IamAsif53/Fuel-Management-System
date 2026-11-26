@@ -1,0 +1,150 @@
+{
+  "generated_at": "2026-11-26T17:52:00+06:00",
+  "workspace": "F:\\NewTask\\fuel-platform",
+  "python": ".venv\\Scripts\\python.exe",
+  "suites": [
+    {
+      "suite": "ruff",
+      "command": "python -m ruff check services/api services/engine services/intelligence libs/fsip_common",
+      "total": 1,
+      "passed": 0,
+      "failed": 1,
+      "skipped": 0,
+      "exit_code": 1,
+      "log_file": "docs/evidence/final_release_verification/logs/ruff_check.log",
+      "failures": [
+        "F401 services/engine/tests/test_autopilot_execution.py:17 unused import DecisionError"
+      ]
+    },
+    {
+      "suite": "pytest_api",
+      "command": "PYTHONPATH=services/api python -m pytest services/api/tests -q --tb=line",
+      "total": 80,
+      "passed": 79,
+      "failed": 0,
+      "skipped": 1,
+      "exit_code": 0,
+      "log_file": "docs/evidence/final_release_verification/logs/pytest_api_rerun.log",
+      "failures": [],
+      "notes": "First run in pytest_api.log: 77 passed, 3 failed (auth 401 expectations); rerun after open-mode tests on disk: 79 passed, 1 skipped."
+    },
+    {
+      "suite": "pytest_engine",
+      "command": "PYTHONPATH=services/engine python -m pytest services/engine/tests -q --tb=line",
+      "total": 333,
+      "passed": 327,
+      "failed": 6,
+      "skipped": 32,
+      "exit_code": 1,
+      "log_file": "docs/evidence/final_release_verification/logs/pytest_engine.log",
+      "failures": [
+        "services/engine/tests/test_engine_decision.py::test_supersede_older_decisions",
+        "services/engine/tests/test_engine_decision.py::test_store_pending_synchronized_on_cycle",
+        "services/engine/tests/test_engine_decision.py::test_store_pending_and_redis_snapshot_synchronized_after_supersession",
+        "services/engine/tests/test_engine_endpoints.py::test_approve_decision_partial_lines_and_constraint_422",
+        "services/engine/tests/test_phase06_acceptance.py::test_monte_carlo_p95_latency_under_50ms",
+        "services/engine/tests/test_phase08_acceptance.py::test_solver_latency_p95_under_500ms"
+      ]
+    },
+    {
+      "suite": "pytest_intelligence",
+      "command": "PYTHONPATH=services/intelligence python -m pytest services/intelligence/tests -q --tb=line",
+      "total": 8,
+      "passed": 8,
+      "failed": 0,
+      "skipped": 0,
+      "exit_code": 0,
+      "log_file": "docs/evidence/final_release_verification/logs/pytest_intelligence.log",
+      "failures": []
+    },
+    {
+      "suite": "pytest_fsip_common",
+      "command": "PYTHONPATH=libs/fsip_common python -m pytest libs/fsip_common/tests -q --tb=line",
+      "total": 107,
+      "passed": 107,
+      "failed": 0,
+      "skipped": 0,
+      "exit_code": 0,
+      "log_file": "docs/evidence/final_release_verification/logs/pytest_fsip_common.log",
+      "failures": []
+    },
+    {
+      "suite": "pytest_evaluation",
+      "command": "PYTHONPATH=evaluation python -m pytest evaluation/tests -q --tb=line",
+      "total": 8,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 3,
+      "exit_code": 0,
+      "log_file": "docs/evidence/final_release_verification/logs/pytest_evaluation.log",
+      "failures": []
+    },
+    {
+      "suite": "frontend_tsc",
+      "command": "cd frontend && npx tsc -b --pretty false",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "exit_code": 0,
+      "log_file": "docs/evidence/final_release_verification/logs/frontend_tsc.log",
+      "failures": []
+    },
+    {
+      "suite": "frontend_vitest",
+      "command": "cd frontend && npx vitest run",
+      "total": 64,
+      "passed": 64,
+      "failed": 0,
+      "skipped": 0,
+      "exit_code": 0,
+      "log_file": "docs/evidence/final_release_verification/logs/frontend_vitest.log",
+      "failures": []
+    },
+    {
+      "suite": "frontend_eslint",
+      "command": "cd frontend && npx eslint (not configured)",
+      "total": 0,
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0,
+      "exit_code": 0,
+      "log_file": "docs/evidence/final_release_verification/logs/frontend_eslint_summary.txt",
+      "failures": [],
+      "notes": "Skipped — no eslint in frontend/package.json."
+    },
+    {
+      "suite": "frontend_playwright",
+      "command": "cd frontend && npx playwright test",
+      "total": 4,
+      "passed": 0,
+      "failed": 4,
+      "skipped": 0,
+      "exit_code": 1,
+      "log_file": "docs/evidence/final_release_verification/logs/frontend_playwright.log",
+      "failures": [
+        "chromium] › fsip.spec.ts:4:3 › FSIP E2E Hardened Test Suite (Phase 12) › 1. Overview loads, displays simulation clock, and produces no uncaught console errors",
+        "chromium] › fsip.spec.ts:32:3 › FSIP E2E Hardened Test Suite (Phase 12) › 2. System Health lists expected components and statuses",
+        "chromium] › fsip.spec.ts:54:3 › FSIP E2E Hardened Test Suite (Phase 12) › 3. Low inventory / planning creates visible recommendation",
+        "chromium] › fsip.spec.ts:63:3 › FSIP E2E Hardened Test Suite (Phase 12) › 4. Approve flow executes recommendation and updates state"
+      ],
+      "notes": "Chromium available; all failures net::ERR_CONNECTION_REFUSED at http://localhost:3000."
+    },
+    {
+      "suite": "docker_compose_config",
+      "command": "docker compose config",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "exit_code": 0,
+      "log_file": "docs/evidence/final_release_verification/logs/docker_compose_config.log",
+      "failures": []
+    }
+  ],
+  "rollup": {
+    "suites_run": 11,
+    "suites_exit_nonzero": 3,
+    "suites_all_green": 7
+  }
+}

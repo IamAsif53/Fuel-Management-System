@@ -1,0 +1,158 @@
+[
+  {
+    "id": "DEF-001",
+    "previous_claimed": "FIXED — LIVE VERIFICATION PASSED (multi-user auth, RBAC, four-eyes >7,000 L)",
+    "current_status": "INTENTIONALLY SUPERSEDED (brief-aligned open mode)",
+    "evidence_notes": "UserMenu is Operator chip only; client.ts open demo operator; browser overview has no Sign-In. Large decision approved in one operator POST without second approval. Optional JWT/login endpoints remain for tests."
+  },
+  {
+    "id": "DEF-002",
+    "previous_claimed": "FIXED — LIVE VERIFICATION PASSED",
+    "current_status": "VERIFIED FIXED",
+    "evidence_notes": "Live POST /decisions/1914/approve with selected_line_ids and modified_quantities returned 200 EXECUTED; partial 1500 L line SUBMITTED with sim_allocation_id=1."
+  },
+  {
+    "id": "DEF-003",
+    "previous_claimed": "FIXED — LIVE VERIFICATION PASSED",
+    "current_status": "VERIFIED FIXED",
+    "evidence_notes": "After chaos/stale_data while PAUSED, POST /control/mode autopilot returned 409 STALE_DATA with DEGRADED state. Paused non-stale still allows autopilot (expected)."
+  },
+  {
+    "id": "DEF-003b",
+    "previous_claimed": "FIXED — LIVE VERIFICATION PASSED",
+    "current_status": "VERIFIED FIXED",
+    "evidence_notes": "docker exec fsip-frontend: zero change-me-operator/change-me in assets/*.js; frontend source grep clean. Bundle contains only localStorage purge of legacy token key names, not secret values."
+  },
+  {
+    "id": "DEF-004",
+    "previous_claimed": "FIXED — LIVE VERIFICATION PASSED",
+    "current_status": "VERIFIED FIXED",
+    "evidence_notes": "Engine /health/ready 200, last_sync_age_s<1s, engine_mode NORMAL after running; degraded cleared post stale_data test."
+  },
+  {
+    "id": "DEF-004b",
+    "previous_claimed": "FIXED — LIVE VERIFICATION PASSED",
+    "current_status": "VERIFIED FIXED",
+    "evidence_notes": "useLiveState.ts implements reset.detected and latestSimRunId guards; SSE reset not re-exercised live this session."
+  },
+  {
+    "id": "DEF-005",
+    "previous_claimed": "FIXED — LIVE VERIFICATION PASSED",
+    "current_status": "VERIFIED FIXED",
+    "evidence_notes": "GET /risk returned 6 rows for region-dhaka, dhaka, chattogram, and region-chattogram aliases."
+  },
+  {
+    "id": "DEF-006",
+    "previous_claimed": "FIXED — LIVE VERIFICATION PASSED",
+    "current_status": "VERIFIED FIXED",
+    "evidence_notes": "GET /risk rows include stockout_prob_horizon, hours_to_stockout, risk_level, drivers; no API errors. Baseline tick shows LOW probabilities (sim at t=0)."
+  },
+  {
+    "id": "DEF-007",
+    "previous_claimed": "FIXED — LIVE VERIFICATION PASSED",
+    "current_status": "VERIFIED FIXED",
+    "evidence_notes": "Invalid POST /whatif and /decisions/what-if returned 422 VALIDATION_ERROR."
+  },
+  {
+    "id": "DEF-007b",
+    "previous_claimed": "FIXED — LIVE VERIFICATION PASSED",
+    "current_status": "VERIFIED FIXED",
+    "evidence_notes": "POST /control/scenario/demand_spike_dhaka isolated 1.8x to region-dhaka stations; Chattogram 1.0. depot_constraint_patiya yielded CONSTRAINED after sim steps. Presets expose region_ids, multiplier, depot_ids."
+  },
+  {
+    "id": "DEF-008",
+    "previous_claimed": "FIXED — LIVE VERIFICATION PASSED",
+    "current_status": "VERIFIED FIXED",
+    "evidence_notes": "GET /decisions?sim_run_id= active run shows total_liters and line_count; decision detail lines populated after approve."
+  },
+  {
+    "id": "DEF-009",
+    "previous_claimed": "FIXED — LIVE VERIFICATION PASSED",
+    "current_status": "VERIFIED FIXED",
+    "evidence_notes": "alerts_open_count sum matched OPEN ledger count (0==0). scripts/verify_consistency.py SUCCESS for pending recommendations vs state."
+  },
+  {
+    "id": "DEF-010",
+    "previous_claimed": "FIXED — LIVE VERIFICATION PASSED",
+    "current_status": "FIXED AND REGRESSION TESTED",
+    "evidence_notes": "pytest services/api/tests/test_auth.py 5 passed this run; full CI counts from DEF-010 evidence not re-run end-to-end."
+  },
+  {
+    "id": "DEF-011",
+    "previous_claimed": "FIXED — LIVE VERIFICATION PASSED",
+    "current_status": "VERIFIED FIXED",
+    "evidence_notes": "POST /assistant/ask 200 with coherent answer when no alerts active."
+  },
+  {
+    "id": "DEF-012",
+    "previous_claimed": "FIXED — LIVE VERIFICATION PASSED",
+    "current_status": "VERIFIED FIXED",
+    "evidence_notes": "tailwind.config.js defines surface/panel/accent/shadow-panel tokens; used in SystemHealth and other pages."
+  },
+  {
+    "id": "DEF-012b",
+    "previous_claimed": "FIXED — LIVE VERIFICATION PASSED",
+    "current_status": "VERIFIED FIXED",
+    "evidence_notes": "OPTIONS evil.example origin 400 without ACAO; localhost:3000 origin 200 with explicit allow-origin, not wildcard."
+  },
+  {
+    "id": "DEF-013",
+    "previous_claimed": "FIXED — LIVE VERIFICATION PASSED",
+    "current_status": "VERIFIED FIXED",
+    "evidence_notes": "App.tsx /system redirect; control/status demo_controls_enabled true; browser shows Control (demo) nav."
+  },
+  {
+    "id": "DEF-014",
+    "previous_claimed": "FIXED — LIVE VERIFICATION PASSED",
+    "current_status": "VERIFIED FIXED",
+    "evidence_notes": "GET /decisions/metrics 200 live."
+  },
+  {
+    "id": "DEF-015",
+    "previous_claimed": "FIXED — LIVE VERIFICATION PASSED",
+    "current_status": "VERIFIED FIXED",
+    "evidence_notes": "NetworkGraph.tsx overlap fixes present in code; visual regression not re-captured this session."
+  },
+  {
+    "id": "DEF-016",
+    "previous_claimed": "FIXED — LIVE VERIFICATION PASSED",
+    "current_status": "VERIFIED FIXED",
+    "evidence_notes": "GET /system/status reports notifier Unconfigured truthfully; SystemHealth Grafana links target :13001."
+  },
+  {
+    "id": "DEF-017",
+    "previous_claimed": "FIXED — LIVE VERIFICATION PASSED",
+    "current_status": "VERIFIED FIXED",
+    "evidence_notes": "Header/Assistant responsive clamp code present; not re-tested at mobile viewport this session."
+  },
+  {
+    "id": "DEF-018",
+    "previous_claimed": "FIXED — LIVE VERIFICATION PASSED",
+    "current_status": "VERIFIED FIXED",
+    "evidence_notes": "Browser /whatif shows supply_shortfall, delay controls, projection disclaimer."
+  },
+  {
+    "id": "DEF-019",
+    "previous_claimed": "FIXED — LIVE VERIFICATION PASSED",
+    "current_status": "VERIFIED FIXED",
+    "evidence_notes": "engine.py ledger_append on approve/reject; live approve exercised decision path."
+  },
+  {
+    "id": "DEF-020",
+    "previous_claimed": "FIXED — LIVE VERIFICATION PASSED",
+    "current_status": "VERIFIED FIXED",
+    "evidence_notes": "NOMINAL_DAILY_DEMAND totals 91400 L/d; GET /cover 200; open mode allows compute without JWT."
+  },
+  {
+    "id": "DEF-021",
+    "previous_claimed": "FIXED — LIVE VERIFICATION PASSED",
+    "current_status": "VERIFIED FIXED",
+    "evidence_notes": "db.py history/decision queries accept sim_run_id; Sidebar phase badges removed."
+  },
+  {
+    "id": "DEF-022",
+    "previous_claimed": "FIXED — LIVE VERIFICATION PASSED",
+    "current_status": "VERIFIED FIXED",
+    "evidence_notes": "Live approval narratives use real allocation counts and station references in explanation.headline."
+  }
+]

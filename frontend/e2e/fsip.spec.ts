@@ -68,6 +68,7 @@ test.describe("FSIP E2E Hardened Test Suite (Phase 12)", () => {
     const count = await recCards.count();
 
     if (count > 0) {
+      // Open mode: Approve/Reject is the human gate (no Sign-In)
       const firstCard = recCards.first();
       await expect(firstCard).toBeVisible();
 

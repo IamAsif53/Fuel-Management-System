@@ -37,11 +37,18 @@ async def get_station_detail(
             detail={"code": "STATION_NOT_FOUND", "message": f"Station '{station_id}' not found"},
         )
 
-    # Fetch demand observations
-    demand = await fetch_station_demand_history(session, station_id=station_id, limit=history_ticks)
+    active_run = state.get("sim_run_id")
+    active_run_id = int(active_run) if active_run is not None else None
 
-    # Fetch inventory history from recent snapshots
-    snapshots = await fetch_recent_snapshots(session, limit=history_ticks)
+    # Fetch demand observations (scoped to active sim run — DEF-021)
+    demand = await fetch_station_demand_history(
+        session, station_id=station_id, limit=history_ticks, sim_run_id=active_run_id
+    )
+
+    # Fetch inventory history from recent snapshots (active-run scoped)
+    snapshots = await fetch_recent_snapshots(
+        session, limit=history_ticks, sim_run_id=active_run_id
+    )
     history: list[dict[str, Any]] = []
     for snap in snapshots:
         raw_st = _parse_json_field(snap.get("stations"))
@@ -93,8 +100,13 @@ async def get_depot_detail(
             detail={"code": "DEPOT_NOT_FOUND", "message": f"Depot '{depot_id}' not found"},
         )
 
-    # Fetch inventory history from recent snapshots
-    snapshots = await fetch_recent_snapshots(session, limit=history_ticks)
+    active_run = state.get("sim_run_id")
+    active_run_id = int(active_run) if active_run is not None else None
+
+    # Fetch inventory history from recent snapshots (active-run scoped — DEF-021)
+    snapshots = await fetch_recent_snapshots(
+        session, limit=history_ticks, sim_run_id=active_run_id
+    )
     history: list[dict[str, Any]] = []
     for snap in snapshots:
         raw_dp = _parse_json_field(snap.get("depots"))

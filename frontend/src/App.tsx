@@ -22,6 +22,8 @@ export default function App() {
         <Route path="/overview" element={<Overview />} />
         <Route path="/network" element={<Network />} />
         <Route path="/health" element={<SystemHealth />} />
+        <Route path="/system" element={<Navigate to="/health" replace />} />
+        <Route path="/system-health" element={<Navigate to="/health" replace />} />
 
         {/* Phase 06 Pages */}
         <Route path="/risk" element={<RiskPage />} />
@@ -30,7 +32,9 @@ export default function App() {
         {/* Phase 04 Pages */}
         <Route path="/recommendations" element={<Recommendations />} />
         <Route path="/decisions" element={<Decisions />} />
+        <Route path="/decisions/:decisionId" element={<Decisions />} />
         <Route path="/whatif" element={<WhatIfPage />} />
+        <Route path="/what-if" element={<Navigate to="/whatif" replace />} />
         <Route path="/assistant" element={<AssistantPage />} />
         <Route path="/control" element={<ControlPage />} />
 

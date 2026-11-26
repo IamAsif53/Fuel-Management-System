@@ -1,0 +1,1 @@
+autopilot=200 {"status":"ok","mode":"autopilot","operating_mode":"autopilot","auto_approved":0}

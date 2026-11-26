@@ -1,0 +1,7 @@
+suite=pytest_evaluation
+exit_code=0
+total=8
+passed=5
+failed=0
+skipped=3
+log_file=pytest_evaluation.log

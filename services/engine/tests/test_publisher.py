@@ -118,8 +118,34 @@ async def test_publisher_event_handles_redis_error_without_raising():
 async def test_sync_loop_invokes_publisher(sample_store):
     """Verify that SyncLoop.full_sync() invokes publisher.publish_state."""
     mock_client = MagicMock()
-    res = SimResult(data={"status": "RUNNING", "tick": 10, "tick_minutes": 15}, stale=False, status=200, latency_ms=1.0)
+    res = SimResult(
+        data={
+            "id": 1,
+            "scenario_id": "default",
+            "scenario_version": "1.0",
+            "seed": 42,
+            "status": "RUNNING",
+            "tick": 10,
+            "tick_minutes": 15,
+            "sim_time": "2026-01-01T02:30:00Z",
+        },
+        stale=False,
+        status=200,
+        latency_ms=1.0,
+    )
     empty_res = SimResult(data=[], stale=False, status=200, latency_ms=1.0)
+    metrics_res = SimResult(
+        data={
+            "served_demand_liters": 0.0,
+            "unmet_demand_liters": 0.0,
+            "service_level": 1.0,
+            "allocation_liters": 0.0,
+            "allocation_failures": 0,
+        },
+        stale=False,
+        status=200,
+        latency_ms=1.0,
+    )
     mock_client.instance = AsyncMock(return_value=res)
     mock_client.regions = AsyncMock(return_value=empty_res)
     mock_client.depots = AsyncMock(return_value=empty_res)
@@ -128,7 +154,7 @@ async def test_sync_loop_invokes_publisher(sample_store):
     mock_client.events = AsyncMock(return_value=empty_res)
     mock_client.supply_arrivals = AsyncMock(return_value=empty_res)
     mock_client.allocations = AsyncMock(return_value=empty_res)
-    mock_client.metrics = AsyncMock(return_value=empty_res)
+    mock_client.metrics = AsyncMock(return_value=metrics_res)
     mock_client.demand_history = AsyncMock(return_value=empty_res)
 
     mock_publisher = MagicMock(spec=Publisher)
@@ -141,7 +167,10 @@ async def test_sync_loop_invokes_publisher(sample_store):
     )
 
     await sync_loop.full_sync()
-    mock_publisher.publish_state.assert_awaited_once_with(sample_store)
+    # full_sync publishes twice by design: once after persistence (pre-hooks) and
+    # once after lifecycle hooks so hook mutations (risk/alerts/mode) are visible.
+    assert mock_publisher.publish_state.await_count == 2
+    mock_publisher.publish_state.assert_awaited_with(sample_store)
 
 
 @pytest.mark.asyncio

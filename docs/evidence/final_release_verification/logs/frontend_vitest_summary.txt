@@ -1,0 +1,7 @@
+suite=frontend_vitest
+exit_code=0
+total=64
+passed=64
+failed=0
+skipped=0
+log_file=frontend_vitest.log

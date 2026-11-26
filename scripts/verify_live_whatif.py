@@ -1,11 +1,10 @@
 from __future__ import annotations
 
+import os
 import httpx
 
-headers = {
-    "Authorization": "Bearer change-me-operator",
-    "Content-Type": "application/json",
-}
+# Open hackathon mode: no Sign-In / bearer required
+headers = {"Content-Type": "application/json"}
 
 print("=== Running Live What-If End-to-End Verification ===")
 client = httpx.Client(timeout=10.0)

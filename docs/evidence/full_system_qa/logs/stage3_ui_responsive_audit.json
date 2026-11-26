@@ -1,0 +1,953 @@
+{
+  "timestamp": "2026-11-26T06:55:23.064Z",
+  "tunnelUrl": "https://utilities-toddler-proxy-menu.trycloudflare.com",
+  "localUrl": "http://localhost:3000",
+  "tunnelSmoke": {
+    "finalUrl": "https://utilities-toddler-proxy-menu.trycloudflare.com/overview",
+    "h1Text": null,
+    "renderedNonEmpty": true,
+    "hasDegradedBanner": true,
+    "consoleErrors": [],
+    "pageErrors": [],
+    "httpErrors": [],
+    "failedRequests": [],
+    "probes": {
+      "/api/state": {
+        "status": 200,
+        "contentType": "application/json",
+        "len": 13390,
+        "sample": "{\"sim_run_id\":2006,\"tick\":12,\"sim_time\":\"2026-01-01T03:00:00Z\",\"tick_minutes\":15,\"sim_status\":\"PAUSED\",\"clock_label\":\"Day 1 03:00 · t=12\",\"g"
+      },
+      "/admin": {
+        "status": 200,
+        "contentType": "text/html",
+        "len": 437,
+        "sample": "<!doctype html>\n<html lang=\"en\" class=\"dark\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <meta name=\"viewport\" content=\"width=device-width, i"
+      },
+      "/v1/instance": {
+        "status": 200,
+        "contentType": "text/html",
+        "len": 437,
+        "sample": "<!doctype html>\n<html lang=\"en\" class=\"dark\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <meta name=\"viewport\" content=\"width=device-width, i"
+      },
+      "/.env": {
+        "status": 200,
+        "contentType": "text/html",
+        "len": 437,
+        "sample": "<!doctype html>\n<html lang=\"en\" class=\"dark\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <meta name=\"viewport\" content=\"width=device-width, i"
+      },
+      "/.git/HEAD": {
+        "status": 200,
+        "contentType": "text/html",
+        "len": 437,
+        "sample": "<!doctype html>\n<html lang=\"en\" class=\"dark\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <meta name=\"viewport\" content=\"width=device-width, i"
+      }
+    }
+  },
+  "routes": {
+    "/overview": {
+      "urlAfterLoad": "http://localhost:3000/overview",
+      "urlAfterReload": "http://localhost:3000/overview",
+      "textLen": 2222,
+      "heading": "Supply Network Topology",
+      "consoleErrors": [],
+      "consoleWarnings": [
+        {
+          "type": "warning",
+          "text": "⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition."
+        },
+        {
+          "type": "warning",
+          "text": "⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath."
+        },
+        {
+          "type": "warning",
+          "text": "⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition."
+        },
+        {
+          "type": "warning",
+          "text": "⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath."
+        }
+      ],
+      "pageErrors": [],
+      "httpErrors": [],
+      "failedRequests": [],
+      "extra": {
+        "bodySnippet": "SIMULATED ENVIRONMENT – NOT REAL FUEL INFRASTRUCTURE\nFuel Ops Console\nDay 1 03:00 · t=12\nPAUSED\nDEGRADED\nAdvisory\nHeuristic\nOptimizer\nPlan Now\n1\nLIVE\nSYSTEM DEGRADED\nSystem operating in degraded mode\nt=12\n2.94s old\nOverview\nNetwork\nRisk\nRecommendations\nDecisions\nAlerts\nWhat-if\nP8\nAssistant\nP9\nSystem Health\nControl (demo)\nP10\nSERVICE LEVEL\n100.0%\nSLO 98%\nUNMET LITERS\n0 L\nTotal unmet\nSTATIONS AT RISK\n0\nHigh/Crit\nOPEN ALERTS\n0\nUnresolved\nPENDING RECS\n1\nAwaiting review\nALLOCATION FAILS\n0\nSim rejections\nOVERFLOW WASTE\n0 L\nEstimated\nENGINE MODE\nDEGRADED\nDecision mode\nSUPPLY NETWORK TOPOLOGY\nAvailabl"
+      }
+    },
+    "/network": {
+      "urlAfterLoad": "http://localhost:3000/network",
+      "urlAfterReload": "http://localhost:3000/network",
+      "textLen": 2002,
+      "heading": "Network & Inventory Infrastructure",
+      "consoleErrors": [],
+      "consoleWarnings": [
+        {
+          "type": "warning",
+          "text": "⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition."
+        },
+        {
+          "type": "warning",
+          "text": "⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath."
+        },
+        {
+          "type": "warning",
+          "text": "⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition."
+        },
+        {
+          "type": "warning",
+          "text": "⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath."
+        }
+      ],
+      "pageErrors": [],
+      "httpErrors": [],
+      "failedRequests": [],
+      "extra": {}
+    },
+    "/risk": {
+      "urlAfterLoad": "http://localhost:3000/risk",
+      "urlAfterReload": "http://localhost:3000/risk",
+      "textLen": 1668,
+      "heading": "Risk & Contingency Engine",
+      "consoleErrors": [],
+      "consoleWarnings": [
+        {
+          "type": "warning",
+          "text": "⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition."
+        },
+        {
+          "type": "warning",
+          "text": "⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath."
+        },
+        {
+          "type": "warning",
+          "text": "⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition."
+        },
+        {
+          "type": "warning",
+          "text": "⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath."
+        }
+      ],
+      "pageErrors": [],
+      "httpErrors": [],
+      "failedRequests": [],
+      "extra": {}
+    },
+    "/recommendations": {
+      "urlAfterLoad": "http://localhost:3000/recommendations",
+      "urlAfterReload": "http://localhost:3000/recommendations",
+      "textLen": 2010,
+      "heading": "Prescriptive Recommendations",
+      "consoleErrors": [],
+      "consoleWarnings": [
+        {
+          "type": "warning",
+          "text": "⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition."
+        },
+        {
+          "type": "warning",
+          "text": "⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath."
+        },
+        {
+          "type": "warning",
+          "text": "⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition."
+        },
+        {
+          "type": "warning",
+          "text": "⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath."
+        }
+      ],
+      "pageErrors": [],
+      "httpErrors": [],
+      "failedRequests": [],
+      "extra": {
+        "containsHardcodedMetrics": true
+      }
+    },
+    "/decisions": {
+      "urlAfterLoad": "http://localhost:3000/decisions",
+      "urlAfterReload": "http://localhost:3000/decisions",
+      "textLen": 838,
+      "heading": "Decisions History & Audit Ledger",
+      "consoleErrors": [],
+      "consoleWarnings": [
+        {
+          "type": "warning",
+          "text": "⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition."
+        },
+        {
+          "type": "warning",
+          "text": "⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath."
+        },
+        {
+          "type": "warning",
+          "text": "⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition."
+        },
+        {
+          "type": "warning",
+          "text": "⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath."
+        }
+      ],
+      "pageErrors": [],
+      "httpErrors": [],
+      "failedRequests": [],
+      "extra": {
+        "showsZeroLinesBug": true,
+        "showsPastRunsUnderActiveScope": false
+      }
+    },
+    "/alerts": {
+      "urlAfterLoad": "http://localhost:3000/alerts",
+      "urlAfterReload": "http://localhost:3000/alerts",
+      "textLen": 1294,
+      "heading": "Alerts & Incidents",
+      "consoleErrors": [],
+      "consoleWarnings": [
+        {
+          "type": "warning",
+          "text": "⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition."
+        },
+        {
+          "type": "warning",
+          "text": "⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath."
+        },
+        {
+          "type": "warning",
+          "text": "⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition."
+        },
+        {
+          "type": "warning",
+          "text": "⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath."
+        }
+      ],
+      "pageErrors": [],
+      "httpErrors": [],
+      "failedRequests": [],
+      "extra": {}
+    },
+    "/whatif": {
+      "urlAfterLoad": "http://localhost:3000/whatif",
+      "urlAfterReload": "http://localhost:3000/whatif",
+      "textLen": 1393,
+      "heading": "What-If Scenario Simulation",
+      "consoleErrors": [],
+      "consoleWarnings": [
+        {
+          "type": "warning",
+          "text": "⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition."
+        },
+        {
+          "type": "warning",
+          "text": "⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath."
+        },
+        {
+          "type": "warning",
+          "text": "⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition."
+        },
+        {
+          "type": "warning",
+          "text": "⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath."
+        }
+      ],
+      "pageErrors": [],
+      "httpErrors": [],
+      "failedRequests": [],
+      "extra": {}
+    },
+    "/assistant": {
+      "urlAfterLoad": "http://localhost:3000/assistant",
+      "urlAfterReload": "http://localhost:3000/assistant",
+      "textLen": 848,
+      "heading": "Operations Assistant",
+      "consoleErrors": [],
+      "consoleWarnings": [
+        {
+          "type": "warning",
+          "text": "⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition."
+        },
+        {
+          "type": "warning",
+          "text": "⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath."
+        },
+        {
+          "type": "warning",
+          "text": "⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition."
+        },
+        {
+          "type": "warning",
+          "text": "⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath."
+        }
+      ],
+      "pageErrors": [],
+      "httpErrors": [],
+      "failedRequests": [],
+      "extra": {}
+    },
+    "/health": {
+      "urlAfterLoad": "http://localhost:3000/health",
+      "urlAfterReload": "http://localhost:3000/health",
+      "textLen": 1687,
+      "heading": "System Observability & Health",
+      "consoleErrors": [],
+      "consoleWarnings": [
+        {
+          "type": "warning",
+          "text": "⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition."
+        },
+        {
+          "type": "warning",
+          "text": "⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath."
+        },
+        {
+          "type": "warning",
+          "text": "⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition."
+        },
+        {
+          "type": "warning",
+          "text": "⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath."
+        }
+      ],
+      "pageErrors": [],
+      "httpErrors": [],
+      "failedRequests": [],
+      "extra": {
+        "externalLinks": [
+          {
+            "text": "Fuel Ops Console",
+            "href": "/overview"
+          },
+          {
+            "text": "1",
+            "href": "/recommendations"
+          },
+          {
+            "text": "Overview",
+            "href": "/overview"
+          },
+          {
+            "text": "Network",
+            "href": "/network"
+          },
+          {
+            "text": "Risk",
+            "href": "/risk"
+          },
+          {
+            "text": "Recommendations",
+            "href": "/recommendations"
+          },
+          {
+            "text": "Decisions",
+            "href": "/decisions"
+          },
+          {
+            "text": "Alerts",
+            "href": "/alerts"
+          },
+          {
+            "text": "What-ifP8",
+            "href": "/whatif"
+          },
+          {
+            "text": "AssistantP9",
+            "href": "/assistant"
+          },
+          {
+            "text": "System Health",
+            "href": "/health"
+          },
+          {
+            "text": "Control (demo)P10",
+            "href": "/control"
+          },
+          {
+            "text": "Ops Dashboard",
+            "href": "http://localhost:3001"
+          },
+          {
+            "text": "Service Traces",
+            "href": "http://localhost:3001/explore"
+          }
+        ]
+      }
+    },
+    "/control": {
+      "urlAfterLoad": "http://localhost:3000/control",
+      "urlAfterReload": "http://localhost:3000/control",
+      "textLen": 5527,
+      "heading": "Simulator Controls & Chaos Injection",
+      "consoleErrors": [],
+      "consoleWarnings": [
+        {
+          "type": "warning",
+          "text": "⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition."
+        },
+        {
+          "type": "warning",
+          "text": "⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath."
+        },
+        {
+          "type": "warning",
+          "text": "⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition."
+        },
+        {
+          "type": "warning",
+          "text": "⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath."
+        }
+      ],
+      "pageErrors": [],
+      "httpErrors": [],
+      "failedRequests": [],
+      "extra": {}
+    }
+  },
+  "fallbackRoutes": {
+    "/decisions/1": {
+      "resolvedUrl": "http://localhost:3000/overview",
+      "heading": "Supply Network Topology",
+      "drawerOrDialogCount": 0
+    },
+    "/system": {
+      "resolvedUrl": "http://localhost:3000/overview",
+      "heading": "Supply Network Topology",
+      "drawerOrDialogCount": 0
+    },
+    "/network?station=STN-004": {
+      "resolvedUrl": "http://localhost:3000/network?station=STN-004",
+      "heading": "Network & Inventory Infrastructure",
+      "drawerOrDialogCount": 0
+    },
+    "/nonexistent-route": {
+      "resolvedUrl": "http://localhost:3000/overview",
+      "heading": "Supply Network Topology",
+      "drawerOrDialogCount": 0
+    }
+  },
+  "tailwindTokens": {
+    "bg-surface": {
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "color": "rgb(230, 237, 247)",
+      "borderColor": "rgb(229, 231, 235)"
+    },
+    "text-accent": {
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "color": "rgb(230, 237, 247)",
+      "borderColor": "rgb(229, 231, 235)"
+    },
+    "bg-accent": {
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "color": "rgb(230, 237, 247)",
+      "borderColor": "rgb(229, 231, 235)"
+    },
+    "border-panel-border": {
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "color": "rgb(230, 237, 247)",
+      "borderColor": "rgb(229, 231, 235)"
+    },
+    "bg-bg-base": {
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "color": "rgb(230, 237, 247)",
+      "borderColor": "rgb(229, 231, 235)"
+    },
+    "text-ink-contrast": {
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "color": "rgb(230, 237, 247)",
+      "borderColor": "rgb(229, 231, 235)"
+    },
+    "networkActiveBtn": {
+      "text": "Enter Replay Mode",
+      "className": "flex items-center gap-1.5 rounded-md border border-accent/40 bg-accent/10 px-3 py-1.5 text-xs font-medium text-accent hover:bg-accent/20 transition",
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(230, 237, 247)"
+    }
+  },
+  "responsive": [
+    {
+      "viewport": "desktop_1440",
+      "width": 1440,
+      "height": 900,
+      "route": "/overview",
+      "clientWidth": 1440,
+      "scrollWidth": 1440,
+      "overflowPx": 0,
+      "scrollHeight": 900,
+      "headerHeight": 48,
+      "sidebarWidth": null
+    },
+    {
+      "viewport": "desktop_1440",
+      "width": 1440,
+      "height": 900,
+      "route": "/network",
+      "clientWidth": 1440,
+      "scrollWidth": 1440,
+      "overflowPx": 0,
+      "scrollHeight": 900,
+      "headerHeight": 48,
+      "sidebarWidth": null
+    },
+    {
+      "viewport": "desktop_1440",
+      "width": 1440,
+      "height": 900,
+      "route": "/risk",
+      "clientWidth": 1440,
+      "scrollWidth": 1440,
+      "overflowPx": 0,
+      "scrollHeight": 900,
+      "headerHeight": 48,
+      "sidebarWidth": null
+    },
+    {
+      "viewport": "desktop_1440",
+      "width": 1440,
+      "height": 900,
+      "route": "/recommendations",
+      "clientWidth": 1440,
+      "scrollWidth": 1440,
+      "overflowPx": 0,
+      "scrollHeight": 900,
+      "headerHeight": 48,
+      "sidebarWidth": null
+    },
+    {
+      "viewport": "desktop_1440",
+      "width": 1440,
+      "height": 900,
+      "route": "/decisions",
+      "clientWidth": 1440,
+      "scrollWidth": 1440,
+      "overflowPx": 0,
+      "scrollHeight": 900,
+      "headerHeight": 48,
+      "sidebarWidth": null
+    },
+    {
+      "viewport": "desktop_1440",
+      "width": 1440,
+      "height": 900,
+      "route": "/alerts",
+      "clientWidth": 1440,
+      "scrollWidth": 1440,
+      "overflowPx": 0,
+      "scrollHeight": 900,
+      "headerHeight": 48,
+      "sidebarWidth": null
+    },
+    {
+      "viewport": "desktop_1440",
+      "width": 1440,
+      "height": 900,
+      "route": "/whatif",
+      "clientWidth": 1440,
+      "scrollWidth": 1440,
+      "overflowPx": 0,
+      "scrollHeight": 900,
+      "headerHeight": 48,
+      "sidebarWidth": null
+    },
+    {
+      "viewport": "desktop_1440",
+      "width": 1440,
+      "height": 900,
+      "route": "/assistant",
+      "clientWidth": 1440,
+      "scrollWidth": 1440,
+      "overflowPx": 0,
+      "scrollHeight": 900,
+      "headerHeight": 48,
+      "sidebarWidth": null
+    },
+    {
+      "viewport": "desktop_1440",
+      "width": 1440,
+      "height": 900,
+      "route": "/health",
+      "clientWidth": 1440,
+      "scrollWidth": 1440,
+      "overflowPx": 0,
+      "scrollHeight": 900,
+      "headerHeight": 48,
+      "sidebarWidth": null
+    },
+    {
+      "viewport": "desktop_1440",
+      "width": 1440,
+      "height": 900,
+      "route": "/control",
+      "clientWidth": 1440,
+      "scrollWidth": 1440,
+      "overflowPx": 0,
+      "scrollHeight": 900,
+      "headerHeight": 48,
+      "sidebarWidth": null
+    },
+    {
+      "viewport": "laptop_1280",
+      "width": 1280,
+      "height": 720,
+      "route": "/overview",
+      "clientWidth": 1280,
+      "scrollWidth": 1280,
+      "overflowPx": 0,
+      "scrollHeight": 720,
+      "headerHeight": 48,
+      "sidebarWidth": null
+    },
+    {
+      "viewport": "laptop_1280",
+      "width": 1280,
+      "height": 720,
+      "route": "/network",
+      "clientWidth": 1280,
+      "scrollWidth": 1280,
+      "overflowPx": 0,
+      "scrollHeight": 720,
+      "headerHeight": 48,
+      "sidebarWidth": null
+    },
+    {
+      "viewport": "laptop_1280",
+      "width": 1280,
+      "height": 720,
+      "route": "/risk",
+      "clientWidth": 1280,
+      "scrollWidth": 1280,
+      "overflowPx": 0,
+      "scrollHeight": 720,
+      "headerHeight": 48,
+      "sidebarWidth": null
+    },
+    {
+      "viewport": "laptop_1280",
+      "width": 1280,
+      "height": 720,
+      "route": "/recommendations",
+      "clientWidth": 1280,
+      "scrollWidth": 1280,
+      "overflowPx": 0,
+      "scrollHeight": 720,
+      "headerHeight": 48,
+      "sidebarWidth": null
+    },
+    {
+      "viewport": "laptop_1280",
+      "width": 1280,
+      "height": 720,
+      "route": "/decisions",
+      "clientWidth": 1280,
+      "scrollWidth": 1280,
+      "overflowPx": 0,
+      "scrollHeight": 720,
+      "headerHeight": 48,
+      "sidebarWidth": null
+    },
+    {
+      "viewport": "laptop_1280",
+      "width": 1280,
+      "height": 720,
+      "route": "/alerts",
+      "clientWidth": 1280,
+      "scrollWidth": 1280,
+      "overflowPx": 0,
+      "scrollHeight": 720,
+      "headerHeight": 48,
+      "sidebarWidth": null
+    },
+    {
+      "viewport": "laptop_1280",
+      "width": 1280,
+      "height": 720,
+      "route": "/whatif",
+      "clientWidth": 1280,
+      "scrollWidth": 1280,
+      "overflowPx": 0,
+      "scrollHeight": 720,
+      "headerHeight": 48,
+      "sidebarWidth": null
+    },
+    {
+      "viewport": "laptop_1280",
+      "width": 1280,
+      "height": 720,
+      "route": "/assistant",
+      "clientWidth": 1280,
+      "scrollWidth": 1280,
+      "overflowPx": 0,
+      "scrollHeight": 720,
+      "headerHeight": 48,
+      "sidebarWidth": null
+    },
+    {
+      "viewport": "laptop_1280",
+      "width": 1280,
+      "height": 720,
+      "route": "/health",
+      "clientWidth": 1280,
+      "scrollWidth": 1280,
+      "overflowPx": 0,
+      "scrollHeight": 720,
+      "headerHeight": 48,
+      "sidebarWidth": null
+    },
+    {
+      "viewport": "laptop_1280",
+      "width": 1280,
+      "height": 720,
+      "route": "/control",
+      "clientWidth": 1280,
+      "scrollWidth": 1280,
+      "overflowPx": 0,
+      "scrollHeight": 720,
+      "headerHeight": 48,
+      "sidebarWidth": null
+    },
+    {
+      "viewport": "tablet_768",
+      "width": 768,
+      "height": 1024,
+      "route": "/overview",
+      "clientWidth": 768,
+      "scrollWidth": 768,
+      "overflowPx": 0,
+      "scrollHeight": 1024,
+      "headerHeight": 48,
+      "sidebarWidth": null
+    },
+    {
+      "viewport": "tablet_768",
+      "width": 768,
+      "height": 1024,
+      "route": "/network",
+      "clientWidth": 768,
+      "scrollWidth": 768,
+      "overflowPx": 0,
+      "scrollHeight": 1024,
+      "headerHeight": 48,
+      "sidebarWidth": null
+    },
+    {
+      "viewport": "tablet_768",
+      "width": 768,
+      "height": 1024,
+      "route": "/risk",
+      "clientWidth": 768,
+      "scrollWidth": 768,
+      "overflowPx": 0,
+      "scrollHeight": 1024,
+      "headerHeight": 48,
+      "sidebarWidth": null
+    },
+    {
+      "viewport": "tablet_768",
+      "width": 768,
+      "height": 1024,
+      "route": "/recommendations",
+      "clientWidth": 768,
+      "scrollWidth": 768,
+      "overflowPx": 0,
+      "scrollHeight": 1024,
+      "headerHeight": 48,
+      "sidebarWidth": null
+    },
+    {
+      "viewport": "tablet_768",
+      "width": 768,
+      "height": 1024,
+      "route": "/decisions",
+      "clientWidth": 768,
+      "scrollWidth": 768,
+      "overflowPx": 0,
+      "scrollHeight": 1024,
+      "headerHeight": 48,
+      "sidebarWidth": null
+    },
+    {
+      "viewport": "tablet_768",
+      "width": 768,
+      "height": 1024,
+      "route": "/alerts",
+      "clientWidth": 768,
+      "scrollWidth": 768,
+      "overflowPx": 0,
+      "scrollHeight": 1024,
+      "headerHeight": 48,
+      "sidebarWidth": null
+    },
+    {
+      "viewport": "tablet_768",
+      "width": 768,
+      "height": 1024,
+      "route": "/whatif",
+      "clientWidth": 768,
+      "scrollWidth": 768,
+      "overflowPx": 0,
+      "scrollHeight": 1024,
+      "headerHeight": 48,
+      "sidebarWidth": null
+    },
+    {
+      "viewport": "tablet_768",
+      "width": 768,
+      "height": 1024,
+      "route": "/assistant",
+      "clientWidth": 768,
+      "scrollWidth": 768,
+      "overflowPx": 0,
+      "scrollHeight": 1024,
+      "headerHeight": 48,
+      "sidebarWidth": null
+    },
+    {
+      "viewport": "tablet_768",
+      "width": 768,
+      "height": 1024,
+      "route": "/health",
+      "clientWidth": 768,
+      "scrollWidth": 768,
+      "overflowPx": 0,
+      "scrollHeight": 1024,
+      "headerHeight": 48,
+      "sidebarWidth": null
+    },
+    {
+      "viewport": "tablet_768",
+      "width": 768,
+      "height": 1024,
+      "route": "/control",
+      "clientWidth": 768,
+      "scrollWidth": 768,
+      "overflowPx": 0,
+      "scrollHeight": 1024,
+      "headerHeight": 48,
+      "sidebarWidth": null
+    },
+    {
+      "viewport": "mobile_390",
+      "width": 390,
+      "height": 844,
+      "route": "/overview",
+      "clientWidth": 390,
+      "scrollWidth": 390,
+      "overflowPx": 0,
+      "scrollHeight": 844,
+      "headerHeight": 48,
+      "sidebarWidth": null
+    },
+    {
+      "viewport": "mobile_390",
+      "width": 390,
+      "height": 844,
+      "route": "/network",
+      "clientWidth": 390,
+      "scrollWidth": 390,
+      "overflowPx": 0,
+      "scrollHeight": 844,
+      "headerHeight": 48,
+      "sidebarWidth": null
+    },
+    {
+      "viewport": "mobile_390",
+      "width": 390,
+      "height": 844,
+      "route": "/risk",
+      "clientWidth": 390,
+      "scrollWidth": 390,
+      "overflowPx": 0,
+      "scrollHeight": 844,
+      "headerHeight": 48,
+      "sidebarWidth": null
+    },
+    {
+      "viewport": "mobile_390",
+      "width": 390,
+      "height": 844,
+      "route": "/recommendations",
+      "clientWidth": 390,
+      "scrollWidth": 390,
+      "overflowPx": 0,
+      "scrollHeight": 844,
+      "headerHeight": 48,
+      "sidebarWidth": null
+    },
+    {
+      "viewport": "mobile_390",
+      "width": 390,
+      "height": 844,
+      "route": "/decisions",
+      "clientWidth": 390,
+      "scrollWidth": 390,
+      "overflowPx": 0,
+      "scrollHeight": 844,
+      "headerHeight": 48,
+      "sidebarWidth": null
+    },
+    {
+      "viewport": "mobile_390",
+      "width": 390,
+      "height": 844,
+      "route": "/alerts",
+      "clientWidth": 390,
+      "scrollWidth": 390,
+      "overflowPx": 0,
+      "scrollHeight": 844,
+      "headerHeight": 48,
+      "sidebarWidth": null
+    },
+    {
+      "viewport": "mobile_390",
+      "width": 390,
+      "height": 844,
+      "route": "/whatif",
+      "clientWidth": 390,
+      "scrollWidth": 390,
+      "overflowPx": 0,
+      "scrollHeight": 844,
+      "headerHeight": 48,
+      "sidebarWidth": null
+    },
+    {
+      "viewport": "mobile_390",
+      "width": 390,
+      "height": 844,
+      "route": "/assistant",
+      "clientWidth": 390,
+      "scrollWidth": 390,
+      "overflowPx": 0,
+      "scrollHeight": 844,
+      "headerHeight": 48,
+      "sidebarWidth": null
+    },
+    {
+      "viewport": "mobile_390",
+      "width": 390,
+      "height": 844,
+      "route": "/health",
+      "clientWidth": 390,
+      "scrollWidth": 390,
+      "overflowPx": 0,
+      "scrollHeight": 844,
+      "headerHeight": 48,
+      "sidebarWidth": null
+    },
+    {
+      "viewport": "mobile_390",
+      "width": 390,
+      "height": 844,
+      "route": "/control",
+      "clientWidth": 390,
+      "scrollWidth": 390,
+      "overflowPx": 0,
+      "scrollHeight": 844,
+      "headerHeight": 48,
+      "sidebarWidth": null
+    }
+  ],
+  "uiInteractions": {
+    "backUrl": "http://localhost:3000/risk",
+    "forwardUrl": "http://localhost:3000/decisions",
+    "commandPaletteOpened": true,
+    "commandPaletteNavUrl": "http://localhost:3000/alerts"
+  }
+}

@@ -7,6 +7,7 @@ import type { ConnectionState } from "@/hooks/useLiveState";
 import { setControlMode, setControlPolicy, triggerPlanNow } from "@/api/client";
 import { ClockBadge } from "./ClockBadge";
 import { ConnectionDot } from "./ConnectionDot";
+import { UserMenu } from "./UserMenu";
 import { EngineModeBadge } from "./EngineModeBadge";
 
 interface HeaderProps {
@@ -39,7 +40,7 @@ export function Header({ state, connection }: HeaderProps) {
         await setControlMode("advisory");
       } catch (err: any) {
         console.error("Failed to set mode", err);
-        const msg = err?.response?.data?.detail?.message || err?.message || "Failed to switch operating mode";
+        const msg = err?.message || "Failed to switch operating mode";
         setModeError(msg);
       } finally {
         setIsChangingMode(false);
@@ -55,7 +56,7 @@ export function Header({ state, connection }: HeaderProps) {
       await setControlMode("autopilot");
     } catch (err: any) {
       console.error("Failed to set autopilot mode", err);
-      const msg = err?.response?.data?.detail?.message || err?.message || "Failed to switch operating mode";
+      const msg = err?.message || "Failed to switch operating mode";
       setModeError(msg);
     } finally {
       setIsChangingMode(false);
@@ -64,11 +65,14 @@ export function Header({ state, connection }: HeaderProps) {
 
   const handlePolicyChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
     const newPolicy = e.target.value;
+    setModeError(null);
     try {
       setIsChangingPolicy(true);
       await setControlPolicy(newPolicy);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to set policy", err);
+      const msg = err?.message || "Failed to update allocation policy";
+      setModeError(msg);
     } finally {
       setIsChangingPolicy(false);
     }
@@ -87,7 +91,7 @@ export function Header({ state, connection }: HeaderProps) {
 
   return (
     <>
-      <header className="flex h-12 shrink-0 items-center gap-3 border-b border-bg-border bg-bg-panel px-4 sm:px-6">
+      <header className="flex min-h-12 shrink-0 flex-wrap items-center gap-2 border-b border-bg-border bg-bg-panel px-3 py-2 sm:gap-3 sm:px-6 sm:py-0">
         {/* Brand logo */}
         <Link to="/overview" className="flex items-center gap-2 hover:opacity-90">
           <Activity className="text-brand" size={20} aria-hidden />
@@ -189,6 +193,7 @@ export function Header({ state, connection }: HeaderProps) {
 
           {/* Connection status */}
           <ConnectionDot connection={connection} />
+          <UserMenu />
         </div>
       </header>
 

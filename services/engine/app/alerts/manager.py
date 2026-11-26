@@ -155,6 +155,70 @@ class AlertManager:
         for (cat, sev), count in counts.items():
             FSIP_ALERTS_OPEN.labels(category=cat, severity=sev).set(count)
 
+    def reset(self) -> None:
+        """Clear in-memory active alerts and cooldown counters on simulation reset."""
+        self.active_alerts.clear()
+        self.clean_cycles.clear()
+        self._sync_metrics()
+
+    async def resolve_stale_runs(self, active_sim_run_id: int, resolved_tick: int | None = None) -> int:
+        """Resolve stale database alerts from prior simulation runs."""
+        if self.session_factory is None:
+            return 0
+        try:
+            async with self.session_factory() as session:
+                async with session.begin():
+                    from app.db.repo import resolve_stale_run_alerts
+
+                    return await resolve_stale_run_alerts(
+                        session,
+                        active_sim_run_id=active_sim_run_id,
+                        resolved_tick=resolved_tick,
+                    )
+        except Exception as exc:
+            logger.warning("alert.resolve_stale_runs_failed", error=str(exc))
+            return 0
+
+    def get_open_counts(self) -> dict[str, int]:
+        """Return count of currently OPEN alerts by severity."""
+        counts = {"INFO": 0, "WARNING": 0, "CRITICAL": 0}
+        for alert in self.active_alerts.values():
+            if alert.status == "OPEN":
+                sev = str(alert.severity or "INFO").upper()
+                if sev in counts:
+                    counts[sev] += 1
+        return counts
+
+    def get_open_alerts_summary(self) -> list[dict[str, Any]]:
+        """Return lightweight serializable summaries of currently OPEN alerts."""
+        items: list[dict[str, Any]] = []
+        for alert in self.active_alerts.values():
+            if alert.status == "OPEN":
+                items.append(
+                    {
+                        "id": alert.id,
+                        "sim_run_id": alert.sim_run_id,
+                        "fingerprint": alert.fingerprint,
+                        "category": alert.category,
+                        "severity": alert.severity,
+                        "title": alert.title,
+                        "message": alert.message,
+                        "entity_type": alert.entity_type,
+                        "entity_id": alert.entity_id,
+                        "fuel_type": alert.fuel_type,
+                        "status": alert.status,
+                        "opened_tick": alert.opened_tick,
+                        "opened_at": alert.opened_at.isoformat() if alert.opened_at else None,
+                    }
+                )
+        items.sort(
+            key=lambda a: (
+                0 if a["severity"] == "CRITICAL" else (1 if a["severity"] == "WARNING" else 2),
+                -(a["id"] or 0),
+            )
+        )
+        return items
+
     async def raise_(self, spec: AlertSpec) -> Alert:
         """Raise or update an alert.
 
@@ -170,6 +234,8 @@ class AlertManager:
         self.clean_cycles[fp] = 0  # Condition is active
 
         existing = self.active_alerts.get(fp)
+        if existing is not None and spec.sim_run_id is not None and existing.sim_run_id != spec.sim_run_id:
+            existing = None
         event_type = "alert.raised"
 
         if existing is not None and existing.status in ("OPEN", "ACKNOWLEDGED"):

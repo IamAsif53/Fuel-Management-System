@@ -67,6 +67,64 @@ def override_db_session():
     app.dependency_overrides.pop(get_session, None)
 
 
+@pytest.fixture(autouse=True)
+def override_assistant_auth():
+    """Authenticated viewer for assistant endpoints (DEF-020).
+
+    Only override `require_viewer` so operator JWT flows (approve tests) still work.
+    """
+    from app.auth import require_viewer
+
+    async def _viewer():
+        return {
+            "username": "viewer",
+            "actor": "viewer",
+            "role": "viewer",
+            "jti": "test-jti",
+            "exp": 9_999_999_999,
+        }
+
+    app.dependency_overrides[require_viewer] = _viewer
+    yield
+    app.dependency_overrides.pop(require_viewer, None)
+
+
+@pytest.mark.asyncio
+async def test_ask_assistant_open_mode_without_bearer():
+    """Brief-aligned open mode: assistant works without Sign-In / bearer token."""
+    from app.auth import require_viewer
+
+    app.dependency_overrides.pop(require_viewer, None)
+    try:
+        with patch("app.routers.assistant.get_current_state", new=AsyncMock(return_value={
+            "sim_run_id": 1,
+            "tick": 10,
+            "degraded": False,
+            "engine_mode": "NORMAL",
+            "metrics": {"service_level": 1.0, "unmet_liters": 0.0},
+            "stations": [],
+            "depots": [],
+            "risks": [],
+        })), patch("app.routers.assistant.fetch_alerts", new=AsyncMock(return_value=[])), \
+             patch("app.routers.assistant.fetch_decisions", new=AsyncMock(return_value=[])), \
+             patch("app.routers.assistant.fetch_incidents", new=AsyncMock(return_value=[])):
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.post("/api/assistant/ask", json={"question": "How is system health?"})
+                assert resp.status_code == 200, resp.text
+    finally:
+        async def _viewer():
+            return {
+                "username": "viewer",
+                "actor": "viewer",
+                "role": "viewer",
+                "jti": "test-jti",
+                "exp": 9_999_999_999,
+            }
+
+        app.dependency_overrides[require_viewer] = _viewer
+
+
 @pytest.mark.asyncio
 async def test_ask_assistant_grounded_and_unsupported(dummy_state: dict[str, Any]):
     """Verify POST /api/assistant/ask returns grounded facts or 'not in current data'."""
@@ -224,12 +282,17 @@ async def test_cognitive_forcing_in_approval():
     with patch("app.routers.decisions.fetch_decision_by_id", new=AsyncMock(return_value=mock_decision)), \
          patch("app.routers.decisions._call_engine", new=AsyncMock(return_value={"status": "ok"})):
 
+        from app.auth import create_access_token
+        from app.config import get_settings
+
+        op_token, _ = create_access_token("operator", "operator", get_settings())
+        op_headers = {"Authorization": f"Bearer {op_token}"}
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             # 1. Attempt approval without reviewed_driver -> 422 REVIEW_REQUIRED
             resp = await client.post(
                 "/api/decisions/42/approve",
-                headers={"Authorization": "Bearer change-me-operator"},
+                headers=op_headers,
                 json={"line_ids": [101]},
             )
             assert resp.status_code == 422, resp.text
@@ -240,7 +303,73 @@ async def test_cognitive_forcing_in_approval():
             # 2. Approval with reviewed_driver=True -> succeeds
             resp2 = await client.post(
                 "/api/decisions/42/approve",
-                headers={"Authorization": "Bearer change-me-operator"},
+                headers=op_headers,
                 json={"line_ids": [101], "reviewed_driver": True},
             )
             assert resp2.status_code == 200, resp2.text
+
+
+@pytest.mark.asyncio
+async def test_assistant_unpacks_tuples_scopes_active_run_and_reflects_degraded_engine_mode(
+    dummy_state: dict[str, Any],
+):
+    """Verify DEF-011: assistant unpacks (items, total) tuples and reports Degraded when engine_mode != NORMAL."""
+    degraded_state = {**dummy_state, "sim_run_id": 77, "engine_mode": "DEGRADED", "degraded": False}
+    alerts_tuple = (
+        [
+            {
+                "id": 91,
+                "severity": "WARNING",
+                "entity_type": "station",
+                "entity_id": "station-mirpur",
+                "fuel_type": "PETROL",
+                "title": "Mirpur PETROL risk",
+                "category": "STOCKOUT_RISK",
+            }
+        ],
+        1,
+    )
+    decisions_tuple = (
+        [
+            {
+                "id": 501,
+                "status": "PENDING_APPROVAL",
+                "policy": "optimizer",
+                "confidence": 0.95,
+                "explanation": {"headline": "Ship 4,000 L to Mirpur"},
+            }
+        ],
+        1,
+    )
+
+    with (
+        patch(
+            "app.routers.assistant.get_current_state",
+            new=AsyncMock(return_value=(degraded_state, 10, False, '"77-10"')),
+        ),
+        patch("app.routers.assistant.fetch_alerts", new=AsyncMock(return_value=alerts_tuple)) as mock_fa,
+        patch("app.routers.assistant.fetch_decisions", new=AsyncMock(return_value=decisions_tuple)) as mock_fd,
+        patch("app.routers.assistant.fetch_incidents", new=AsyncMock(return_value=[])),
+    ):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            r_alert = await client.post("/api/assistant/ask", json={"question": "What alerts are open?"})
+            assert r_alert.status_code == 200
+            d_alert = r_alert.json()
+            assert "Mirpur PETROL risk" in d_alert["answer"]
+            assert any(s["type"] == "alert" and s["id"] == "91" for s in d_alert["sources"])
+            assert mock_fa.call_args.kwargs.get("sim_run_id") == 77
+
+            r_dec = await client.post("/api/assistant/ask", json={"question": "What is the latest decision?"})
+            assert r_dec.status_code == 200
+            d_dec = r_dec.json()
+            assert "#501" in d_dec["answer"]
+            assert any(s["type"] == "decision" and s["id"] == "501" for s in d_dec["sources"])
+            assert mock_fd.call_args.kwargs.get("sim_run_id") == 77
+
+            r_health = await client.post("/api/assistant/ask", json={"question": "How is system health right now?"})
+            assert r_health.status_code == 200
+            d_health = r_health.json()
+            assert "Degraded" in d_health["answer"]
+            assert "Healthy" not in d_health["answer"]
+
