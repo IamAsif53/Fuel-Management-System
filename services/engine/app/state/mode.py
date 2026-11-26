@@ -107,16 +107,21 @@ class EngineModeManager:
         # - stale flag
         # - simulator breaker OPEN (<60s)
         # - >= 3 consecutive invalid/failed cycles
-        # - any reasons in store.degraded_reasons (e.g. intelligence fallback, demand_failed)
+        # - hard reasons in store.degraded_reasons (e.g. intelligence fallback, demand_failed)
+        #
+        # Soft signals like error_budget_exhausted freeze Autopilot only; they must not
+        # latch the whole console into DEGRADED after a demo chaos spike (cumulative SL).
+        soft_reasons = frozenset({"error_budget_exhausted"})
         stale = bool(getattr(store, "stale", False))
         degraded_reasons = set(getattr(store, "degraded_reasons", set()))
+        hard_reasons = degraded_reasons - soft_reasons
         invalid_cycles_trip = self.consecutive_invalid_cycles >= 3
 
         has_degradation = (
             stale
             or sim_breaker_open
             or invalid_cycles_trip
-            or bool(degraded_reasons)
+            or bool(hard_reasons)
         )
 
         if has_degradation:

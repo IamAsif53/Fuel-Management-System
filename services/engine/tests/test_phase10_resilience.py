@@ -64,6 +64,17 @@ def mock_store():
     return store
 
 
+def test_error_budget_does_not_latch_console_degraded(mock_store):
+    """Cumulative SL dips must freeze Autopilot, not permanently paint the UI DEGRADED."""
+    mgr = EngineModeManager()
+    mock_store.stale = False
+    mock_store.degraded_reasons = {"error_budget_exhausted"}
+    mode = mgr.evaluate(mock_store)
+    assert mode == "NORMAL"
+    assert mock_store.engine_mode == "NORMAL"
+    assert mock_store.degraded is False
+
+
 def test_engine_mode_transitions(mock_store):
     mgr = EngineModeManager()
     assert mgr.current_mode == "NORMAL"

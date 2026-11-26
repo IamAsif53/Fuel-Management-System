@@ -144,7 +144,9 @@ class WorldState:
 
     @property
     def degraded(self) -> bool:
-        return self.stale or bool(self.degraded_reasons)
+        # Soft SLO budget exhaustion freezes Autopilot but is not a console-wide outage.
+        hard = set(self.degraded_reasons) - {"error_budget_exhausted"}
+        return self.stale or bool(hard)
 
     @property
     def demand(self) -> dict[tuple[str, str], deque[DemandObservation]]:
