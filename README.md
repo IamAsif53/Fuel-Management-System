@@ -145,6 +145,12 @@ Comprehensive technical documentation is maintained under [`docs/architecture/`]
 
 ## 7. Getting Started
 
+### Examiner / public demo (Poridhi Lab)
+To run FSIP on a **Poridhi Lab** VM and share a `*.lb.poridhi.io` URL via Load Balancer, follow:
+
+**[Host FSIP on Poridhi Lab & Share via Load Balancer](docs/deploy/poridhi/README.md)**  
+(includes screenshots: healthy `docker compose ps`, `curl` 200 on `:8088`, and LB expose)
+
 ### Prerequisites
 - **Python:** `3.12` or `3.13`
 - **Node.js:** `v20+` & `npm 10+`
