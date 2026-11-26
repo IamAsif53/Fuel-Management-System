@@ -235,8 +235,10 @@ async def test_autopilot_ineligible_safety_cases(session_factory, autopilot_sim_
 
 
 @pytest.mark.asyncio
-async def test_large_decision_approves_with_single_operator_click(session_factory, autopilot_sim_run):
-    """Large allocations (>7k L) approve with one operator click — no Sign-In / four-eyes."""
+async def test_large_decision_requires_four_eyes_second_actor(session_factory, autopilot_sim_run):
+    """Large allocations (>7k L) require two distinct approvers."""
+    from app.decision.engine import DecisionError
+
     publisher = MockPublisher()
     engine = DecisionEngine(session_factory, publisher=publisher)
 
@@ -270,6 +272,15 @@ async def test_large_decision_approves_with_single_operator_click(session_factor
         await session.commit()
         dec_id = dec.id
 
-    approved = await engine.approve_decision(dec_id, actor="operator", reviewed_driver=True)
-    assert approved.status == "APPROVED"
-    assert approved.approved_by == "operator"
+    first = await engine.approve_decision(dec_id, actor="operator", reviewed_driver=True)
+    assert first.status == "AWAITING_SECOND_APPROVAL"
+    assert first.approved_by == "operator"
+
+    with pytest.raises(DecisionError) as same_actor:
+        await engine.approve_decision(dec_id, actor="operator", reviewed_driver=True)
+    assert same_actor.value.code == "FOUR_EYES_SAME_ACTOR"
+
+    second = await engine.approve_decision(dec_id, actor="supervisor", reviewed_driver=True)
+    assert second.status == "APPROVED"
+    assert "operator" in (second.approved_by or "")
+    assert "supervisor" in (second.approved_by or "")

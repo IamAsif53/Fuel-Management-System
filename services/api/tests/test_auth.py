@@ -1,10 +1,10 @@
-"""Tests for open-mode identity (no Sign-In) and optional JWT helpers."""
+"""Tests for JWT auth and RBAC (operator / supervisor)."""
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from app.auth import create_access_token, get_current_user, hash_password
+from app.auth import create_access_token, hash_password
 from app.config import get_settings
 from app.db import get_session
 from app.main import app
@@ -24,31 +24,24 @@ def override_db():
     app.dependency_overrides.pop(get_session, None)
 
 
-def test_open_mode_allows_operator_actions_without_bearer(override_db):
-    """Brief-aligned: missing bearer uses demo operator — no Sign-In required."""
+def test_missing_bearer_is_unauthorized(override_db):
     client = TestClient(app)
-    with (
-        patch("app.routers.decisions._call_engine", new=AsyncMock(return_value={"status": "ok", "mode": "advisory"})),
-        patch("app.routers.decisions.insert_audit_entry", new=AsyncMock()),
-    ):
-        res = client.post("/api/control/mode", json={"mode": "advisory"})
-    assert res.status_code == 200, res.text
+    res = client.post("/api/control/mode", json={"mode": "advisory"})
+    assert res.status_code == 401
+    assert res.json()["detail"]["code"] == "UNAUTHORIZED"
 
 
-def test_revoked_static_change_me_operator_falls_back_to_open_mode(override_db):
-    """Legacy leaked secret must never authenticate; open demo operator is used instead."""
+def test_revoked_static_token_rejected(override_db):
     client = TestClient(app)
-    headers = {"Authorization": "Bearer change-me-operator"}
-    with (
-        patch("app.routers.decisions._call_engine", new=AsyncMock(return_value={"status": "ok", "mode": "advisory"})),
-        patch("app.routers.decisions.insert_audit_entry", new=AsyncMock()),
-    ):
-        res = client.post("/api/control/mode", headers=headers, json={"mode": "advisory"})
-    assert res.status_code == 200, res.text
+    res = client.post(
+        "/api/control/mode",
+        headers={"Authorization": "Bearer change-me-operator"},
+        json={"mode": "advisory"},
+    )
+    assert res.status_code == 401
 
 
-def test_optional_login_still_works_for_role_tokens(override_db):
-    """Optional JWT login remains available for tests, but UI Sign-In is removed."""
+def test_login_roles_and_rbac(override_db):
     settings = get_settings()
     demo_users = (
         f"viewer-1:vpass123:viewer,"
@@ -58,8 +51,8 @@ def test_optional_login_still_works_for_role_tokens(override_db):
     with patch.object(settings, "demo_users", demo_users):
         client = TestClient(app)
 
-        bad_login = client.post("/api/auth/login", json={"username": "op-1", "password": "wrong"})
-        assert bad_login.status_code == 401
+        bad = client.post("/api/auth/login", json={"username": "op-1", "password": "wrong"})
+        assert bad.status_code == 401
 
         res_o = client.post("/api/auth/login", json={"username": "op-1", "password": "opass123"})
         assert res_o.status_code == 200
@@ -70,23 +63,45 @@ def test_optional_login_still_works_for_role_tokens(override_db):
         assert res_v.status_code == 200
         v_tok = res_v.json()["access_token"]
 
+        res_s = client.post("/api/auth/login", json={"username": "sup-1", "password": "spass123"})
+        assert res_s.status_code == 200
+        s_tok = res_s.json()["access_token"]
+        assert res_s.json()["role"] == "supervisor"
+
         me_o = client.get("/api/auth/me", headers={"Authorization": f"Bearer {o_tok}"})
         assert me_o.status_code == 200
-        assert me_o.json()["username"] == "op-1"
         assert me_o.json()["role"] == "operator"
 
-        # Viewer JWT still cannot perform operator writes
         with (
-            patch("app.routers.decisions._call_engine", new=AsyncMock(return_value={"status": "ok"})),
+            patch("app.routers.decisions._call_engine", new=AsyncMock(return_value={"status": "ok", "mode": "advisory"})),
             patch("app.routers.decisions.insert_audit_entry", new=AsyncMock()),
         ):
-            res_v_write = client.post(
+            # Viewer cannot change mode
+            assert client.post(
                 "/api/control/mode",
                 headers={"Authorization": f"Bearer {v_tok}"},
                 json={"mode": "advisory"},
-            )
-        assert res_v_write.status_code == 403
-        assert res_v_write.json()["detail"]["code"] == "FORBIDDEN"
+            ).status_code == 403
+
+            # Operator can change mode
+            assert client.post(
+                "/api/control/mode",
+                headers={"Authorization": f"Bearer {o_tok}"},
+                json={"mode": "advisory"},
+            ).status_code == 200
+
+            # Operator cannot set policy; supervisor can
+            assert client.post(
+                "/api/control/policy",
+                headers={"Authorization": f"Bearer {o_tok}"},
+                json={"policy": "optimizer"},
+            ).status_code == 403
+
+            assert client.post(
+                "/api/control/policy",
+                headers={"Authorization": f"Bearer {s_tok}"},
+                json={"policy": "heuristic"},
+            ).status_code == 200
 
 
 def test_create_access_token_claims():
@@ -95,26 +110,4 @@ def test_create_access_token_claims():
     assert ttl == settings.jwt_expire_seconds
     claims = jwt.decode(tok, settings.api_jwt_secret, algorithms=["HS256"])
     assert claims["sub"] == "sup-2"
-    assert claims["actor"] == "sup-2"
     assert claims["role"] == "supervisor"
-    assert "jti" in claims and "exp" in claims
-
-
-@pytest.mark.asyncio
-async def test_get_current_user_open_mode_without_credentials():
-    from unittest.mock import MagicMock
-
-    from fastapi.security import HTTPAuthorizationCredentials
-
-    settings = get_settings()
-    request = MagicMock()
-    request.app.state.redis = None
-
-    user = await get_current_user(request, auth=None, settings=settings)
-    assert user["username"] == "operator"
-    assert user["role"] == "operator"
-    assert user.get("open_mode") is True
-
-    bogus = HTTPAuthorizationCredentials(scheme="Bearer", credentials="not-a-jwt")
-    user2 = await get_current_user(request, auth=bogus, settings=settings)
-    assert user2.get("open_mode") is True

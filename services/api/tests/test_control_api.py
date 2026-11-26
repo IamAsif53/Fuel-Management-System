@@ -84,14 +84,12 @@ async def test_control_sim_actions(auth_headers):
 
 
 @pytest.mark.asyncio
-async def test_control_open_mode_without_bearer():
-    """Open hackathon mode: control actions succeed without Sign-In / bearer."""
-    with patch("app.routers.control._call_simulator", new_callable=AsyncMock) as mock_sim:
-        mock_sim.return_value = {"status": "running"}
-        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
-            res = await client.post("/api/control/sim/run")
-            assert res.status_code == 200
-            assert res.json().get("action") in ("run", "sim_run", None) or "status" in res.json()
+async def test_control_unauthorized():
+    """Missing bearer returns HTTP 401."""
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        res = await client.post("/api/control/sim/run")
+        assert res.status_code == 401
+        assert res.json()["detail"]["code"] == "UNAUTHORIZED"
 
 
 @pytest.mark.asyncio

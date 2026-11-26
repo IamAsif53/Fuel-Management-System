@@ -920,18 +920,53 @@ class DecisionEngine:
                         status_code=422,
                     )
 
-            # Human-in-the-loop is the explicit Approve click (brief §26).
-            # Multi-user four-eyes login was removed to match the participant brief
-            # (no Sign-In / enterprise auth requirement).
-            if dec.status == "AWAITING_SECOND_APPROVAL":
-                # Legacy in-flight rows: complete with the current operator click.
-                if dec.approved_by and actor not in dec.approved_by:
-                    dec.approved_by = f"{dec.approved_by}, {actor}"
-                else:
+            # Four-eyes supervisory sign-off (volumes > 7,000 L need two distinct actors).
+            if total_qty > 7000.0 and actor != "autopilot":
+                if dec.status == "PENDING_APPROVAL":
+                    dec.status = "AWAITING_SECOND_APPROVAL"
                     dec.approved_by = actor
+                    dec.approved_at = datetime.now(UTC)
+                    audit_entry = AuditLog(
+                        actor=actor,
+                        action="DECISION_FIRST_APPROVAL",
+                        entity_type="decision",
+                        entity_id=str(dec.id),
+                        payload={
+                            "decision_id": dec.id,
+                            "tick": cur_tick,
+                            "status": "AWAITING_SECOND_APPROVAL",
+                            "lines_approved": len(approved_lines),
+                            "total_liters": total_qty,
+                        },
+                    )
+                    session.add(audit_entry)
+                    await session.commit()
+                    await session.refresh(dec, ["lines"])
+
+                    if self.publisher is not None:
+                        await self.publisher.event(
+                            type="decision.awaiting_second_approval",
+                            data={
+                                "decision_id": dec.id,
+                                "first_approver": actor,
+                                "total_quantity": total_qty,
+                            },
+                            sim_run_id=dec.sim_run_id,
+                            tick=cur_tick,
+                        )
+                    return dec
+                if dec.status == "AWAITING_SECOND_APPROVAL":
+                    first = (dec.approved_by or "").strip().lower()
+                    if first and first == actor.strip().lower():
+                        raise DecisionError(
+                            "FOUR_EYES_SAME_ACTOR",
+                            "Four-eyes policy violation: second approval must be by a different operator.",
+                            status_code=403,
+                        )
+                    dec.approved_by = f"{dec.approved_by}, {actor}"
 
             dec.status = "APPROVED"
-            if not dec.approved_by or actor == "autopilot" or "," not in str(dec.approved_by):
+            if total_qty <= 7000.0 or actor == "autopilot":
                 dec.approved_by = actor
             dec.approved_at = datetime.now(UTC)
 

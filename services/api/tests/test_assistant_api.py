@@ -90,28 +90,17 @@ def override_assistant_auth():
 
 
 @pytest.mark.asyncio
-async def test_ask_assistant_open_mode_without_bearer():
-    """Brief-aligned open mode: assistant works without Sign-In / bearer token."""
+async def test_ask_assistant_requires_auth():
+    """Assistant ask requires a signed-in viewer/operator/supervisor."""
     from app.auth import require_viewer
 
     app.dependency_overrides.pop(require_viewer, None)
     try:
-        with patch("app.routers.assistant.get_current_state", new=AsyncMock(return_value={
-            "sim_run_id": 1,
-            "tick": 10,
-            "degraded": False,
-            "engine_mode": "NORMAL",
-            "metrics": {"service_level": 1.0, "unmet_liters": 0.0},
-            "stations": [],
-            "depots": [],
-            "risks": [],
-        })), patch("app.routers.assistant.fetch_alerts", new=AsyncMock(return_value=[])), \
-             patch("app.routers.assistant.fetch_decisions", new=AsyncMock(return_value=[])), \
-             patch("app.routers.assistant.fetch_incidents", new=AsyncMock(return_value=[])):
-            transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                resp = await client.post("/api/assistant/ask", json={"question": "How is system health?"})
-                assert resp.status_code == 200, resp.text
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post("/api/assistant/ask", json={"question": "How is system health?"})
+            assert resp.status_code == 401
+            assert resp.json()["detail"]["code"] == "UNAUTHORIZED"
     finally:
         async def _viewer():
             return {

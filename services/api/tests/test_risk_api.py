@@ -196,13 +196,11 @@ async def test_get_alerts_and_ack(auth_headers):
                 assert len(data["items"]) == 1
                 assert data["items"][0]["status"] == "OPEN"
 
-                # 2. POST /api/alerts/10/ack without bearer -> open demo operator (no Sign-In)
-                res_open = await client.post("/api/alerts/10/ack")
-                assert res_open.status_code == 200
-                assert res_open.json()["status"] == "ACKNOWLEDGED"
-                assert res_open.json()["acknowledged_by"] == "operator"
+                # 2. POST /api/alerts/10/ack without auth -> 401
+                res_unauth = await client.post("/api/alerts/10/ack")
+                assert res_unauth.status_code == 401
 
-                # 3. POST /api/alerts/10/ack with optional JWT still works
+                # 3. POST /api/alerts/10/ack with operator JWT -> 200
                 res_ack = await client.post("/api/alerts/10/ack", headers=auth_headers)
                 assert res_ack.status_code == 200
                 ack_data = res_ack.json()

@@ -1,16 +1,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { api, apiWithMeta, ApiError, setToken } from "@/api/client";
+import { api, apiWithMeta, ApiError, setToken, clearAuth, getToken } from "@/api/client";
 
 describe("api client", () => {
   const originalFetch = global.fetch;
 
   beforeEach(() => {
-    setToken(null);
+    clearAuth();
   });
 
   afterEach(() => {
     global.fetch = originalFetch;
     vi.restoreAllMocks();
+    clearAuth();
   });
 
   it("performs GET request and parses JSON", async () => {
@@ -33,8 +34,13 @@ describe("api client", () => {
     );
   });
 
-  it("does not send Authorization header in open hackathon mode", async () => {
-    setToken("secret-token-123"); // ignored — Sign-In removed
+  it("sends Authorization header when signed in", async () => {
+    setToken("secret-token-123", {
+      username: "operator",
+      actor: "operator",
+      role: "operator",
+    });
+    expect(getToken()).toBe("secret-token-123");
 
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
@@ -45,7 +51,7 @@ describe("api client", () => {
 
     await api("/secure");
     const [, init] = (global.fetch as any).mock.calls[0];
-    expect(init.headers.Authorization).toBeUndefined();
+    expect(init.headers.Authorization).toBe("Bearer secret-token-123");
   });
 
   it("handles 304 Not Modified correctly in apiWithMeta", async () => {
@@ -111,8 +117,8 @@ describe("api client", () => {
     }
   });
 
-  it("does not ship a default operator token when signed out", async () => {
-    setToken(null, null);
+  it("does not send Authorization when signed out", async () => {
+    clearAuth();
     let capturedHeaders: HeadersInit | undefined;
     global.fetch = vi.fn().mockImplementation(async (_url: RequestInfo | URL, init?: RequestInit) => {
       capturedHeaders = init?.headers;

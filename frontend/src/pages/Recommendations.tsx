@@ -10,6 +10,7 @@ import {
   ShieldAlert,
   Bot,
   UserCheck,
+  Users,
 } from "lucide-react";
 import clsx from "clsx";
 import {
@@ -235,12 +236,19 @@ export default function Recommendations() {
       const requiresCognitiveForcing =
         hasLargeLine || (decision.confidence ?? 1.0) < 0.7 || Boolean(decision.degraded);
 
-      await approveDecision(decId, {
+      const updated = await approveDecision(decId, {
         line_ids: lineIds,
         quantities: modifiedPayload,
         reviewed_driver: requiresCognitiveForcing ? Boolean(reviewedDriver[decId]) : true,
       });
-      setRecommendations((prev) => prev.filter((d) => d.id !== decId));
+      // Keep card visible while awaiting supervisor second sign-off
+      if (updated?.status === "AWAITING_SECOND_APPROVAL") {
+        setRecommendations((prev) =>
+          prev.map((d) => (d.id === decId ? { ...d, ...updated } : d))
+        );
+      } else {
+        setRecommendations((prev) => prev.filter((d) => d.id !== decId));
+      }
     } catch (err: unknown) {
       alert(`Approval failed: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
@@ -484,6 +492,13 @@ export default function Recommendations() {
                     <span className="flex items-center gap-1 rounded bg-risk-high/15 px-2 py-0.5 text-[11px] font-semibold text-risk-high">
                       <AlertTriangle size={12} />
                       Degraded State
+                    </span>
+                  )}
+                  {rec.status === "AWAITING_SECOND_APPROVAL" && (
+                    <span className="flex items-center gap-1 rounded bg-brand/15 px-2 py-0.5 text-[11px] font-semibold text-brand">
+                      <Users size={12} />
+                      Needs Supervisor Approval (1/2
+                      {rec.approved_by ? ` — by ${rec.approved_by}` : ""})
                     </span>
                   )}
                 </div>

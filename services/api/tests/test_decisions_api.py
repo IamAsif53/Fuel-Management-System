@@ -154,15 +154,9 @@ async def test_approve_decision(auth_headers):
         try:
             transport = httpx.ASGITransport(app=app)
             async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-                # Open mode: no bearer token still allowed (no Sign-In)
-                res_open = await client.post(
-                    "/api/decisions/10/approve",
-                    json={"reviewed_driver": True},
-                )
-                assert res_open.status_code == 200
-                assert res_open.json()["status"] == "APPROVED"
+                res_unauth = await client.post("/api/decisions/10/approve", json={})
+                assert res_unauth.status_code == 401
 
-                # Also works with optional operator token
                 res = await client.post(
                     "/api/decisions/10/approve",
                     headers=auth_headers,
@@ -170,8 +164,8 @@ async def test_approve_decision(auth_headers):
                 )
                 assert res.status_code == 200
                 assert res.json()["status"] == "APPROVED"
-                assert mock_call.await_count >= 1
-                assert mock_audit.await_count >= 1
+                assert mock_call.await_count == 1
+                assert mock_audit.await_count == 1
                 assert mock_audit.await_args[1]["action"] == "DECISION_APPROVED"
         finally:
             app.dependency_overrides.pop(get_session, None)
@@ -260,21 +254,21 @@ async def test_control_mode_and_policy(auth_headers, supervisor_headers):
                 res_mode = await client.post("/api/control/mode", headers=auth_headers, json={"mode": "autopilot"})
                 assert res_mode.status_code == 200
 
-                # Policy: open/operator mode may set policy (no multi-user Sign-In gate)
+                # Policy: operator rejected (403), supervisor allowed (200)
                 res_pol = await client.post(
                     "/api/control/policy",
                     headers=auth_headers,
                     json={"policy": "optimizer"},
                 )
-                assert res_pol.status_code == 200
+                assert res_pol.status_code == 403
 
                 res_pol_sup = await client.post(
                     "/api/control/policy",
                     headers=supervisor_headers,
-                    json={"policy": "balanced"},
+                    json={"policy": "heuristic"},
                 )
                 assert res_pol_sup.status_code == 200
-                assert mock_audit.await_count >= 2
+                assert mock_audit.await_count == 2
         finally:
             app.dependency_overrides.pop(get_session, None)
 
@@ -316,8 +310,8 @@ async def test_control_mode_stale_rejection(auth_headers):
 
 
 @pytest.mark.asyncio
-async def test_approve_large_decision_single_operator_click(auth_headers):
-    """Large allocations approve in one operator click (no multi-user Sign-In / four-eyes)."""
+async def test_approve_large_decision_awaits_second_approval(auth_headers, supervisor_headers):
+    """Large allocations require four-eyes: operator then distinct supervisor."""
     mock_session = AsyncMock()
 
     with (
@@ -325,29 +319,45 @@ async def test_approve_large_decision_single_operator_click(auth_headers):
         patch("app.routers.decisions._call_engine", new_callable=AsyncMock) as mock_call,
         patch("app.routers.decisions.insert_audit_entry", new_callable=AsyncMock) as mock_audit,
     ):
-        mock_fetch.side_effect = [
-            {
-                "id": 88,
-                "status": "PENDING_APPROVAL",
-                "lines": [{"id": 1, "quantity": 8000.0}],
-                "confidence": 0.9,
-                "degraded": False,
-            },
-            {
-                "id": 88,
-                "status": "APPROVED",
-                "lines": [{"id": 1, "quantity": 8000.0}],
-                "confidence": 0.9,
-                "degraded": False,
-                "approved_by": "operator",
-            },
-        ]
-        mock_call.return_value = {
-            "status": "APPROVED",
-            "decision_id": 88,
-            "decision_status": "APPROVED",
+        # fetch is called twice per approve (cognitive pre-check + post-refresh)
+        pending = {
+            "id": 88,
+            "status": "PENDING_APPROVAL",
+            "lines": [{"id": 1, "quantity": 8000.0}],
+            "confidence": 0.9,
+            "degraded": False,
+        }
+        awaiting = {
+            "id": 88,
+            "status": "AWAITING_SECOND_APPROVAL",
+            "lines": [{"id": 1, "quantity": 8000.0}],
+            "confidence": 0.9,
+            "degraded": False,
             "approved_by": "operator",
         }
+        approved = {
+            "id": 88,
+            "status": "APPROVED",
+            "lines": [{"id": 1, "quantity": 8000.0}],
+            "confidence": 0.9,
+            "degraded": False,
+            "approved_by": "operator, supervisor",
+        }
+        mock_fetch.side_effect = [pending, awaiting, awaiting, approved]
+        mock_call.side_effect = [
+            {
+                "status": "AWAITING_SECOND_APPROVAL",
+                "decision_id": 88,
+                "decision_status": "AWAITING_SECOND_APPROVAL",
+                "approved_by": "operator",
+            },
+            {
+                "status": "APPROVED",
+                "decision_id": 88,
+                "decision_status": "APPROVED",
+                "approved_by": "operator, supervisor",
+            },
+        ]
 
         async def override_get_session():
             yield mock_session
@@ -356,14 +366,22 @@ async def test_approve_large_decision_single_operator_click(auth_headers):
         try:
             transport = httpx.ASGITransport(app=app)
             async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-                res = await client.post(
+                res1 = await client.post(
                     "/api/decisions/88/approve",
                     headers=auth_headers,
                     json={"reviewed_driver": True},
                 )
-                assert res.status_code == 200
-                assert res.json()["status"] == "APPROVED"
-                assert mock_audit.await_count >= 1
+                assert res1.status_code == 200
+                assert res1.json()["status"] == "AWAITING_SECOND_APPROVAL"
+
+                res2 = await client.post(
+                    "/api/decisions/88/approve",
+                    headers=supervisor_headers,
+                    json={"reviewed_driver": True},
+                )
+                assert res2.status_code == 200
+                assert res2.json()["status"] == "APPROVED"
+                assert mock_audit.await_count >= 2
         finally:
             app.dependency_overrides.pop(get_session, None)
 

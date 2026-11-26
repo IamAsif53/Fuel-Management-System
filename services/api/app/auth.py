@@ -156,20 +156,11 @@ async def _is_jti_revoked(jti: str | None, redis_client: Any = None) -> bool:
     return False
 
 
-def _open_demo_operator() -> dict[str, Any]:
-    """Hackathon open mode: no Sign-In UI; actor is a local demo operator identity.
-
-    Matches brief §19 (no hardcoded frontend secrets / no enterprise login required).
-    Sensitive actions remain explicit operator clicks (approve/reject), not silent automation.
-    """
-    return {
-        "username": "operator",
-        "actor": "operator",
-        "role": "operator",
-        "jti": None,
-        "exp": None,
-        "open_mode": True,
-    }
+def _unauthorized(message: str = "Authentication required") -> HTTPException:
+    return HTTPException(
+        status_code=401,
+        detail={"code": "UNAUTHORIZED", "message": message},
+    )
 
 
 async def get_current_user(
@@ -177,23 +168,18 @@ async def get_current_user(
     auth: HTTPAuthorizationCredentials | None = Security(security_bearer),
     settings: ApiSettings = Depends(get_settings),
 ) -> dict[str, Any]:
-    """Resolve caller identity.
-
-    Open hackathon mode (default): missing bearer → demo operator (no Sign-In required).
-    Optional JWT still accepted when provided (tests / advanced demos).
-    """
+    """Resolve caller identity from a valid JWT Bearer token."""
     if not auth or not auth.credentials:
-        return _open_demo_operator()
+        raise _unauthorized()
 
     token = auth.credentials.strip()
     if token in REVOKED_STATIC_TOKENS:
-        # Never accept the old leaked static secret; fall back to open demo identity.
-        return _open_demo_operator()
+        raise _unauthorized("Revoked or invalid credentials")
 
     try:
         payload = jwt.decode(token, settings.api_jwt_secret, algorithms=["HS256"])
-    except JWTError:
-        return _open_demo_operator()
+    except JWTError as exc:
+        raise _unauthorized("Invalid or expired token") from exc
 
     role = str(payload.get("role", "")).lower().strip()
     username = str(payload.get("sub") or payload.get("actor") or "").strip()
@@ -202,12 +188,12 @@ async def get_current_user(
     exp = payload.get("exp")
 
     if not username or role not in VALID_ROLES or not exp:
-        return _open_demo_operator()
+        raise _unauthorized("Token missing required claims")
 
     redis_client = getattr(getattr(request, "app", None), "state", None)
     redis_conn = getattr(redis_client, "redis", None) if redis_client else None
     if await _is_jti_revoked(jti, redis_conn):
-        return _open_demo_operator()
+        raise _unauthorized("Token has been revoked")
 
     return {
         "username": username,
@@ -215,7 +201,6 @@ async def get_current_user(
         "role": role,
         "jti": jti,
         "exp": exp,
-        "open_mode": False,
     }
 
 
@@ -241,13 +226,9 @@ async def require_operator(user: dict[str, Any] = Depends(get_current_user)) -> 
 
 
 async def require_supervisor(user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
-    """Supervisor gate — in open hackathon mode, operator identity is accepted.
-
-    Brief does not require multi-user login; keep dependency for call sites but
-    do not block the demo console.
-    """
+    """Require supervisor role (policy changes, second four-eyes approval)."""
     role = user.get("role")
-    if role not in ("supervisor", "operator") and not user.get("open_mode"):
+    if role != "supervisor":
         raise HTTPException(
             status_code=403,
             detail={"code": "FORBIDDEN", "message": f"Role '{role}' is not authorized; supervisor role required"},

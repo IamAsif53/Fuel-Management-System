@@ -60,8 +60,17 @@ async def test_notifications_api_test_endpoint():
     mock_smtp_instance = MagicMock()
     with patch("smtplib.SMTP", return_value=mock_smtp_instance):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
-            # Open mode: no Sign-In required for operator actions
-            res = await client.post("/api/notifications/test")
+            res_unauth = await client.post("/api/notifications/test")
+            assert res_unauth.status_code == 401
+
+            from app.auth import create_access_token
+            from app.config import get_settings
+
+            token, _ = create_access_token("operator", "operator", get_settings())
+            res = await client.post(
+                "/api/notifications/test",
+                headers={"Authorization": f"Bearer {token}"},
+            )
             assert res.status_code == 200
             data = res.json()
             assert data["alert_id"] == "P1-TEST-SYNTHETIC"

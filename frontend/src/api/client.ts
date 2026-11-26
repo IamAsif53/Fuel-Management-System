@@ -31,8 +31,6 @@ function purgeLegacyAuthStorage(): void {
   if (typeof window === "undefined") return;
   try {
     localStorage.removeItem("fsip_operator_token");
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(USER_KEY);
   } catch {
     /* ignore */
   }
@@ -40,17 +38,35 @@ function purgeLegacyAuthStorage(): void {
 
 purgeLegacyAuthStorage();
 
-/** Open hackathon mode: no bearer token / no Sign-In. */
-const DEMO_OPERATOR: AuthUser = {
-  username: "operator",
-  actor: "operator",
-  role: "operator",
-};
-let authUser: AuthUser | null = DEMO_OPERATOR;
+function readStoredUser(): AuthUser | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(USER_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as AuthUser;
+    if (parsed?.username && parsed?.role) return parsed;
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+function readStoredToken(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return localStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+let authToken: string | null = readStoredToken();
+let authUser: AuthUser | null = authToken ? readStoredUser() : null;
 const authListeners = new Set<(user: AuthUser | null) => void>();
+const authModalListeners = new Set<() => void>();
 
 export function getToken(): string | null {
-  return null;
+  return authToken;
 }
 
 export function getAuthUser(): AuthUser | null {
@@ -64,18 +80,33 @@ export function subscribeAuth(cb: (user: AuthUser | null) => void): () => void {
   };
 }
 
-/** No-op stubs kept so older callers compile after Sign-In removal. */
-export function subscribeAuthModal(_cb: () => void): () => void {
-  return () => undefined;
+export function subscribeAuthModal(cb: () => void): () => void {
+  authModalListeners.add(cb);
+  return () => {
+    authModalListeners.delete(cb);
+  };
 }
 
 export function requestAuthModal(): void {
-  /* intentionally empty */
+  authModalListeners.forEach((cb) => cb());
 }
 
-export const setToken = (_t: string | null, _user: AuthUser | null = null) => {
-  authUser = DEMO_OPERATOR;
-  purgeLegacyAuthStorage();
+export const setToken = (token: string | null, user: AuthUser | null = null) => {
+  authToken = token;
+  authUser = token ? user : null;
+  if (typeof window !== "undefined") {
+    try {
+      if (token && user) {
+        localStorage.setItem(TOKEN_KEY, token);
+        localStorage.setItem(USER_KEY, JSON.stringify(user));
+      } else {
+        localStorage.removeItem(TOKEN_KEY);
+        localStorage.removeItem(USER_KEY);
+      }
+    } catch {
+      /* ignore */
+    }
+  }
   authListeners.forEach((cb) => cb(authUser));
 };
 
@@ -136,7 +167,9 @@ export async function apiWithMeta<T>(
     headers["Content-Type"] = "application/json";
   }
 
-  // No Authorization header — open hackathon mode (brief §19: no frontend secrets / no Sign-In).
+  if (authToken) {
+    headers.Authorization = `Bearer ${authToken}`;
+  }
 
   if (etag) {
     headers["If-None-Match"] = etag;
@@ -197,6 +230,10 @@ export async function apiWithMeta<T>(
         /* Non-JSON response body */
       }
 
+      if (res.status === 401) {
+        clearAuth();
+        requestAuthModal();
+      }
       throw new ApiError(res.status, code, message, errorData);
     }
 
@@ -501,6 +538,51 @@ export async function fetchN1Contingency(elementType?: string): Promise<any> {
 
 export async function fetchConformalPrediction(coverage: number = 0.9, horizonTicks: number = 24): Promise<any> {
   return api<any>(`/contingency/conformal?coverage=${coverage}&horizon_ticks=${horizonTicks}`);
+}
+
+export async function login(username: string, password: string): Promise<AuthUser> {
+  const res = await api<{
+    access_token: string;
+    token_type: string;
+    username: string;
+    role: AuthRole;
+    expires_in: number;
+  }>("/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ username, password }),
+  });
+  const user: AuthUser = {
+    username: res.username || username,
+    actor: res.username || username,
+    role: res.role,
+  };
+  setToken(res.access_token, user);
+  return user;
+}
+
+/** Instantly switch demo identity; powers apply on the next API call. */
+export async function switchDemoRole(role: "operator" | "supervisor"): Promise<AuthUser> {
+  return login(role, role);
+}
+
+export async function fetchMe(): Promise<AuthUser> {
+  const me = await api<AuthUser>("/auth/me");
+  if (authToken) {
+    setToken(authToken, me);
+  }
+  return me;
+}
+
+export async function logout(): Promise<void> {
+  try {
+    if (authToken) {
+      await api("/auth/logout", { method: "POST" });
+    }
+  } catch {
+    /* best-effort revocation */
+  } finally {
+    clearAuth();
+  }
 }
 
 export async function evaluateDemandSuppression(body: {
