@@ -23,6 +23,8 @@ Operating across major fuel depots (e.g., Gazipur, Patiya) and critical urban an
 
 FSIP solves these challenges by combining **resilient telemetry ingestion**, **multi-step LightGBM demand forecasting**, **automated risk scoring**, and **linear programming (LP) dispatch optimization** behind an intuitive operator console.
 
+![FSIP Overview Dashboard](docs/screenshots/desktop/overview.png)
+
 ---
 
 ## 2. System Architecture
@@ -145,12 +147,6 @@ Comprehensive technical documentation is maintained under [`docs/architecture/`]
 
 ## 7. Getting Started
 
-### Examiner / public demo (Poridhi Lab)
-To run FSIP on a **Poridhi Lab** VM and share a `*.lb.poridhi.io` URL via Load Balancer, follow:
-
-**[Host FSIP on Poridhi Lab & Share via Load Balancer](docs/deploy/poridhi/README.md)**  
-(includes screenshots: healthy `docker compose ps`, `curl` 200 on `:8088`, and LB expose)
-
 ### Prerequisites
 - **Python:** `3.12` or `3.13`
 - **Node.js:** `v20+` & `npm 10+`
@@ -233,6 +229,133 @@ To preserve system reliability and locked simulator contracts, repository admini
 
 ---
 
-## 9. License
+## 9. Deploy on Poridhi Lab (examiner URL)
+
+Poridhi **Load Balancer** can only reach apps running **inside a Poridhi Lab VM**. A home Wi‑Fi IP (e.g. `192.168.x.x`) will return **504**.
+
+### Steps
+1. Open a Poridhi Lab terminal and get the lab IP:
+   ```bash
+   hostname -I
+   ```
+   Use the primary `10.x` address (not `172.17.0.1` Docker bridge).
+2. Clone and enter the repo (folder names are **case-sensitive** — use Tab-complete):
+   ```bash
+   git clone https://github.com/IamAsif53/Fuel-Management-System.git
+   cd ~/Fuel-Management-system
+   ```
+3. Avoid reserved port `3000`. Start on **8088**:
+   ```bash
+   cp .env.example .env
+   echo "FE_HOST_PORT=8088" >> .env
+   docker compose up -d --build
+   docker compose ps
+   curl -I http://127.0.0.1:8088
+   ```
+4. In Poridhi **Load Balancer**, expose lab IP + port **`8088`**. Share the generated `*.lb.poridhi.io` URL.
+
+### Deploy evidence (Poridhi Lab)
+
+![Healthy docker compose on Poridhi](docs/deploy/poridhi/screenshots/01-compose-ps-healthy.png)
+
+![Frontend 200 OK on lab :8088](docs/deploy/poridhi/screenshots/02-curl-frontend-200.png)
+
+![Load Balancer expose 10.61.15.204:8088](docs/deploy/poridhi/screenshots/03-load-balancer-expose.png)
+
+---
+
+## 10. Application Screenshots
+
+Genuine captures from the **running** Fuel Ops Console (`http://127.0.0.1:8088`, Playwright, desktop 1440×900 / mobile 390×844). Capture report: [`docs/screenshots/CAPTURE_REPORT.md`](docs/screenshots/CAPTURE_REPORT.md).
+
+### Authentication
+Role-based sign-in for operator / supervisor / viewer before approvals and control actions.
+
+![Sign-in](docs/screenshots/desktop/login.png)
+
+### Overview Dashboard
+Live KPIs, service level, and supply-network topology.
+
+![Overview](docs/screenshots/desktop/overview.png)
+
+### Network Monitoring
+Station/depot inventory, routes, and in-transit allocations.
+
+![Network](docs/screenshots/desktop/network.png)
+
+### Risk Analysis
+Stockout risk scoring with region / fuel filters.
+
+![Risk Analysis](docs/screenshots/desktop/risk-analysis.png)
+
+### Recommendations
+Prescriptive dispatch inbox with human–AI metrics and approve/reject.
+
+![Recommendations](docs/screenshots/desktop/recommendations.png)
+
+### Decisions & Allocation Ledger
+Tamper-evident decision history (allocation ledger / reconciliation surface).
+
+![Decisions](docs/screenshots/desktop/decisions.png)
+
+![Allocation Ledger](docs/screenshots/desktop/allocation-ledger.png)
+
+![Decision Details](docs/screenshots/desktop/decision-details.png)
+
+### What-If Analysis
+Counterfactual digital-twin scenarios and comparison results.
+
+![What-If](docs/screenshots/desktop/what-if.png)
+
+### Operations Assistant
+Grounded answers from live platform state (risks, alerts, health).
+
+![Assistant](docs/screenshots/desktop/assistant.png)
+
+### System Health / Observability
+Service status, latency, and SLO compliance.
+
+![System Health](docs/screenshots/desktop/system-health.png)
+
+### Simulator Control Panel
+Demo controls for stepping, chaos, and Autopilot prep (when `DEMO_CONTROLS=true`).
+
+![Simulator Control](docs/screenshots/desktop/simulator-control.png)
+
+### Alerts
+Operational alert inbox and acknowledgement.
+
+![Alerts](docs/screenshots/desktop/alerts.png)
+
+### Important workflows
+
+| Workflow | Screenshot |
+|---|---|
+| Dashboard metrics | ![Dashboard metrics](docs/screenshots/workflows/dashboard-metrics.png) |
+| Risk filter by region | ![Risk region filter](docs/screenshots/workflows/risk-region-filter.png) |
+| What-If run & results | ![What-If results](docs/screenshots/workflows/whatif-results.png) |
+| Assistant Q&A | ![Assistant answer](docs/screenshots/workflows/assistant-answer.png) |
+| Approval as Operator | ![Operator approval](docs/screenshots/workflows/approval-operator.png) |
+| Four-eyes as Supervisor | ![Supervisor four-eyes](docs/screenshots/workflows/approval-supervisor-foureye.png) |
+
+### Mobile responsiveness
+
+![Overview mobile](docs/screenshots/mobile/overview-mobile.png)
+
+![Risk mobile](docs/screenshots/mobile/risk-mobile.png)
+
+![Assistant mobile](docs/screenshots/mobile/assistant-mobile.png)
+
+Re-capture after UI changes:
+
+```bash
+# from fuel-platform/ with stack on :8088
+cd frontend
+FSIP_BASE_URL=http://127.0.0.1:8088 node ../scripts/capture_readme_screenshots.mjs
+```
+
+---
+
+## 11. License
 
 This project is developed for the **BUP CSE FEST 2026 Hackathon** and is licensed under the MIT License.
