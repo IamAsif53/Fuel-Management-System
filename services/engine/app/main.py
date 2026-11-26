@@ -554,17 +554,22 @@ async def control_mode(req: EngineModeRequest):
                     except Exception:
                         pass
 
+        from app.state.mode import SOFT_DEGRADED_REASONS
+
         is_stale = bool(getattr(store, "stale", False))
-        is_degraded = bool(getattr(store, "degraded", False))
         resilience_mode = str(getattr(store, "engine_mode", "NORMAL")).upper()
         degraded_reasons = set(getattr(store, "degraded_reasons", set()))
+        # Soft SLO budget still freezes per-decision auto-approvals; it must not
+        # block entering Autopilot when the engine is otherwise healthy.
+        hard_reasons = degraded_reasons - SOFT_DEGRADED_REASONS
+        is_hard_degraded = bool(getattr(store, "degraded", False)) or bool(hard_reasons)
 
-        if is_stale or is_degraded or bool(degraded_reasons) or resilience_mode != "NORMAL":
+        if is_stale or is_hard_degraded or resilience_mode != "NORMAL":
             reasons: list[str] = []
             if is_stale:
                 reasons.append("data is stale")
-            if is_degraded or degraded_reasons:
-                reasons_str = f" ({', '.join(sorted(degraded_reasons))})" if degraded_reasons else ""
+            if is_hard_degraded:
+                reasons_str = f" ({', '.join(sorted(hard_reasons))})" if hard_reasons else ""
                 reasons.append(f"system is degraded{reasons_str}")
             if resilience_mode != "NORMAL":
                 reasons.append(f"engine mode is {resilience_mode} (must be NORMAL)")

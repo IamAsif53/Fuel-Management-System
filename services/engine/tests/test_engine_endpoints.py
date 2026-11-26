@@ -394,6 +394,45 @@ async def test_control_mode_autopilot_live_probe_rejects_paused_stale_data(clien
         app.state.store.engine_mode = "NORMAL"
 
 
+async def test_control_mode_autopilot_allows_soft_error_budget(client_app: TestClient):
+    """Soft SLO budget exhaustion must not block entering Autopilot when otherwise healthy."""
+    mock_sim_probe = AsyncMock()
+    mock_sim_probe.instance.return_value = SimResult(
+        data={"id": 1, "tick": 12, "status": "RUNNING"},
+        stale=False,
+        status=200,
+        latency_ms=3.0,
+    )
+    old_client = getattr(app.state, "client", None)
+    old_mode = getattr(app.state.store, "operating_mode", "advisory")
+    app.state.client = mock_sim_probe
+    app.state.store.stale = False
+    app.state.store.degraded_reasons = {"error_budget_exhausted"}
+    app.state.store.engine_mode = "NORMAL"
+    app.state.store.operating_mode = "advisory"
+
+    try:
+        resp = client_app.post(
+            "/engine/control/mode",
+            headers=INTERNAL_HEADERS,
+            json={"mode": "autopilot"},
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json().get("operating_mode") == "autopilot" or resp.json().get("mode") == "autopilot"
+        assert app.state.store.operating_mode == "autopilot"
+    finally:
+        app.state.client = old_client
+        app.state.store.stale = False
+        app.state.store.degraded_reasons.clear()
+        app.state.store.engine_mode = "NORMAL"
+        app.state.store.operating_mode = old_mode
+        client_app.post(
+            "/engine/control/mode",
+            headers=INTERNAL_HEADERS,
+            json={"mode": "advisory"},
+        )
+
+
 async def test_manual_allocation_valid_and_invalid(client_app: TestClient):
     # Valid manual allocation
     resp = client_app.post(

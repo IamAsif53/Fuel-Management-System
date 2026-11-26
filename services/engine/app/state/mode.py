@@ -37,6 +37,10 @@ except ValueError:
 
 ALL_MODES = ("NORMAL", "DEGRADED", "SAFE_HOLD", "NO_FEASIBLE_ROUTES")
 
+# Soft signals freeze per-decision Autopilot eligibility, but must not block
+# entering Autopilot mode or latch the whole console into DEGRADED.
+SOFT_DEGRADED_REASONS = frozenset({"error_budget_exhausted"})
+
 
 class EngineModeManager:
     """Evaluates and transitions engine resilience modes according to 06 §1 Failure Matrix."""
@@ -111,10 +115,9 @@ class EngineModeManager:
         #
         # Soft signals like error_budget_exhausted freeze Autopilot only; they must not
         # latch the whole console into DEGRADED after a demo chaos spike (cumulative SL).
-        soft_reasons = frozenset({"error_budget_exhausted"})
         stale = bool(getattr(store, "stale", False))
         degraded_reasons = set(getattr(store, "degraded_reasons", set()))
-        hard_reasons = degraded_reasons - soft_reasons
+        hard_reasons = degraded_reasons - SOFT_DEGRADED_REASONS
         invalid_cycles_trip = self.consecutive_invalid_cycles >= 3
 
         has_degradation = (

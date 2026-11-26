@@ -144,8 +144,10 @@ class WorldState:
 
     @property
     def degraded(self) -> bool:
-        # Soft SLO budget exhaustion freezes Autopilot but is not a console-wide outage.
-        hard = set(self.degraded_reasons) - {"error_budget_exhausted"}
+        # Soft SLO budget exhaustion freezes Autopilot eligibility but is not a console-wide outage.
+        from app.state.mode import SOFT_DEGRADED_REASONS
+
+        hard = set(self.degraded_reasons) - SOFT_DEGRADED_REASONS
         return self.stale or bool(hard)
 
     @property
